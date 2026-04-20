@@ -74,7 +74,7 @@ import MapSearchTopBar from '../components/map/MapSearchTopBar';
 import IncidentReportCard from '../components/map/IncidentReportCard';
 import TrafficCongestionBanner from '../components/map/TrafficCongestionBanner';
 import RoutePreviewPanel from '../components/map/RoutePreviewPanel';
-import { projectAhead, getCameraConfig } from '../navigation/navigationCamera';
+import { projectAhead, getCameraConfig, getLookAheadMeters } from '../navigation/navigationCamera';
 import { getDistanceToUpcomingManeuverMeters, getUpcomingManeuverStep } from '../navigation/routeGeometry';
 import { useNavigationSpeech } from '../hooks/useNavigationSpeech';
 import { repeatLastTurnByTurn } from '../navigation/navigationGuidanceMemory';
@@ -910,6 +910,29 @@ export default function MapScreen() {
     nav.currentStepIndex,
     navDisplayCoord.lat,
     navDisplayCoord.lng,
+  ]);
+
+  /** Follow-camera anchor: slightly ahead of the puck along course (CustomLocationProvider only). */
+  const cameraLeadCoord = useMemo(() => {
+    if (!nav.isNavigating || !Number.isFinite(navDisplayCoord.lat) || !Number.isFinite(navDisplayCoord.lng)) {
+      return null;
+    }
+    const sp = fusedSpeedMpsNav ?? 0;
+    const ahead = getLookAheadMeters(drivingMode, sp, nextManeuverDistanceMeters);
+    if (ahead < 4) return null;
+    const h = Number.isFinite(navDisplayHeading) ? navDisplayHeading : heading;
+    if (!Number.isFinite(h)) return null;
+    const p = projectAhead(navDisplayCoord.lat, navDisplayCoord.lng, h, ahead);
+    return { lat: p.latitude, lng: p.longitude };
+  }, [
+    nav.isNavigating,
+    drivingMode,
+    fusedSpeedMpsNav,
+    nextManeuverDistanceMeters,
+    navDisplayCoord.lat,
+    navDisplayCoord.lng,
+    navDisplayHeading,
+    heading,
   ]);
 
   const camCtrl = useCameraController({
@@ -3188,7 +3211,10 @@ export default function MapScreen() {
           Number.isFinite(navDisplayCoord.lng) ? (
             <>
               <MapboxGL.CustomLocationProvider
-                coordinate={[navDisplayCoord.lng, navDisplayCoord.lat]}
+                coordinate={[
+                  (cameraLeadCoord ?? navDisplayCoord).lng,
+                  (cameraLeadCoord ?? navDisplayCoord).lat,
+                ]}
                 heading={Number.isFinite(navDisplayHeading) ? navDisplayHeading : heading}
               />
               {navLogicDebugEnabled()
@@ -3573,6 +3599,12 @@ export default function MapScreen() {
               lat={navDisplayCoord.lat}
               course={Number.isFinite(navDisplayHeading) ? navDisplayHeading : -1}
               color={navRouteColors.routeColor}
+              accuracy={nav.sdkNavLocation?.horizontalAccuracy ?? null}
+              speedMps={
+                nav.sdkNavLocation?.speed ??
+                nav.navigationProgress?.displayCoord?.speedMps ??
+                0
+              }
             />
           ) : null}
         </MapboxGL.MapView>
@@ -3795,60 +3827,48 @@ export default function MapScreen() {
           );
         }
 
-        const logicSdkAuthoritativeUi = navLogicSdkEnabled() && instructionSrc === 'sdk';
-        const useSdkTurnUi =
-          navLogicSdkEnabled() && instructionSrc === 'sdk' && prog.nextStep;
+        /** Native SDK is the only authority for maneuver text, distance, lanes, and signals. */
+        const isSdkActive = instructionSrc === 'sdk';
+        const banner = prog.banner ?? null;
+        const sdkNavStep = isSdkActive ? prog.nextStep : null;
+
         const sdkSyntheticStep =
-          useSdkTurnUi && prog
+          isSdkActive && prog.nextStep
             ? directionsStepFromSdkProgress({
                 nextStep: prog.nextStep,
-                banner: prog.banner,
+                banner: prog.banner ?? undefined,
                 at: navDisplayCoord,
               })
             : null;
+
         const nextIdx = prog?.nextStep?.index;
-        // When prog.nextStep points to the step the user is already inside
-        // (nextIdx <= currentStepIndex), the "next maneuver" for the card
-        // should be the UPCOMING step, not the one we're already traversing.
-        // Using the current step causes liveDistMeters ≈ 0 and the card gets
-        // stuck in 'active' showing a just-completed turn.
         const nextStepIsCurrentStep =
           nextIdx != null && nextIdx <= nav.currentStepIndex;
-        const nextManeuverCoord =
-          useSdkTurnUi && sdkSyntheticStep
-            ? sdkSyntheticStep
-            : logicSdkAuthoritativeUi
-              ? null
-              : nextIdx != null && !nextStepIsCurrentStep && nav.navigationData?.steps
-                ? nav.navigationData.steps[nextIdx] ?? upcomingGuidanceStep
-                : upcomingGuidanceStep;
-        const turnCurrentStep = useSdkTurnUi
-          ? sdkSyntheticStep ?? currentStep
-          : logicSdkAuthoritativeUi
-            ? null
-            : currentStep;
+
+        const nextManeuverCoord = isSdkActive
+          ? sdkSyntheticStep
+          : nextIdx != null && !nextStepIsCurrentStep && nav.navigationData?.steps
+            ? nav.navigationData.steps[nextIdx] ?? upcomingGuidanceStep
+            : upcomingGuidanceStep;
+
+        const turnCurrentStep = isSdkActive ? sdkSyntheticStep ?? currentStep : currentStep;
+
         const poly = nav.navigationData?.polyline;
-        // Distance-to-maneuver authority:
-        //   - When the native SDK owns the banner (`sdkBannerOwns`), trust the native
-        //     `distanceToNextManeuverMeters` verbatim — it's derived from
-        //     `stepProg.distanceRemaining` (Android) / `userDistanceToUpcomingIntersection`
-        //     (iOS) and accounts for matched-location projection. Polyline / haversine
-        //     fallbacks would silently diverge from native voice during a trip.
-        //   - JS-only trips still take the polyline path when the adapter pair
-        //     (`prog.nextStepDistanceMeters`, `nextManeuverCoord`) races with the
-        //     step index (the `nextStepIsCurrentStep` guard avoids ≈ 0 m lock-ups).
-        const liveDistMeters = sdkBannerOwns
-          ? Math.max(
-              0,
-              Number.isFinite(prog.nextStepDistanceMeters) ? prog.nextStepDistanceMeters : 0,
-            )
-          : prog != null && Number.isFinite(prog.nextStepDistanceMeters) && !nextStepIsCurrentStep
-            ? prog.nextStepDistanceMeters
-            : poly && poly.length >= 2 && nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
-              ? alongRouteDistanceMeters(poly, navDisplayCoord, { lat: nextManeuverCoord.lat, lng: nextManeuverCoord.lng })
-              : nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
-                ? haversineMeters(navDisplayCoord.lat, navDisplayCoord.lng, nextManeuverCoord.lat, nextManeuverCoord.lng)
-                : (turnCurrentStep?.distanceMeters ?? 0);
+
+        const liveDistMeters = isSdkActive
+          ? Math.max(0, banner?.primaryDistanceMeters ?? prog.nextStepDistanceMeters ?? 0)
+          : sdkBannerOwns
+            ? Math.max(
+                0,
+                Number.isFinite(prog.nextStepDistanceMeters) ? prog.nextStepDistanceMeters : 0,
+              )
+            : prog != null && Number.isFinite(prog.nextStepDistanceMeters) && !nextStepIsCurrentStep
+              ? prog.nextStepDistanceMeters
+              : poly && poly.length >= 2 && nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
+                ? alongRouteDistanceMeters(poly, navDisplayCoord, { lat: nextManeuverCoord.lat, lng: nextManeuverCoord.lng })
+                : nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
+                  ? haversineMeters(navDisplayCoord.lat, navDisplayCoord.lng, nextManeuverCoord.lat, nextManeuverCoord.lng)
+                  : (turnCurrentStep?.distanceMeters ?? 0);
 
         const turnCardNow = Date.now();
         const cardState = resolveTurnCardState({
@@ -3899,26 +3919,30 @@ export default function MapScreen() {
             ? { value: '—', unit: '' }
             : formatTurnDistanceForCard(liveDistMeters);
         const destinationName = nav.navigationData?.destination?.name ?? null;
-        const banner = prog?.banner ?? null;
-        // When the native SDK banner owns the copy, never fall through to the JS
-        // REST-builder path (`buildActivePrimary` / `buildPreviewPrimarySecondary`),
-        // which would resynthesise text from JS-Directions rows and contradict the
-        // native voice that just played.
+
         const useBannerCopy =
+          !isSdkActive &&
           !!banner &&
-          (sdkBannerOwns ||
-            !!nextManeuverCoord ||
-            (instructionSrc === 'sdk' && !!prog.nextStep));
+          (sdkBannerOwns || !!nextManeuverCoord);
 
         let primary: string;
         let secondary: string | undefined;
-        if (useBannerCopy) {
+
+        if (isSdkActive) {
+          if (banner) {
+            primary = banner.primaryInstruction;
+            secondary = banner.secondaryInstruction ?? undefined;
+          } else {
+            primary =
+              sdkNavStep?.displayInstruction?.trim() ||
+              prog.nextStep?.instruction?.trim() ||
+              'Continue';
+            secondary = undefined;
+          }
+          if (drivingMode === 'sport' && displaySpeedMph > 50) secondary = undefined;
+        } else if (useBannerCopy) {
           switch (cardState) {
             case 'cruise':
-              // Under SDK banner authority, stay on the native primary text even on
-              // cruise frames — the adapter returns the full maneuver line, which is
-              // what the native voice just spoke. The JS `buildCruisePrimary` helper
-              // synthesises text from REST rows and can drift.
               primary = sdkBannerOwns
                 ? banner!.primaryInstruction
                 : nextManeuverCoord
@@ -3980,15 +4004,33 @@ export default function MapScreen() {
 
         const maneuverIconKey = iconManeuverForState(cardState, turnCurrentStep, nextManeuverCoord);
         const chainInstruction = buildChainInstruction(prog.nextStep);
-        const maneuverKindResolved =
-          banner?.maneuverKind ?? iconManeuverKindForState(cardState, prog.nextStep);
-        const signalResolved = banner?.signal ?? prog.nextStep?.signal;
-        const lanesResolved =
-          banner?.lanes?.length ? banner.lanes : prog.nextStep?.lanes?.length ? prog.nextStep.lanes : undefined;
-        const shieldsResolved =
-          banner?.shields?.length ? banner.shields : prog.nextStep?.shields?.length ? prog.nextStep.shields : undefined;
-        const roundaboutExitResolved =
-          banner?.roundaboutExitNumber ?? prog.nextStep?.roundaboutExitNumber ?? null;
+        const maneuverKindResolved = isSdkActive
+          ? sdkNavStep?.kind ?? banner?.maneuverKind ?? iconManeuverKindForState(cardState, prog.nextStep)
+          : banner?.maneuverKind ?? iconManeuverKindForState(cardState, prog.nextStep);
+        const signalResolved = isSdkActive
+          ? sdkNavStep?.signal ?? prog.nextStep?.signal
+          : banner?.signal ?? prog.nextStep?.signal;
+        const lanesResolved = isSdkActive
+          ? sdkNavStep?.lanes?.length
+            ? sdkNavStep.lanes
+            : prog.nextStep?.lanes ?? []
+          : banner?.lanes?.length
+            ? banner.lanes
+            : prog.nextStep?.lanes?.length
+              ? prog.nextStep.lanes
+              : undefined;
+        const shieldsResolved = isSdkActive
+          ? sdkNavStep?.shields?.length
+            ? sdkNavStep.shields
+            : prog.nextStep?.shields ?? []
+          : banner?.shields?.length
+            ? banner.shields
+            : prog.nextStep?.shields?.length
+              ? prog.nextStep.shields
+              : undefined;
+        const roundaboutExitResolved = isSdkActive
+          ? sdkNavStep?.roundaboutExitNumber ?? prog.nextStep?.roundaboutExitNumber ?? null
+          : banner?.roundaboutExitNumber ?? prog.nextStep?.roundaboutExitNumber ?? null;
         const disambigName =
           shouldShowRoadDisambiguation(turnCurrentStep?.name) ? (turnCurrentStep?.name ?? null) :
           shouldShowRoadDisambiguation(nextManeuverCoord?.name) ? (nextManeuverCoord?.name ?? null) :
@@ -4026,7 +4068,7 @@ export default function MapScreen() {
                 });
               }}
               lanesJson={
-                logicSdkAuthoritativeUi
+                isSdkActive
                   ? undefined
                   : mergeLaneSources(
                       actionableGuidanceStep,
@@ -4035,7 +4077,7 @@ export default function MapScreen() {
                     )
               }
               step={
-                logicSdkAuthoritativeUi
+                isSdkActive
                   ? sdkSyntheticStep ?? undefined
                   : actionableGuidanceStep ?? nextManeuverCoord ?? (cardState === 'confirm' ? turnCurrentStep : undefined)
               }

@@ -1,3 +1,4 @@
+import type { SdkNavProgressEvent, SdkNavProgressLane, SdkNavProgressShield } from './sdkNavBridgePayload';
 import type { Coordinate } from '../types';
 import type { DirectionsStep } from '../lib/directions';
 import type { NavigationProgress } from './navModel';
@@ -18,22 +19,10 @@ export type SdkTelemetrySnapshot = {
   routeChangedEvents: number;
 };
 
-export type SdkProgressPayload = {
-  distanceRemaining: number;
-  distanceTraveled: number;
-  durationRemaining: number;
-  fractionTraveled: number;
-  legIndex?: number;
-  stepIndex?: number;
-  primaryInstruction?: string;
-  secondaryInstruction?: string;
-  maneuverType?: string;
-  maneuverDirection?: string;
-  distanceToNextManeuverMeters?: number;
-  speedLimitMps?: number;
-  thenInstruction?: string;
-  currentStepInstruction?: string;
-};
+/** Aliases for `SdkNavProgress*` — single contract with `src/types/expo-mapbox-navigation.d.ts` + native bridges. */
+export type SdkLanePayload = SdkNavProgressLane;
+export type SdkShieldPayload = SdkNavProgressShield;
+export type SdkProgressPayload = SdkNavProgressEvent;
 
 export type SdkLocationPayload = {
   latitude: number;

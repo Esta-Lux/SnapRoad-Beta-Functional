@@ -1121,7 +1121,7 @@ index 965414e..8a0780a 100644
    }
  }
 diff --git a/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift b/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
-index 8f841df..d26c46f 100644
+index 8f841df..45f9ef7 100644
 --- a/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
 +++ b/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
 @@ -4,6 +4,9 @@ import MapboxMaps
@@ -1238,7 +1238,7 @@ index 8f841df..d26c46f 100644
  
      var onRouteProgressChanged: EventDispatcher? = nil
      var onCancelNavigation: EventDispatcher? = nil
-@@ -71,57 +144,63 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -71,57 +144,65 @@ class ExpoMapboxNavigationViewController: UIViewController {
      var onUserOffRoute: EventDispatcher? = nil
      var onRoutesLoaded: EventDispatcher? = nil
      var onRouteFailedToLoad: EventDispatcher? = nil
@@ -1263,19 +1263,23 @@ index 8f841df..d26c46f 100644
 -        routingProvider = mapboxNavigation!.routingProvider()
 -        navigation = mapboxNavigation!.navigation()
 -        tripSession = mapboxNavigation!.tripSession()
-+        routingProvider = mapboxNavigation?.routingProvider()
-+        navigation = mapboxNavigation?.navigation()
-+        tripSession = mapboxNavigation?.tripSession()
- 
+-
 -        routeProgressCancellable = navigation!.routeProgress.sink { progressState in
 -            if(progressState != nil){
-+        routeProgressCancellable = navigation?.routeProgress.sink { progressState in
-+            guard let progressState else { return }
- 
+-
 -
 -                // For some reason the maneuver arrows sometimes (not consistently) show up the same color as the route line making them invisible.
 -                // This is a hack to always ensure the arrows are visible.
 -                try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
++        routingProvider = mapboxNavigation?.routingProvider()
++        navigation = mapboxNavigation?.navigation()
++        tripSession = mapboxNavigation?.tripSession()
++
++        routeProgressCancellable = navigation?.routeProgress
++            .receive(on: DispatchQueue.main)
++            .sink { progressState in
++            guard let progressState else { return }
++
 +            if !self.navigationLogicOnly {
 +                // Maneuver arrow contrast on embedded SDK map
 +                if let mapboxMap = self.navigationViewController?.navigationMapView?.mapView.mapboxMap {
@@ -1322,7 +1326,7 @@ index 8f841df..d26c46f 100644
              let event = arrivalStatus.event
              if event is WaypointArrivalStatus.Events.ToFinalDestination {
                  self.onFinalDestinationArrival?()
-@@ -130,23 +209,74 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -130,30 +211,94 @@ class ExpoMapboxNavigationViewController: UIViewController {
              }
          }
  
@@ -1367,9 +1371,9 @@ index 8f841df..d26c46f 100644
                  default: break
 +                }
 +            default: break
-             }
-         }
- 
++            }
++        }
++
 +        locationMatchingCancellable = navigation?.locationMatching
 +            .throttle(for: .milliseconds(150), scheduler: RunLoop.main, latest: true)
 +            .sink { state in
@@ -1387,7 +1391,7 @@ index 8f841df..d26c46f 100644
 +                    payload["speedLimitMps"] = sl.converted(to: .metersPerSecond).value
 +                }
 +                self.onNavigationLocationUpdate?(payload)
-+            }
+             }
 +
 +        voiceInstructionCancellable = navigation?.voiceInstructions.sink { st in
 +            guard self.navigationLogicOnly else { return }
@@ -1395,8 +1399,8 @@ index 8f841df..d26c46f 100644
 +                "text": st.spokenInstruction.text,
 +                "distanceAlongStep": st.spokenInstruction.distanceAlongStep,
 +            ])
-+        }
-+
+         }
+ 
 +        navigationErrorCancellable = navigation?.errors.sink { err in
 +            guard self.navigationLogicOnly else { return }
 +            self.onNavigatorError?([
@@ -1406,7 +1410,17 @@ index 8f841df..d26c46f 100644
      }
  
      deinit {
-@@ -154,6 +284,9 @@ class ExpoMapboxNavigationViewController: UIViewController {
++        if ExpoMapboxNavigationViewController.activeController === self {
++            ExpoMapboxNavigationViewController.activeController = nil
++        }
++        trafficCameraTapRecognizer?.delegate = nil
++        if let tap = trafficCameraTapRecognizer,
++           let mapView = navigationViewController?.navigationMapView?.mapView {
++            mapView.removeGestureRecognizer(tap)
++        }
++        trafficCameraTapRecognizer = nil
++        navigationViewController?.delegate = nil
+         routeProgressCancellable?.cancel()
          waypointArrivalCancellable?.cancel()
          reroutingCancellable?.cancel()
          sessionCancellable?.cancel()
@@ -1416,7 +1430,27 @@ index 8f841df..d26c46f 100644
      }
  
      override func viewDidDisappear(_ animated: Bool) {
-@@ -286,8 +419,8 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -183,7 +328,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
+             return
+         }
+ 
+-        let sourceUrl = currentCustomRasterSourceUrl! 
++        guard let sourceUrl = currentCustomRasterSourceUrl else { return }
+ 
+         var rasterSource = RasterSource(id: sourceId)
+ 
+@@ -277,51 +422,641 @@ class ExpoMapboxNavigationViewController: UIViewController {
+     }
+ 
+     func setIsMuted(isMuted: Bool?){
+-        if(isMuted != nil){
+-            ExpoMapboxNavigationViewController.navigationProvider.routeVoiceController.speechSynthesizer.muted = isMuted!
+-        }
++        guard let isMuted else { return }
++        ExpoMapboxNavigationViewController.navigationProvider.routeVoiceController.speechSynthesizer.muted = isMuted
+     }
+ 
+     func setInitialLocation(location: CLLocationCoordinate2D, zoom: Double?){
          initialLocation = location
          initialLocationZoom = zoom
          let navigationMapView = navigationViewController?.navigationMapView
@@ -1427,18 +1461,38 @@ index 8f841df..d26c46f 100644
          }
      }
  
-@@ -301,6 +434,490 @@ class ExpoMapboxNavigationViewController: UIViewController {
-         }
-     }
- 
-+    func setFollowingPitch(followingPitch: Double?) {
-+        currentFollowingPitch = followingPitch
-+        guard let navigationMapView = navigationViewController?.navigationMapView,
-+              let mapboxMap = navigationMapView.mapView.mapboxMap,
-+              let pitch = followingPitch else { return }
-+        mapboxMap.setCamera(to: CameraOptions(pitch: pitch))
+-    func setFollowingZoom(followingZoom: Double?){
+-        let navigationMapView = navigationViewController?.navigationMapView
++    func setFollowingZoom(followingZoom: Double?) {
+         currentFollowingZoom = followingZoom
+-        if(navigationMapView != nil && followingZoom != nil){
+-            let newDataSource = MobileViewportDataSource(navigationMapView!.mapView)
+-            newDataSource.options.followingCameraOptions.zoomRange = followingZoom!...followingZoom!
+-            navigationMapView?.navigationCamera.viewportDataSource = newDataSource
++        applyFollowingCameraPreferences()
 +    }
 +
++    func setFollowingPitch(followingPitch: Double?) {
++        currentFollowingPitch = followingPitch
++        applyFollowingCameraPreferences()
++    }
++
++    /// Applies following zoom/pitch via NavigationCamera + MobileViewportDataSource (FollowingCameraOptions), not raw MapboxMap.setCamera.
++    private func applyFollowingCameraPreferences() {
++        guard let navigationMapView = navigationViewController?.navigationMapView else { return }
++        guard currentFollowingZoom != nil || currentFollowingPitch != nil else { return }
++        let newDataSource = MobileViewportDataSource(navigationMapView.mapView)
++        if let zoom = currentFollowingZoom {
++            newDataSource.options.followingCameraOptions.zoomRange = zoom...zoom
++        }
++        if let pitch = currentFollowingPitch {
++            let clamped = min(max(pitch, 0), 85)
++            newDataSource.options.followingCameraOptions.defaultPitch = clamped
+         }
++        navigationMapView.navigationCamera.viewportDataSource = newDataSource
+     }
+ 
+-    func update(){
 +    func setDrivingMode(mode: String?) {
 +        currentDrivingMode = mode ?? "adaptive"
 +        applySnapRoadNavigationChromeStyle()
@@ -1500,7 +1554,7 @@ index 8f841df..d26c46f 100644
 +    }
 +
 +    func stopActiveGuidance() {
-+        calculateRoutesTask?.cancel()
+         calculateRoutesTask?.cancel()
 +        Task { @MainActor in
 +            self.tripSession?.setToIdle()
 +        }
@@ -1508,12 +1562,86 @@ index 8f841df..d26c46f 100644
 +    }
 +
 +    func teardownEmbeddedNavigationUI() {
++        navigationViewController?.delegate = nil
++        if ExpoMapboxNavigationViewController.activeController === self {
++            ExpoMapboxNavigationViewController.activeController = nil
++        }
++        trafficCameraTapRecognizer?.delegate = nil
++        if let tap = trafficCameraTapRecognizer,
++           let mapView = navigationViewController?.navigationMapView?.mapView {
++            mapView.removeGestureRecognizer(tap)
++        }
++        trafficCameraTapRecognizer = nil
++        lastNavigationRoutes = nil
++
 +        if let nvc = navigationViewController {
 +            nvc.willMove(toParent: nil)
 +            nvc.view.removeFromSuperview()
 +            nvc.removeFromParent()
 +            navigationViewController = nil
 +        }
++    }
++
++    /// Shield ref text from the first `.image` component that carries a `shield` (primary → secondary).
++    private func sdkShieldPayload(from banner: MapboxDirections.VisualInstructionBanner?) -> [String: Any]? {
++        guard let banner else { return nil }
++        for vi in [banner.primaryInstruction, banner.secondaryInstruction].compactMap({ $0 }) {
++            for comp in vi.components {
++                if case let .image(image, _) = comp, let shield = image.shield {
++                    return ["text": shield.text]
++                }
++            }
++        }
++        return nil
++    }
++
++    /// Lane strip from **geometry** (upcoming intersection) — preferred when available.
++    private func sdkLanePayloads(from intersection: MapboxDirections.Intersection?) -> [[String: Any]]? {
++        guard let intersection,
++              let approach = intersection.approachLanes,
++              !approach.isEmpty else { return nil }
++        var rows: [[String: Any]] = []
++        for (idx, lane) in approach.enumerated() {
++            let inds = lane.descriptions
++            let active = intersection.preferredApproachLanes?.contains(idx) ?? false
++            let valid = intersection.usableApproachLanes?.contains(idx) ?? false
++            rows.append([
++                "indications": inds,
++                "active": active,
++                "valid": valid,
++            ])
++        }
++        return rows
++    }
++
++    /// Lane strip from banner **components** when the intersection has no `approachLanes`.
++    private func sdkLanePayloads(fromVisualBanner banner: MapboxDirections.VisualInstructionBanner?) -> [[String: Any]]? {
++        guard let primary = banner?.primaryInstruction else { return nil }
++        var rows: [[String: Any]] = []
++        for comp in primary.components {
++            if case let .lane(indications, isUsable, preferredDirection) = comp {
++                rows.append([
++                    "indications": indications.descriptions,
++                    "active": preferredDirection != nil,
++                    "valid": isUsable,
++                ])
++            }
++        }
++        return rows.isEmpty ? nil : rows
++    }
++
++    private func sdkUpcomingIntersectionDisplayName(_ intersection: MapboxDirections.Intersection?) -> String? {
++        guard let ix = intersection else { return nil }
++        if let n = ix.junction?.name, !n.isEmpty { return n }
++        if let n = ix.interchange?.name, !n.isEmpty { return n }
++        if let n = ix.tunnelName, !n.isEmpty { return n }
++        if let n = ix.tollCollection?.name, !n.isEmpty { return n }
++        return nil
++    }
++
++    private func sdkCurrentRoadName(from step: MapboxDirections.RouteStep) -> String? {
++        guard let names = step.names else { return nil }
++        return names.first { !$0.isEmpty }
 +    }
 +
 +    private func navProgressPayload(progressState: RouteProgressState) -> [String: Any] {
@@ -1550,16 +1678,35 @@ index 8f841df..d26c46f 100644
 +            out["thenInstruction"] = up.instructions
 +        }
 +        out["currentStepInstruction"] = step.instructions
++        if let road = sdkCurrentRoadName(from: step) {
++            out["currentRoadName"] = road
++        }
++        if let upcomingName = sdkUpcomingIntersectionDisplayName(stepProg.upcomingIntersection) {
++            out["upcomingIntersectionName"] = upcomingName
++        }
++        if let lanes = sdkLanePayloads(from: stepProg.upcomingIntersection)
++            ?? sdkLanePayloads(fromVisualBanner: visual) {
++            out["lanes"] = lanes
++        }
++        if let shield = sdkShieldPayload(from: visual) {
++            out["shield"] = shield
++        }
 +        return out
 +    }
-+
+ 
+-        if(currentCoordinates != nil){
+-            let waypoints = currentCoordinates!.enumerated().map {
+-                let index = $0
+-                let coordinate = $1
+-                var waypoint = Waypoint(coordinate: coordinate) 
+-                waypoint.separatesLegs = currentWaypointIndices == nil ? true : currentWaypointIndices!.contains(index)
+-                return waypoint
 +    func applySnapRoadRouteTheme() {
 +        // Belt-and-suspenders direct layer tint using the Maps style API. `try?` silently
 +        // no-ops if the layer ID doesn't exist on the user's SDK version. The primary
 +        // theming path is the `routeLineLayerWithIdentifier` / `routeCasingLineLayerWithIdentifier`
 +        // delegate callbacks on `ExpoMapboxNavigationViewController` (new SDK 3.x API).
-+        let theme = ExpoMapboxNavigationViewController.modeThemes[currentDrivingMode]
-+            ?? ExpoMapboxNavigationViewController.modeThemes["adaptive"]!
++        let theme = ExpoMapboxNavigationViewController.theme(for: currentDrivingMode)
 +        guard let mapView = navigationViewController?.navigationMapView?.mapView,
 +              let mapboxMap = mapView.mapboxMap else { return }
 +        let candidateLayerIds = [
@@ -1601,7 +1748,12 @@ index 8f841df..d26c46f 100644
 +
 +    /// Look up the current SnapRoad mode theme, falling back to the Adaptive palette.
 +    static func currentModeTheme(mode: String) -> SnapRoadModeTheme {
-+        return modeThemes[mode] ?? modeThemes["adaptive"]!
++        theme(for: mode)
++    }
++
++    /// Safe lookup — `adaptive` / `calm` always exist in `modeThemes`.
++    private static func theme(for drivingMode: String) -> SnapRoadModeTheme {
++        modeThemes[drivingMode] ?? modeThemes["adaptive"] ?? modeThemes["calm"]!
 +    }
 +
 +    /// Shared reference so `SnapRoadDayStyle` / `SnapRoadNightStyle` can read the active
@@ -1665,13 +1817,14 @@ index 8f841df..d26c46f 100644
 +                subview.isHidden = true
 +                subview.alpha = 0
 +                subview.isUserInteractionEnabled = false
-+            }
+             }
 +        }
 +    }
-+
+ 
+-            if(isUsingRouteMatchingApi){
+-                calculateMapMatchingRoutes(waypoints: waypoints)
 +    func applySnapRoadBannerTheme() {
-+        let theme = ExpoMapboxNavigationViewController.modeThemes[currentDrivingMode]
-+            ?? ExpoMapboxNavigationViewController.modeThemes["adaptive"]!
++        let theme = ExpoMapboxNavigationViewController.theme(for: currentDrivingMode)
 +
 +        let navVC = navigationViewController
 +        guard let navView = navVC?.navigationView else { return }
@@ -1686,7 +1839,8 @@ index 8f841df..d26c46f 100644
 +                topBg = UIColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 1) // #3B82F6
 +                topText = .white
 +                topAccent = UIColor(red: 0.93, green: 0.96, blue: 1.0, alpha: 1.0)
-+            } else {
+             } else {
+-                calculateRoutes(waypoints: waypoints)
 +                topBg = UIColor(red: 0.12, green: 0.25, blue: 0.65, alpha: 1) // #1E40AF
 +                topText = .white
 +                topAccent = UIColor(red: 0.38, green: 0.65, blue: 0.98, alpha: 1) // #60A5FA
@@ -1729,8 +1883,10 @@ index 8f841df..d26c46f 100644
 +            if let c = o.statsBorder { chromeBorder = c }
 +        }
 +        // Turn instructions + lane strip live on these SDK views (not just the container).
++        // NavigationViewController no longer exposes a dedicated `topBanner` property; the name
++        // collides with TopBannerViewControllerDelegate methods. Use the embedded child VC.
 +        if let nvc = navVC,
-+           let topBanner = nvc.topBanner as? TopBannerViewController {
++           let topBanner = nvc.children.compactMap({ $0 as? TopBannerViewController }).first {
 +            topBanner.instructionsBannerView.backgroundColor = topBg
 +            topBanner.instructionsBannerView.layer.cornerRadius = 18
 +            topBanner.instructionsBannerView.clipsToBounds = true
@@ -1786,6 +1942,10 @@ index 8f841df..d26c46f 100644
 +    }
 +
 +    private func updateTrafficCameraLayer() {
++        if !Thread.isMainThread {
++            DispatchQueue.main.async { [weak self] in self?.updateTrafficCameraLayer() }
++            return
++        }
 +        guard let mapView = navigationViewController?.navigationMapView?.mapView,
 +              let mapboxMap = mapView.mapboxMap else { return }
 +
@@ -1904,10 +2064,10 @@ index 8f841df..d26c46f 100644
 +                self?.onTrafficCameraTap?(["id": id, "name": name])
 +            case .failure:
 +                break
-+            }
-+        }
-+    }
-+
+             }
+         }
+     }
+ 
 +    private func navigationStyles() -> [MapboxNavigationUIKit.Style] {
 +        // Register the active controller so the SnapRoad style subclasses can pull the
 +        // current driving mode during `apply()`. Using a weak static avoids retain cycles.
@@ -1915,12 +2075,23 @@ index 8f841df..d26c46f 100644
 +        return [SnapRoadDayStyle(), SnapRoadNightStyle()]
 +    }
 +
-     func update(){
-         calculateRoutesTask?.cancel()
- 
-@@ -322,6 +939,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
-     }
- 
++    func update(){
++        calculateRoutesTask?.cancel()
++
++        guard let coordinates = currentCoordinates, coordinates.count >= 2 else { return }
++        let waypoints = coordinates.enumerated().map { index, coordinate in
++            var waypoint = Waypoint(coordinate: coordinate)
++            waypoint.separatesLegs = currentWaypointIndices?.contains(index) ?? true
++            return waypoint
++        }
++
++        if isUsingRouteMatchingApi {
++            calculateMapMatchingRoutes(waypoints: waypoints)
++        } else {
++            calculateRoutes(waypoints: waypoints)
++        }
++    }
++
      func calculateRoutes(waypoints: Array<Waypoint>){
 +        guard let routingProvider else {
 +            onRouteFailedToLoad?([
@@ -1932,16 +2103,34 @@ index 8f841df..d26c46f 100644
          let routeOptions = NavigationRouteOptions(
              waypoints: waypoints, 
              profileIdentifier: currentRouteProfile != nil ? ProfileIdentifier(rawValue: currentRouteProfile!) : nil,
-@@ -335,7 +959,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -334,20 +1069,34 @@ class ExpoMapboxNavigationViewController: UIViewController {
+             distanceUnit: currentLocale.usesMetricSystem ? LengthFormatter.Unit.meter : LengthFormatter.Unit.mile
          )
  
-         calculateRoutesTask = Task {
+-        calculateRoutesTask = Task {
 -            switch await self.routingProvider!.calculateRoutes(options: routeOptions).result {
++        calculateRoutesTask = Task { [weak self] in
++            guard let self else { return }
 +            switch await routingProvider.calculateRoutes(options: routeOptions).result {
              case .failure(let error):
-                 onRouteFailedToLoad?([
-                     "errorMessage": error.localizedDescription
-@@ -348,6 +972,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
+-                onRouteFailedToLoad?([
+-                    "errorMessage": error.localizedDescription
+-                ])
++                guard !Task.isCancelled else { return }
++                await MainActor.run {
++                    self.onRouteFailedToLoad?([
++                        "errorMessage": error.localizedDescription
++                    ])
++                }
+                 print(error.localizedDescription)
+             case .success(let navigationRoutes):
+-                onRoutesCalculated(navigationRoutes: navigationRoutes)
++                guard !Task.isCancelled else { return }
++                await MainActor.run {
++                    self.onRoutesCalculated(navigationRoutes: navigationRoutes)
++                }
+             }
+         }
      }
  
      func calculateMapMatchingRoutes(waypoints: Array<Waypoint>){
@@ -1955,16 +2144,36 @@ index 8f841df..d26c46f 100644
          let matchOptions = NavigationMatchOptions(
              waypoints: waypoints, 
              profileIdentifier: currentRouteProfile != nil ? ProfileIdentifier(rawValue: currentRouteProfile!) : nil,
-@@ -358,7 +989,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -357,15 +1106,22 @@ class ExpoMapboxNavigationViewController: UIViewController {
+         matchOptions.locale = currentLocale
  
  
-         calculateRoutesTask = Task {
+-        calculateRoutesTask = Task {
 -            switch await self.routingProvider!.calculateRoutes(options: matchOptions).result {
++        calculateRoutesTask = Task { [weak self] in
++            guard let self else { return }
 +            switch await routingProvider.calculateRoutes(options: matchOptions).result {
              case .failure(let error):
-                 onRouteFailedToLoad?([
-                     "errorMessage": error.localizedDescription
-@@ -406,6 +1037,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
+-                onRouteFailedToLoad?([
+-                    "errorMessage": error.localizedDescription
+-                ])
++                guard !Task.isCancelled else { return }
++                await MainActor.run {
++                    self.onRouteFailedToLoad?([
++                        "errorMessage": error.localizedDescription
++                    ])
++                }
+                 print(error.localizedDescription)
+             case .success(let navigationRoutes):
+-                onRoutesCalculated(navigationRoutes: navigationRoutes)
++                guard !Task.isCancelled else { return }
++                await MainActor.run {
++                    self.onRoutesCalculated(navigationRoutes: navigationRoutes)
++                }
+             }
+         }
+     }
+@@ -406,6 +1162,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
      }
  
      func onRoutesCalculated(navigationRoutes: NavigationRoutes){
@@ -1972,10 +2181,12 @@ index 8f841df..d26c46f 100644
          onRoutesLoaded?([
              "routes": [
                  "mainRoute": convertRoute(route: navigationRoutes.mainRoute.route),
-@@ -413,6 +1045,23 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -413,77 +1170,169 @@ class ExpoMapboxNavigationViewController: UIViewController {
              ]
          ])
  
+-        let topBanner = TopBannerViewController()
+-        topBanner.instructionsBannerView.distanceFormatter.locale = currentLocale
 +        guard let mapboxNavigation else {
 +            onRouteFailedToLoad?([
 +                "errorMessage": "Mapbox navigation unavailable."
@@ -1993,10 +2204,10 @@ index 8f841df..d26c46f 100644
 +            return
 +        }
 +
-         let topBanner = TopBannerViewController()
-         topBanner.instructionsBannerView.distanceFormatter.locale = currentLocale
++        let maneuverTopBanner = TopBannerViewController()
++        maneuverTopBanner.instructionsBannerView.distanceFormatter.locale = currentLocale
          let bottomBanner = BottomBannerViewController()
-@@ -420,10 +1069,10 @@ class ExpoMapboxNavigationViewController: UIViewController {
+         bottomBanner.distanceFormatter.locale = currentLocale
          bottomBanner.dateFormatter.locale = currentLocale
  
          let navigationOptions = NavigationOptions(
@@ -2005,26 +2216,63 @@ index 8f841df..d26c46f 100644
              voiceController: ExpoMapboxNavigationViewController.navigationProvider.routeVoiceController,
              eventsManager: ExpoMapboxNavigationViewController.navigationProvider.eventsManager(),
 -            styles: [DayStyle()],
+-            topBanner: topBanner,
 +            styles: navigationStyles(),
-             topBanner: topBanner,
++            topBanner: maneuverTopBanner,
              bottomBanner: bottomBanner
          )
-@@ -447,26 +1096,71 @@ class ExpoMapboxNavigationViewController: UIViewController {
-         navigationViewController.showsContinuousAlternatives = currentDisableAlternativeRoutes != true
-         navigationViewController.usesNightStyleWhileInTunnel = false
-         navigationViewController.automaticallyAdjustsStyleForTimeOfDay = false
+ 
+         let newNavigationControllerRequired = navigationViewController == nil
+ 
+-        if(newNavigationControllerRequired){
++        if newNavigationControllerRequired {
+             navigationViewController = NavigationViewController(
+                 navigationRoutes: navigationRoutes,
+                 navigationOptions: navigationOptions
+             )
+         } else {
+-            navigationViewController!.prepareViewLoading(
++            guard let existingNVC = navigationViewController else {
++                onRouteFailedToLoad?([
++                    "errorMessage": "Navigation UI not available to refresh route."
++                ])
++                return
++            }
++            existingNVC.prepareViewLoading(
+                 navigationRoutes: navigationRoutes,
+                 navigationOptions: navigationOptions
+             )
+         }
+ 
+-        let navigationViewController = navigationViewController!
++        guard let embeddedNVC = navigationViewController else {
++            onRouteFailedToLoad?([
++                "errorMessage": "Navigation UI unavailable."
++            ])
++            return
++        }
+ 
+-        navigationViewController.showsContinuousAlternatives = currentDisableAlternativeRoutes != true
+-        navigationViewController.usesNightStyleWhileInTunnel = false
+-        navigationViewController.automaticallyAdjustsStyleForTimeOfDay = false
++        embeddedNVC.showsContinuousAlternatives = currentDisableAlternativeRoutes != true
++        embeddedNVC.usesNightStyleWhileInTunnel = false
++        embeddedNVC.automaticallyAdjustsStyleForTimeOfDay = false
 +        applySnapRoadNavigationChromeStyle()
  
-         let navigationMapView = navigationViewController.navigationMapView
+-        let navigationMapView = navigationViewController.navigationMapView
 -        navigationMapView!.puckType = .puck2D(.navigationDefault)
++        let navigationMapView = embeddedNVC.navigationMapView
 +        navigationMapView?.puckType = .puck2D(.navigationDefault)
++        applyFollowingCameraPreferences()
  
 -        if(initialLocation != nil && newNavigationControllerRequired){
 -            navigationMapView!.mapView.mapboxMap.setCamera(to: CameraOptions(center: initialLocation!, zoom: initialLocationZoom ?? 15))
-+        if initialLocation != nil && newNavigationControllerRequired,
++        if newNavigationControllerRequired,
++           let initLoc = initialLocation,
 +           let navMap = navigationMapView,
 +           let mapboxMap = navMap.mapView.mapboxMap {
-+            mapboxMap.setCamera(to: CameraOptions(center: initialLocation!, zoom: initialLocationZoom ?? 15))
++            mapboxMap.setCamera(to: CameraOptions(center: initLoc, zoom: initialLocationZoom ?? 15))
          }
  
 -        let style = currentMapStyle != nil ? StyleURI(rawValue: currentMapStyle!) : StyleURI.streets
@@ -2032,6 +2280,7 @@ index 8f841df..d26c46f 100644
 -            navigationMapView!.localizeLabels(locale: self.currentLocale)
 -            do{
 -                try navigationMapView!.mapView.mapboxMap.localizeLabels(into: self.currentLocale)
+-            } catch {}
 +        if let rawStyle = currentMapStyle, let style = StyleURI(rawValue: rawStyle),
 +           let navMap = navigationMapView,
 +           let mapboxMap = navMap.mapView.mapboxMap {
@@ -2042,9 +2291,8 @@ index 8f841df..d26c46f 100644
 +                    if let mm = navMap.mapView.mapboxMap {
 +                        try mm.localizeLabels(into: self.currentLocale)
 +                    }
-             } catch {}
-             self.addCustomRasterLayer()
--        })
++                } catch {}
++                self.addCustomRasterLayer()
 +                self.applySnapRoadMapChrome()
 +                self.applySnapRoadBasemapConfig()
 +                self.applySnapRoadRouteTheme()
@@ -2059,13 +2307,14 @@ index 8f841df..d26c46f 100644
 +                    try mapboxMap.localizeLabels(into: self.currentLocale)
 +                } catch {}
 +            }
-+            self.addCustomRasterLayer()
+             self.addCustomRasterLayer()
+-        })
 +            self.applySnapRoadBasemapConfig()
 +            self.applySnapRoadRouteTheme()
 +            self.snapRoadRedrawRoutes()
 +        }
          
-+        if let cancelButton = navigationViewController.navigationView.bottomBannerContainerView.findViews(subclassOf: CancelButton.self).first {
++        if let cancelButton = embeddedNVC.navigationView.bottomBannerContainerView.findViews(subclassOf: CancelButton.self).first {
 +            cancelButton.addTarget(self, action: #selector(cancelButtonClicked), for: .touchUpInside)
 +        }
  
@@ -2090,16 +2339,34 @@ index 8f841df..d26c46f 100644
 +            self?.updateTrafficCameraLayer()
 +        }
  
-         navigationViewController.delegate = self
-         addChild(navigationViewController)
-@@ -479,11 +1173,26 @@ class ExpoMapboxNavigationViewController: UIViewController {
-             navigationViewController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: 0),
-         ])
-         didMove(toParent: self)
+-        navigationViewController.delegate = self
+-        addChild(navigationViewController)
+-        view.addSubview(navigationViewController.view)
+-        navigationViewController.view.translatesAutoresizingMaskIntoConstraints = false
+-        NSLayoutConstraint.activate([
+-            navigationViewController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 0),
+-            navigationViewController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 0),
+-            navigationViewController.view.topAnchor.constraint(equalTo: view.topAnchor, constant: 0),
+-            navigationViewController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: 0),
+-        ])
+-        didMove(toParent: self)
 -        mapboxNavigation!.tripSession().startActiveGuidance(with: navigationRoutes, startLegIndex: 0)
++        embeddedNVC.delegate = self
++        if newNavigationControllerRequired {
++            addChild(embeddedNVC)
++            view.addSubview(embeddedNVC.view)
++            embeddedNVC.view.translatesAutoresizingMaskIntoConstraints = false
++            NSLayoutConstraint.activate([
++                embeddedNVC.view.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 0),
++                embeddedNVC.view.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 0),
++                embeddedNVC.view.topAnchor.constraint(equalTo: view.topAnchor, constant: 0),
++                embeddedNVC.view.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: 0),
++            ])
++            didMove(toParent: self)
++        }
 +        mapboxNavigation.tripSession().startActiveGuidance(with: navigationRoutes, startLegIndex: 0)
-     }
- }
++    }
++}
 +
 +extension ExpoMapboxNavigationViewController: UIGestureRecognizerDelegate {
 +    func gestureRecognizer(
@@ -2107,8 +2374,8 @@ index 8f841df..d26c46f 100644
 +        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
 +    ) -> Bool {
 +        true
-+    }
-+}
+     }
+ }
 +
  extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
      func navigationViewController(_ navigationViewController: NavigationViewController, didRerouteAlong route: Route) {
@@ -2120,7 +2387,7 @@ index 8f841df..d26c46f 100644
          onRoutesLoaded?([
              "routes": [
                  "mainRoute": convertRoute(route: route),
-@@ -496,6 +1205,48 @@ extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
+@@ -496,6 +1345,48 @@ extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
          _ navigationViewController: NavigationViewController,
          byCanceling canceled: Bool
      ) { }
@@ -2169,7 +2436,7 @@ index 8f841df..d26c46f 100644
  }
  
  extension UIView {
-@@ -507,3 +1258,34 @@ extension UIView {
+@@ -507,3 +1398,34 @@ extension UIView {
          return subviews + subviews.flatMap { $0.recursiveSubviews }
      }
  }

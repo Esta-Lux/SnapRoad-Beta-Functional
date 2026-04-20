@@ -1,3 +1,7 @@
+/**
+ * Augments `@badatgil/expo-mapbox-navigation` — keep `SdkNavProgressEvent` aligned with
+ * `src/navigation/sdkNavBridgePayload.ts` and native `navProgressPayload` implementations.
+ */
 declare module '@badatgil/expo-mapbox-navigation' {
   type SdkRouteShapePoint = { latitude: number; longitude: number };
   type SdkRoutesNative = {
@@ -13,9 +17,42 @@ declare module '@badatgil/expo-mapbox-navigation' {
     alternativeRoutes: unknown[];
   };
 
+  /** Same shape as `SdkNavProgressEvent` / `SdkProgressPayload` in `sdkNavBridgePayload.ts`. */
+  export type SdkNavProgressLane = {
+    indications: string[];
+    active: boolean;
+    valid: boolean;
+  };
+
+  export type SdkNavProgressShield = {
+    text: string;
+    imageBase64?: string;
+  };
+
+  export type SdkNavProgressEvent = {
+    distanceRemaining: number;
+    distanceTraveled: number;
+    durationRemaining: number;
+    fractionTraveled: number;
+    legIndex?: number;
+    stepIndex?: number;
+    primaryInstruction?: string;
+    secondaryInstruction?: string;
+    maneuverType?: string;
+    maneuverDirection?: string;
+    distanceToNextManeuverMeters?: number;
+    speedLimitMps?: number;
+    thenInstruction?: string;
+    currentStepInstruction?: string;
+    upcomingIntersectionName?: string;
+    currentRoadName?: string;
+    lanes?: SdkNavProgressLane[];
+    shield?: SdkNavProgressShield | null;
+  };
+
   export type MapboxNavigationViewRef = {
     recenterMap: () => void | Promise<void>;
-    stopNavigation?: () => void | Promise<void>;
+    stopNavigation: () => void | Promise<void>;
   };
 
   export type MapboxNavigationViewProps = {
@@ -46,19 +83,7 @@ declare module '@badatgil/expo-mapbox-navigation' {
      */
     navChromeThemeJson?: string;
     navigationLogicOnly?: boolean;
-    onRouteProgressChanged?: (event: {
-      nativeEvent: {
-        distanceRemaining: number;
-        distanceTraveled: number;
-        durationRemaining: number;
-        fractionTraveled: number;
-        legIndex?: number;
-        stepIndex?: number;
-        primaryInstruction?: string;
-        maneuverType?: string;
-        distanceToNextManeuverMeters?: number;
-      };
-    }) => void;
+    onRouteProgressChanged?: (event: { nativeEvent: SdkNavProgressEvent }) => void;
     onCancelNavigation?: () => void;
     onWaypointArrival?: (event: { nativeEvent: Record<string, unknown> | undefined }) => void;
     onFinalDestinationArrival?: () => void;

@@ -69,13 +69,12 @@ export function navLogicSdkEnabled(): boolean {
  * Set `EXPO_PUBLIC_NAV_FULLSCREEN_NATIVE=1` to switch to the full-screen Mapbox UI.
  * Set `EXPO_PUBLIC_NAV_FULLSCREEN_NATIVE=0` to keep the hybrid RN map + headless SDK.
  *
- * **Default on** when the native Navigation SDK is available: full-screen native Mapbox
- * owns the map, puck, and turn UI (same as classic native nav), while SnapRoad still
- * injects OHGO / POI overlays and branded banner colors via props.
+ * **Default off:** headless Navigation SDK + branded JS map (route, puck, turn card,
+ * camera). Set `EXPO_PUBLIC_NAV_FULLSCREEN_NATIVE=1` for full-screen native Mapbox UI.
  */
 export function navNativeFullScreenEnabled(): boolean {
   if (!navNativeSdkEnabled()) return false;
-  return envBool('EXPO_PUBLIC_NAV_FULLSCREEN_NATIVE', true);
+  return envBool('EXPO_PUBLIC_NAV_FULLSCREEN_NATIVE', false);
 }
 
 /** Release-safe nav diagnostics overlay (HUD) — set `EXPO_PUBLIC_NAV_LOGIC_DEBUG=1` in EAS env and rebuild. */

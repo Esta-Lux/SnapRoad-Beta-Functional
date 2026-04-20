@@ -1,6 +1,14 @@
 import type { DirectionsStep } from '../lib/directions';
 import type { Coordinate } from '../types';
-import type { NavigationProgress, NavStep, NavBannerModel } from './navModel';
+import type {
+  NavigationProgress,
+  NavStep,
+  NavBannerModel,
+  LaneIndication,
+  LaneInfo,
+  RoadShield,
+  RoadSignal,
+} from './navModel';
 import {
   coordinateAtCumulativeMeters,
   haversineMeters,
@@ -18,6 +26,52 @@ import {
   resolveManeuverKind,
 } from './navStepsFromDirections';
 import { logNavVerify } from './navLogicDebug';
+
+function roadSignalFromSdkPayload(progress: SdkProgressPayload, fallback: RoadSignal | undefined): RoadSignal {
+  const n = progress.upcomingIntersectionName?.trim();
+  const r = progress.currentRoadName?.trim();
+  if (n) return { kind: 'named_intersection', label: n };
+  if (r) return { kind: 'road_name', label: r };
+  return fallback ?? { kind: 'none', label: '' };
+}
+
+const LANE_INDICATION_ALIASES: Record<string, LaneIndication> = {
+  left: 'left',
+  slight_left: 'slight_left',
+  slightleft: 'slight_left',
+  'slight left': 'slight_left',
+  right: 'right',
+  slight_right: 'slight_right',
+  slightright: 'slight_right',
+  'slight right': 'slight_right',
+  straight: 'straight',
+  uturn: 'uturn',
+  'u-turn': 'uturn',
+};
+
+function mapLaneIndicationString(s: string): LaneIndication | null {
+  const k = s.trim().toLowerCase().replace(/\s+/g, '_');
+  return LANE_INDICATION_ALIASES[k] ?? LANE_INDICATION_ALIASES[s.trim().toLowerCase()] ?? null;
+}
+
+function mapSdkLanesToLaneInfo(raw: NonNullable<SdkProgressPayload['lanes']>): LaneInfo[] {
+  return raw.map((l) => {
+    const indications = l.indications
+      .map((x) => mapLaneIndicationString(String(x)))
+      .filter((x): x is LaneIndication => x != null);
+    return {
+      indications: indications.length ? indications : ['straight' as LaneIndication],
+      displayIndication: undefined,
+      active: l.active,
+      preferred: l.valid,
+    };
+  });
+}
+
+function mapSdkShieldPayload(sh: NonNullable<NonNullable<SdkProgressPayload['shield']>>): RoadShield {
+  const t = sh.text.trim();
+  return { network: 'sdk', ref: t, displayRef: t };
+}
 
 /**
  * iOS emits `String(describing: step.maneuverType)` and
@@ -447,6 +501,26 @@ export function buildNavigationProgressFromSdk(args: {
 
   const normalizedRawType = normalizeSdkManeuverType(progress.maneuverType);
   const normalizedRawModifier = normalizeSdkManeuverDirection(progress.maneuverDirection);
+
+  const sdkRoadSignalCandidate = roadSignalFromSdkPayload(progress, nextBaseStep?.signal);
+  const signalForStep: RoadSignal = preferRouteStepFields
+    ? nextBaseStep?.signal ?? { kind: 'none', label: '' }
+    : sdkRoadSignalCandidate.kind !== 'none'
+      ? sdkRoadSignalCandidate
+      : nextBaseStep?.signal ?? { kind: 'none', label: '' };
+
+  const lanesForStep: LaneInfo[] = preferRouteStepFields
+    ? nextBaseStep?.lanes ?? []
+    : progress.lanes?.length
+      ? mapSdkLanesToLaneInfo(progress.lanes)
+      : nextBaseStep?.lanes ?? [];
+
+  const shieldsForStep: RoadShield[] = preferRouteStepFields
+    ? nextBaseStep?.shields ?? []
+    : progress.shield
+      ? [mapSdkShieldPayload(progress.shield)]
+      : nextBaseStep?.shields ?? [];
+
   const nextStep: NavStep | null = {
     index: nextBaseStep?.index ?? idx,
     segmentIndex: nextBaseStep?.segmentIndex ?? Math.min(idx, Math.max(0, polyline.length - 2)),
@@ -465,9 +539,9 @@ export function buildNavigationProgressFromSdk(args: {
       '',
     streetName: nextBaseStep?.streetName ?? ds?.name ?? null,
     destinationRoad: nextBaseStep?.destinationRoad ?? null,
-    shields: nextBaseStep?.shields ?? [],
-    signal: nextBaseStep?.signal ?? { kind: 'none', label: '' },
-    lanes: nextBaseStep?.lanes ?? [],
+    shields: shieldsForStep,
+    signal: signalForStep,
+    lanes: lanesForStep,
     roundaboutExitNumber: nextBaseStep?.roundaboutExitNumber ?? null,
     distanceMetersFromStart: nextBaseStep?.distanceMetersFromStart ?? 0,
     distanceMeters: nextBaseStep?.distanceMeters ?? ds?.distanceMeters ?? distNext,
@@ -498,9 +572,9 @@ export function buildNavigationProgressFromSdk(args: {
     primaryDistanceMeters: distNext,
     primaryStreet: nextBaseStep?.streetName ?? ds?.name ?? null,
     secondaryInstruction: secondaryText ?? null,
-    signal: nextBaseStep?.signal,
-    lanes: nextBaseStep?.lanes ?? [],
-    shields: nextBaseStep?.shields ?? [],
+    signal: signalForStep,
+    lanes: lanesForStep,
+    shields: shieldsForStep,
     maneuverKind: bannerManeuverKind,
     roundaboutExitNumber: nextBaseStep?.roundaboutExitNumber ?? null,
   };

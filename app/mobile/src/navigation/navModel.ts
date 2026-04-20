@@ -15,6 +15,10 @@ export type RoadSignalKind =
   | 'railway_crossing'
   | 'speed_camera'
   | 'toll_booth'
+  /** Native banner: named intersection ahead */
+  | 'named_intersection'
+  /** Native banner: current road name */
+  | 'road_name'
   | 'none';
 
 export interface RoadSignal {
