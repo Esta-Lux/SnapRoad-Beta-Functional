@@ -33,5 +33,16 @@
     "esbuild": "0.27.5",
     "tsx": "4.21.0",
     "typescript": "5.9.3"
+  },
+  "overrides": {
+    "fast-xml-parser": "^5.7.1",
+    "mailparser": "^3.9.8",
+    "nodemailer": "^8.0.5",
+    "better-auth": "$better-auth",
+    "drizzle-orm": "$drizzle-orm",
+    "fastify": "$fastify",
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.25.0"
+    }
   }
 }
