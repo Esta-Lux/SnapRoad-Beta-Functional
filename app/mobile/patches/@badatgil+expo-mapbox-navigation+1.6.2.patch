@@ -52,7 +52,7 @@ index 54702f8..2886b10 100644
    }
  }
 diff --git a/node_modules/@badatgil/expo-mapbox-navigation/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationView.kt b/node_modules/@badatgil/expo-mapbox-navigation/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationView.kt
-index 4e667fa..f33b3e5 100644
+index 4e667fa..0b8eeaa 100644
 --- a/node_modules/@badatgil/expo-mapbox-navigation/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationView.kt
 +++ b/node_modules/@badatgil/expo-mapbox-navigation/android/src/main/java/expo/modules/mapboxnavigation/ExpoMapboxNavigationView.kt
 @@ -3,7 +3,11 @@ package expo.modules.mapboxnavigation
@@ -101,16 +101,18 @@ index 4e667fa..f33b3e5 100644
  import com.mapbox.navigation.ui.components.maneuver.model.ManeuverPrimaryOptions
  import com.mapbox.navigation.ui.components.maneuver.model.ManeuverViewOptions
  import com.mapbox.navigation.ui.components.maneuver.view.MapboxManeuverView
-@@ -94,6 +107,8 @@ import expo.modules.kotlin.AppContext
+@@ -94,6 +107,10 @@ import expo.modules.kotlin.AppContext
  import expo.modules.kotlin.viewevent.EventDispatcher
  import expo.modules.kotlin.views.ExpoView
  import java.util.Locale
 +import org.json.JSONArray
 +import org.json.JSONObject
++import kotlin.math.max
++import kotlin.math.roundToInt
  
  val PIXEL_DENSITY = Resources.getSystem().displayMetrics.density
  
-@@ -106,9 +121,10 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+@@ -106,9 +123,10 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
      // and gets null. Not set automatically for some reason.
      // https://github.com/mapbox/mapbox-navigation-android/blob/188d4781b31bb328733eeca593edc8087e38d915/ui-utils/src/main/java/com/mapbox/navigation/ui/utils/internal/lifecycle/ViewLifecycleRegistry.kt#L67
      init {
@@ -124,7 +126,7 @@ index 4e667fa..f33b3e5 100644
      }
  
      private var isMuted = false
-@@ -125,8 +141,11 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+@@ -125,8 +143,11 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
      private var currentPlaceCustomRasterLayerAbove: String? = null
      private var currentDisableAlternativeRoutes: Boolean? = null
      private var currentFollowingZoom: Double? = null
@@ -136,7 +138,7 @@ index 4e667fa..f33b3e5 100644
  
      private val onRouteProgressChanged by EventDispatcher()
      private val onCancelNavigation by EventDispatcher()
-@@ -136,6 +155,17 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+@@ -136,6 +157,17 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
      private val onUserOffRoute by EventDispatcher()
      private val onRoutesLoaded by EventDispatcher()
      private val onRouteFailedToLoad by EventDispatcher()
@@ -154,7 +156,7 @@ index 4e667fa..f33b3e5 100644
  
      private val mapboxNavigation = MapboxNavigationApp.current()
      private var mapboxStyle: Style? = null
-@@ -263,9 +293,20 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+@@ -263,9 +295,20 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                          }
                  )
              }
@@ -178,7 +180,7 @@ index 4e667fa..f33b3e5 100644
  
      private val routesRequestCallback =
              object : NavigationRouterCallback {
-@@ -297,13 +338,20 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+@@ -297,13 +340,20 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
      private val routesObserver =
              object : RoutesObserver {
                  override fun onRoutesChanged(result: RoutesUpdatedResult) {
@@ -200,7 +202,7 @@ index 4e667fa..f33b3e5 100644
                                                              ),
                                                      "alternativeRoutes" to
                                                              result.navigationRoutes.drop(1).map {
-@@ -313,24 +361,38 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+@@ -313,24 +363,38 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                              )
                      )
  
@@ -256,7 +258,7 @@ index 4e667fa..f33b3e5 100644
                          }
                      }
  
-@@ -338,67 +400,55 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+@@ -338,67 +402,56 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                      speechApi.cancel()
                      voiceInstructionsPlayer.clear()
  
@@ -295,16 +297,15 @@ index 4e667fa..f33b3e5 100644
              object : RouteProgressObserver {
                  override fun onRouteProgressChanged(routeProgress: RouteProgress) {
 -                    // Handle viewport data source
--                    viewportDataSource.onRouteProgressChanged(routeProgress)
--                    viewportDataSource.evaluate()
-+                    if (!navigationLogicOnly) {
-+                        viewportDataSource.onRouteProgressChanged(routeProgress)
-+                        viewportDataSource.evaluate()
++                    // Keep viewport + camera in sync for RN mirror even in headless (`navigationLogicOnly`).
+                     viewportDataSource.onRouteProgressChanged(routeProgress)
+                     viewportDataSource.evaluate()
  
 -                    // Handle route lines
 -                    routeLineApi.updateWithRouteProgress(routeProgress) { result ->
 -                        mapboxStyle?.let { routeLineView.renderRouteLineUpdate(it, result) }
 -                    }
++                    if (!navigationLogicOnly) {
 +                        routeLineApi.updateWithRouteProgress(routeProgress) { result ->
 +                            mapboxStyle?.let { routeLineView.renderRouteLineUpdate(it, result) }
 +                        }
@@ -362,7 +363,7 @@ index 4e667fa..f33b3e5 100644
                  }
              }
  
-@@ -406,13 +456,25 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+@@ -406,13 +459,29 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
              object : LocationObserver {
                  override fun onNewLocationMatcherResult(
                          locationMatcherResult: LocationMatcherResult
@@ -383,7 +384,11 @@ index 4e667fa..f33b3e5 100644
 +                }
                  override fun onNewRawLocation(rawLocation: com.mapbox.common.location.Location) {
 -                    // Update puck location
-+                    if (navigationLogicOnly) return
++                    if (navigationLogicOnly) {
++                        viewportDataSource.onLocationChanged(rawLocation)
++                        viewportDataSource.evaluate()
++                        return
++                    }
                      navigationLocationProvider.changePosition(
                              location = rawLocation,
                      )
@@ -391,7 +396,7 @@ index 4e667fa..f33b3e5 100644
                      viewportDataSource.onLocationChanged(rawLocation)
                      viewportDataSource.evaluate()
                  }
-@@ -454,6 +516,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+@@ -454,6 +523,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
          return MapView(context).apply {
              setId(id)
              parent.addView(this)
@@ -400,7 +405,7 @@ index 4e667fa..f33b3e5 100644
  
              mapboxMap.loadStyle(Style.MAPBOX_STREETS) { style: Style -> mapboxStyle = style }
  
-@@ -852,12 +916,14 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+@@ -852,12 +923,14 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
      private fun onRoutesReady(routes: List<NavigationRoute>) {
          mapboxNavigation?.setNavigationRoutes(routes)
          mapboxNavigation?.startTripSession(withForegroundService = false)
@@ -421,7 +426,7 @@ index 4e667fa..f33b3e5 100644
      }
  
      @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
-@@ -955,14 +1021,457 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+@@ -955,14 +1028,509 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
      @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
      fun setFollowingZoom(followingZoom: Double?) {
          currentFollowingZoom = followingZoom
@@ -504,6 +509,29 @@ index 4e667fa..f33b3e5 100644
 +        voiceInstructionsPlayer.clear()
 +    }
 +
++    /** Locale-aware distance string for RN turn card mirror. */
++    private fun snaproadFormatDistanceMeters(meters: Double): String {
++        return try {
++            MapboxDistanceFormatter(distanceFormatter).formatDistance(meters).toString()
++        } catch (_: Throwable) {
++            val useMetric =
++                    try {
++                        val c = currentLocale.country.uppercase()
++                        c != "US" && c != "LR" && c != "MM"
++                    } catch (_: Throwable) {
++                        true
++                    }
++            if (useMetric) {
++                if (meters >= 1000) String.format(currentLocale, "%.1f km", meters / 1000.0)
++                else "${meters.roundToInt()} m"
++            } else {
++                val ft = meters * 3.28084
++                if (ft < 1000) "${max(1, ft.roundToInt())} ft"
++                else String.format(currentLocale, "%.1f mi", meters / 1609.34)
++            }
++        }
++    }
++
 +    private fun navProgressPayload(routeProgress: RouteProgress): Map<String, Any> {
 +        val m =
 +                mutableMapOf<String, Any>(
@@ -532,6 +560,35 @@ index 4e667fa..f33b3e5 100644
 +                first?.sub?.text?.let { m["thenInstruction"] = it }
 +            }
 +            stepProg.step?.instruction()?.let { m["currentStepInstruction"] = it }
++
++            val distMeters = stepProg.distanceRemaining.toDouble()
++            if (distMeters.isFinite() && distMeters > 0) {
++                val fd = snaproadFormatDistanceMeters(distMeters)
++                m["primaryDistanceFormatted"] = fd
++                m["formattedDistance"] = fd
++                m["formattedDistanceUnit"] = ""
++            }
++
++            val cs = mapboxMap.cameraState
++            val c = cs.center
++            m["cameraState"] =
++                    mapOf(
++                            "center" to
++                                    mapOf(
++                                            "latitude" to c.latitude(),
++                                            "longitude" to c.longitude(),
++                                    ),
++                            "zoom" to cs.zoom,
++                            "pitch" to cs.pitch,
++                            "bearing" to cs.bearing,
++                            "padding" to
++                                    mapOf(
++                                            "paddingTop" to cs.padding.top,
++                                            "paddingBottom" to cs.padding.bottom,
++                                            "paddingLeft" to cs.padding.left,
++                                            "paddingRight" to cs.padding.right,
++                                    ),
++                    )
 +        } catch (_: Throwable) {
 +            // optional enrichment — keep core progress fields
 +        }
@@ -881,7 +938,7 @@ index 4e667fa..f33b3e5 100644
      fun addCustomRasterLayer() {
          val style = mapboxMap.getStyle() ?: return
  
-@@ -1004,19 +1513,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+@@ -1004,19 +1572,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
          ) // Initial volume based on current isMuted state
          speechApi = MapboxSpeechApi(context, currentLocale.toLanguageTag())
  
@@ -903,7 +960,7 @@ index 4e667fa..f33b3e5 100644
          val distanceFormatter =
                  DistanceFormatterOptions.Builder(context).locale(currentLocale).build()
          maneuverApi = MapboxManeuverApi(MapboxDistanceFormatter(distanceFormatter))
-@@ -1037,11 +1535,35 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
+@@ -1037,11 +1594,35 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
              mapboxNavigation?.cancelRouteRequest(currentRoutesRequestId!!)
          }
  
@@ -1121,7 +1178,7 @@ index 965414e..8a0780a 100644
    }
  }
 diff --git a/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift b/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
-index 8f841df..45f9ef7 100644
+index 8f841df..b39a76b 100644
 --- a/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
 +++ b/node_modules/@badatgil/expo-mapbox-navigation/ios/ExpoMapboxNavigationView.swift
 @@ -4,6 +4,9 @@ import MapboxMaps
@@ -1164,7 +1221,7 @@ index 8f841df..45f9ef7 100644
  class ExpoMapboxNavigationViewController: UIViewController {
      static let navigationProvider: MapboxNavigationProvider = MapboxNavigationProvider(coreConfig: CoreConfig(routingConfig: RoutingConfig(fasterRouteDetectionConfig: Optional<FasterRouteDetectionConfig>.none),locationSource: .live ))
      var mapboxNavigation: MapboxNavigation? = nil
-@@ -59,9 +68,73 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -59,9 +68,75 @@ class ExpoMapboxNavigationViewController: UIViewController {
      var currentPlaceCustomRasterLayerAbove: String? = nil
      var currentDisableAlternativeRoutes: Bool? = nil
      var currentFollowingZoom: Double? = nil
@@ -1176,6 +1233,8 @@ index 8f841df..45f9ef7 100644
 +    var currentAppTheme: String = "dark"
 +    /// Headless SnapRoad mode: run Navigation SDK trip session + voice without embedding Navigation UI / second map.
 +    var navigationLogicOnly: Bool = false
++    /// Last matched location — used to synthesize `cameraState` for RN mirror when no embedded map exists.
++    private var lastHeadlessMirrorLocation: CLLocation?
 +
 +    var onTrafficCameraTap: EventDispatcher? = nil
 +    private var trafficCamerasJson: String?
@@ -1238,7 +1297,7 @@ index 8f841df..45f9ef7 100644
  
      var onRouteProgressChanged: EventDispatcher? = nil
      var onCancelNavigation: EventDispatcher? = nil
-@@ -71,57 +144,65 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -71,57 +146,65 @@ class ExpoMapboxNavigationViewController: UIViewController {
      var onUserOffRoute: EventDispatcher? = nil
      var onRoutesLoaded: EventDispatcher? = nil
      var onRouteFailedToLoad: EventDispatcher? = nil
@@ -1326,7 +1385,7 @@ index 8f841df..45f9ef7 100644
              let event = arrivalStatus.event
              if event is WaypointArrivalStatus.Events.ToFinalDestination {
                  self.onFinalDestinationArrival?()
-@@ -130,30 +211,94 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -130,30 +213,95 @@ class ExpoMapboxNavigationViewController: UIViewController {
              }
          }
  
@@ -1371,14 +1430,15 @@ index 8f841df..45f9ef7 100644
                  default: break
 +                }
 +            default: break
-+            }
-+        }
-+
+             }
+         }
+ 
 +        locationMatchingCancellable = navigation?.locationMatching
 +            .throttle(for: .milliseconds(150), scheduler: RunLoop.main, latest: true)
 +            .sink { state in
 +                guard self.navigationLogicOnly else { return }
 +                let loc = state.enhancedLocation
++                self.lastHeadlessMirrorLocation = loc
 +                var payload: [String: Any] = [
 +                    "latitude": loc.coordinate.latitude,
 +                    "longitude": loc.coordinate.longitude,
@@ -1391,7 +1451,7 @@ index 8f841df..45f9ef7 100644
 +                    payload["speedLimitMps"] = sl.converted(to: .metersPerSecond).value
 +                }
 +                self.onNavigationLocationUpdate?(payload)
-             }
++            }
 +
 +        voiceInstructionCancellable = navigation?.voiceInstructions.sink { st in
 +            guard self.navigationLogicOnly else { return }
@@ -1399,8 +1459,8 @@ index 8f841df..45f9ef7 100644
 +                "text": st.spokenInstruction.text,
 +                "distanceAlongStep": st.spokenInstruction.distanceAlongStep,
 +            ])
-         }
- 
++        }
++
 +        navigationErrorCancellable = navigation?.errors.sink { err in
 +            guard self.navigationLogicOnly else { return }
 +            self.onNavigatorError?([
@@ -1430,7 +1490,7 @@ index 8f841df..45f9ef7 100644
      }
  
      override func viewDidDisappear(_ animated: Bool) {
-@@ -183,7 +328,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -183,7 +331,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
              return
          }
  
@@ -1439,7 +1499,7 @@ index 8f841df..45f9ef7 100644
  
          var rasterSource = RasterSource(id: sourceId)
  
-@@ -277,51 +422,641 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -277,51 +425,707 @@ class ExpoMapboxNavigationViewController: UIViewController {
      }
  
      func setIsMuted(isMuted: Bool?){
@@ -1555,6 +1615,7 @@ index 8f841df..45f9ef7 100644
 +
 +    func stopActiveGuidance() {
          calculateRoutesTask?.cancel()
++        lastHeadlessMirrorLocation = nil
 +        Task { @MainActor in
 +            self.tripSession?.setToIdle()
 +        }
@@ -1644,6 +1705,60 @@ index 8f841df..45f9ef7 100644
 +        return names.first { !$0.isEmpty }
 +    }
 +
++    /// Locale-aware distance for RN turn card mirror (`primaryDistanceFormatted` / `formattedDistance`).
++    private func snaproadFormatDistanceMeters(_ meters: Double) -> [String: String] {
++        let m = Measurement(value: meters, unit: UnitLength.meters)
++        let f = MeasurementFormatter()
++        f.locale = currentLocale
++        f.unitOptions = .naturalScale
++        f.numberFormatter.maximumFractionDigits = 1
++        let full = f.string(from: m)
++        return ["full": full, "value": full, "unit": ""]
++    }
++
++    /// Matches SnapRoad `nativeNavCameraMirror` headless pitch (`navPitch` + 6, cap 76).
++    private func snaproadDefaultFollowingPitchForMode() -> Double {
++        let navPitch: Double
++        switch currentDrivingMode {
++        case "calm": navPitch = 55
++        case "sport": navPitch = 70
++        default: navPitch = 60
++        }
++        return min(76, navPitch + 6)
++    }
++
++    /// Native navigation camera for RN `setCamera` mirror — real map when embedded; synthetic in headless.
++    private func snaproadCameraStatePayload() -> [String: Any]? {
++        if navigationLogicOnly {
++            guard let loc = lastHeadlessMirrorLocation else { return nil }
++            let zoom = currentFollowingZoom ?? (currentDrivingMode == "calm" ? 16.5 : (currentDrivingMode == "sport" ? 17.5 : 17.0))
++            let pitch = currentFollowingPitch ?? snaproadDefaultFollowingPitchForMode()
++            let bearing = loc.course >= 0 ? loc.course : 0.0
++            return [
++                "center": ["latitude": loc.coordinate.latitude, "longitude": loc.coordinate.longitude],
++                "zoom": zoom,
++                "pitch": pitch,
++                "bearing": bearing,
++            ]
++        }
++        guard let mapboxMap = navigationViewController?.navigationMapView?.mapView.mapboxMap else { return nil }
++        let cs = mapboxMap.cameraState
++        let c = cs.center
++        let pad = cs.padding
++        return [
++            "center": ["latitude": c.latitude, "longitude": c.longitude],
++            "zoom": cs.zoom,
++            "pitch": cs.pitch,
++            "bearing": cs.bearing,
++            "padding": [
++                "paddingTop": pad.top,
++                "paddingBottom": pad.bottom,
++                "paddingLeft": pad.left,
++                "paddingRight": pad.right,
++            ],
++        ]
++    }
++
 +    private func navProgressPayload(progressState: RouteProgressState) -> [String: Any] {
 +        let rp = progressState.routeProgress
 +        let leg = rp.currentLegProgress
@@ -1691,16 +1806,20 @@ index 8f841df..45f9ef7 100644
 +        if let shield = sdkShieldPayload(from: visual) {
 +            out["shield"] = shield
 +        }
++
++        let dMeters = stepProg.userDistanceToUpcomingIntersection ?? stepProg.distanceRemaining
++        if dMeters.isFinite && dMeters > 0 {
++            let parts = snaproadFormatDistanceMeters(dMeters)
++            out["primaryDistanceFormatted"] = parts["full"]
++            out["formattedDistance"] = parts["value"]
++            out["formattedDistanceUnit"] = parts["unit"]
++        }
++        if let cam = snaproadCameraStatePayload() {
++            out["cameraState"] = cam
++        }
 +        return out
 +    }
- 
--        if(currentCoordinates != nil){
--            let waypoints = currentCoordinates!.enumerated().map {
--                let index = $0
--                let coordinate = $1
--                var waypoint = Waypoint(coordinate: coordinate) 
--                waypoint.separatesLegs = currentWaypointIndices == nil ? true : currentWaypointIndices!.contains(index)
--                return waypoint
++
 +    func applySnapRoadRouteTheme() {
 +        // Belt-and-suspenders direct layer tint using the Maps style API. `try?` silently
 +        // no-ops if the layer ID doesn't exist on the user's SDK version. The primary
@@ -1817,12 +1936,10 @@ index 8f841df..45f9ef7 100644
 +                subview.isHidden = true
 +                subview.alpha = 0
 +                subview.isUserInteractionEnabled = false
-             }
++            }
 +        }
 +    }
- 
--            if(isUsingRouteMatchingApi){
--                calculateMapMatchingRoutes(waypoints: waypoints)
++
 +    func applySnapRoadBannerTheme() {
 +        let theme = ExpoMapboxNavigationViewController.theme(for: currentDrivingMode)
 +
@@ -1839,8 +1956,7 @@ index 8f841df..45f9ef7 100644
 +                topBg = UIColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 1) // #3B82F6
 +                topText = .white
 +                topAccent = UIColor(red: 0.93, green: 0.96, blue: 1.0, alpha: 1.0)
-             } else {
--                calculateRoutes(waypoints: waypoints)
++            } else {
 +                topBg = UIColor(red: 0.12, green: 0.25, blue: 0.65, alpha: 1) // #1E40AF
 +                topText = .white
 +                topAccent = UIColor(red: 0.38, green: 0.65, blue: 0.98, alpha: 1) // #60A5FA
@@ -1955,7 +2071,14 @@ index 8f841df..45f9ef7 100644
 +        if mapboxMap.sourceExists(withId: snaproadTrafficCamSourceId) {
 +            try? mapboxMap.removeSource(withId: snaproadTrafficCamSourceId)
 +        }
-+
+ 
+-        if(currentCoordinates != nil){
+-            let waypoints = currentCoordinates!.enumerated().map {
+-                let index = $0
+-                let coordinate = $1
+-                var waypoint = Waypoint(coordinate: coordinate) 
+-                waypoint.separatesLegs = currentWaypointIndices == nil ? true : currentWaypointIndices!.contains(index)
+-                return waypoint
 +        guard let raw = trafficCamerasJson,
 +              let data = raw.data(using: .utf8),
 +              let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
@@ -1989,9 +2112,11 @@ index 8f841df..45f9ef7 100644
 +        if !mapboxMap.imageExists(withId: snaproadTrafficCamImageId) {
 +            if let img = makeSnapRoadTrafficCameraIcon() {
 +                try? mapboxMap.addImage(img, id: snaproadTrafficCamImageId, stretchX: [], stretchY: [])
-+            }
+             }
 +        }
-+
+ 
+-            if(isUsingRouteMatchingApi){
+-                calculateMapMatchingRoutes(waypoints: waypoints)
 +        var source = GeoJSONSource(id: snaproadTrafficCamSourceId)
 +        source.data = .string(fcString)
 +        do {
@@ -2009,9 +2134,10 @@ index 8f841df..45f9ef7 100644
 +            ]
 +            if let above = anchorIds.first(where: { mapboxMap.layerExists(withId: $0) }) {
 +                try mapboxMap.addLayer(layer, layerPosition: .above(above))
-+            } else {
+             } else {
+-                calculateRoutes(waypoints: waypoints)
 +                try mapboxMap.addLayer(layer)
-+            }
+             }
 +            installTrafficCameraTapIfNeeded(on: mapView)
 +        } catch {}
 +    }
@@ -2064,10 +2190,10 @@ index 8f841df..45f9ef7 100644
 +                self?.onTrafficCameraTap?(["id": id, "name": name])
 +            case .failure:
 +                break
-             }
-         }
-     }
- 
++            }
++        }
++    }
++
 +    private func navigationStyles() -> [MapboxNavigationUIKit.Style] {
 +        // Register the active controller so the SnapRoad style subclasses can pull the
 +        // current driving mode during `apply()`. Using a weak static avoids retain cycles.
@@ -2089,9 +2215,9 @@ index 8f841df..45f9ef7 100644
 +            calculateMapMatchingRoutes(waypoints: waypoints)
 +        } else {
 +            calculateRoutes(waypoints: waypoints)
-+        }
-+    }
-+
+         }
+     }
+ 
      func calculateRoutes(waypoints: Array<Waypoint>){
 +        guard let routingProvider else {
 +            onRouteFailedToLoad?([
@@ -2103,7 +2229,7 @@ index 8f841df..45f9ef7 100644
          let routeOptions = NavigationRouteOptions(
              waypoints: waypoints, 
              profileIdentifier: currentRouteProfile != nil ? ProfileIdentifier(rawValue: currentRouteProfile!) : nil,
-@@ -334,20 +1069,34 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -334,20 +1138,34 @@ class ExpoMapboxNavigationViewController: UIViewController {
              distanceUnit: currentLocale.usesMetricSystem ? LengthFormatter.Unit.meter : LengthFormatter.Unit.mile
          )
  
@@ -2144,7 +2270,7 @@ index 8f841df..45f9ef7 100644
          let matchOptions = NavigationMatchOptions(
              waypoints: waypoints, 
              profileIdentifier: currentRouteProfile != nil ? ProfileIdentifier(rawValue: currentRouteProfile!) : nil,
-@@ -357,15 +1106,22 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -357,15 +1175,22 @@ class ExpoMapboxNavigationViewController: UIViewController {
          matchOptions.locale = currentLocale
  
  
@@ -2173,7 +2299,7 @@ index 8f841df..45f9ef7 100644
              }
          }
      }
-@@ -406,6 +1162,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -406,6 +1231,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
      }
  
      func onRoutesCalculated(navigationRoutes: NavigationRoutes){
@@ -2181,7 +2307,7 @@ index 8f841df..45f9ef7 100644
          onRoutesLoaded?([
              "routes": [
                  "mainRoute": convertRoute(route: navigationRoutes.mainRoute.route),
-@@ -413,77 +1170,169 @@ class ExpoMapboxNavigationViewController: UIViewController {
+@@ -413,77 +1239,169 @@ class ExpoMapboxNavigationViewController: UIViewController {
              ]
          ])
  
@@ -2365,8 +2491,8 @@ index 8f841df..45f9ef7 100644
 +            didMove(toParent: self)
 +        }
 +        mapboxNavigation.tripSession().startActiveGuidance(with: navigationRoutes, startLegIndex: 0)
-+    }
-+}
+     }
+ }
 +
 +extension ExpoMapboxNavigationViewController: UIGestureRecognizerDelegate {
 +    func gestureRecognizer(
@@ -2374,8 +2500,8 @@ index 8f841df..45f9ef7 100644
 +        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
 +    ) -> Bool {
 +        true
-     }
- }
++    }
++}
 +
  extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
      func navigationViewController(_ navigationViewController: NavigationViewController, didRerouteAlong route: Route) {
@@ -2387,7 +2513,7 @@ index 8f841df..45f9ef7 100644
          onRoutesLoaded?([
              "routes": [
                  "mainRoute": convertRoute(route: route),
-@@ -496,6 +1345,48 @@ extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
+@@ -496,6 +1414,48 @@ extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
          _ navigationViewController: NavigationViewController,
          byCanceling canceled: Bool
      ) { }
@@ -2436,7 +2562,7 @@ index 8f841df..45f9ef7 100644
  }
  
  extension UIView {
-@@ -507,3 +1398,34 @@ extension UIView {
+@@ -507,3 +1467,34 @@ extension UIView {
          return subviews + subviews.flatMap { $0.recursiveSubviews }
      }
  }

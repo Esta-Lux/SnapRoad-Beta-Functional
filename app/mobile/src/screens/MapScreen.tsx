@@ -132,6 +132,8 @@ import { useCameraController } from '../hooks/useCameraController';
 import { navLogicDebugEnabled, navLogicSdkEnabled, navNativeFullScreenEnabled } from '../navigation/navFeatureFlags';
 import { logNavVerify } from '../navigation/navLogicDebug';
 import {
+  ingestSdkCameraState,
+  ingestSdkLaneAssets,
   ingestSdkLocation,
   ingestSdkProgress,
   ingestSdkRouteChangedEvent,
@@ -139,6 +141,7 @@ import {
   ingestSdkVoiceSubtitle,
 } from '../navigation/navEngine';
 import { directionsStepFromSdkProgress } from '../navigation/navSdkUiAdapter';
+import type { NativeLaneAsset, SdkCameraPayload } from '../navigation/navSdkMirrorTypes';
 import type { SdkLocationPayload, SdkProgressPayload } from '../navigation/navSdkStore';
 import { polylineFromSdkRoutes, type SdkRoutesNative } from '../navigation/navSdkGeometry';
 import {
@@ -146,6 +149,7 @@ import {
   isSdkPuckAuthoritative,
   isSdkRouteAuthoritative,
 } from '../navigation/navSdkAuthority';
+import { getNativeHeadlessFollowingPitch, getNativeHeadlessFollowingZoom } from '../navigation/nativeNavCameraMirror';
 import NavSdkPuck from '../components/map/NavSdkPuck';
 import { MapboxNavigationView, type MapboxNavigationViewRef } from '@badatgil/expo-mapbox-navigation';
 import { routeProfileForPlatform } from '../hooks/useNativeNavBridge';
@@ -520,16 +524,8 @@ export default function MapScreen() {
 
   const navLogicRef = useRef<MapboxNavigationViewRef | null>(null);
   const [navLogicCoords, setNavLogicCoords] = useState<Array<{ latitude: number; longitude: number }>>([]);
-  const navLogicFollowingZoom = useMemo(() => {
-    switch (drivingMode) {
-      case 'calm':
-        return 16.5;
-      case 'sport':
-        return 17.5;
-      default:
-        return 17.0;
-    }
-  }, [drivingMode]);
+  const navLogicFollowingZoom = useMemo(() => getNativeHeadlessFollowingZoom(drivingMode), [drivingMode]);
+  const navLogicFollowingPitch = useMemo(() => getNativeHeadlessFollowingPitch(drivingMode), [drivingMode]);
 
   /**
    * `navLogicCoords` is the `coordinates` prop on the hidden
@@ -808,6 +804,10 @@ export default function MapScreen() {
   const polylineToRender = useMemo((): Coordinate[] | null => {
     const sdk = nav.navigationProgress?.routePolyline;
     const rest = nav.navigationData?.polyline;
+    if (isNativeSdkPassThrough) {
+      if (sdk && sdk.length >= 2) return sdk;
+      return stickyRoutePolyline;
+    }
     if (sdkRouteOwns) {
       if (sdk && sdk.length >= 2) return sdk;
       return stickyRoutePolyline;
@@ -815,7 +815,13 @@ export default function MapScreen() {
     if (sdk && sdk.length >= 2) return sdk;
     if (rest && rest.length >= 2) return rest;
     return stickyRoutePolyline;
-  }, [sdkRouteOwns, nav.navigationProgress?.routePolyline, nav.navigationData?.polyline, stickyRoutePolyline]);
+  }, [
+    isNativeSdkPassThrough,
+    sdkRouteOwns,
+    nav.navigationProgress?.routePolyline,
+    nav.navigationData?.polyline,
+    stickyRoutePolyline,
+  ]);
 
   /**
    * Route split geometry must consume the **same** point as the puck so the
@@ -921,6 +927,11 @@ export default function MapScreen() {
   const [navCameraSessionKey, setNavCameraSessionKey] = useState(0);
   /** Single distance field for maneuver-aware presets (must match banner/speech). */
   const nextManeuverDistanceMeters = useMemo(() => {
+    if (isNativeSdkPassThrough) {
+      const d = nav.navigationProgress?.nextStepDistanceMeters;
+      if (d != null && Number.isFinite(d)) return d;
+      return Math.max(0, nav.navigationProgress?.banner?.primaryDistanceMeters ?? 0);
+    }
     const d = nav.navigationProgress?.nextStepDistanceMeters;
     if (nav.isNavigating && d != null && Number.isFinite(d)) return d;
     return getDistanceToUpcomingManeuverMeters(
@@ -930,8 +941,10 @@ export default function MapScreen() {
       nav.navigationData?.polyline,
     );
   }, [
+    isNativeSdkPassThrough,
     nav.isNavigating,
     nav.navigationProgress?.nextStepDistanceMeters,
+    nav.navigationProgress?.banner?.primaryDistanceMeters,
     nav.navigationData?.steps,
     nav.navigationData?.polyline,
     nav.currentStepIndex,
@@ -939,8 +952,12 @@ export default function MapScreen() {
     navDisplayCoord.lng,
   ]);
 
-  /** Follow-camera anchor: slightly ahead of the puck along course (CustomLocationProvider only). */
+  /**
+   * Follow-camera anchor: slightly ahead of the puck along course (CustomLocationProvider only).
+   * Disabled for native pass-through — JS must not offset the camera from the matched fix.
+   */
   const cameraLeadCoord = useMemo(() => {
+    if (isNativeSdkPassThrough) return null;
     if (!nav.isNavigating || !Number.isFinite(navDisplayCoord.lat) || !Number.isFinite(navDisplayCoord.lng)) {
       return null;
     }
@@ -960,9 +977,10 @@ export default function MapScreen() {
     navDisplayCoord.lng,
     navDisplayHeading,
     heading,
+    isNativeSdkPassThrough,
   ]);
 
-  const camCtrl = useCameraController({
+  const camCtrlForNav = useCameraController({
     speedMph: speed,
     fusedSpeedMps: fusedSpeedMpsNav,
     drivingMode,
@@ -971,6 +989,8 @@ export default function MapScreen() {
     nextManeuverDistanceMeters,
     safeAreaTop: insets.top,
     safeAreaBottom: insets.bottom,
+    nativeCameraState: nav.sdkNativeCameraState,
+    isNativeMirror: isNativeSdkPassThrough,
   });
 
   const userInteracting = useRef(false);
@@ -994,26 +1014,35 @@ export default function MapScreen() {
     navDisplayHeadingRef.current = navDisplayHeading;
   }, [navDisplayCoord.lat, navDisplayCoord.lng, navDisplayHeading]);
 
-  const camCtrlRef = useRef(camCtrl);
-  camCtrlRef.current = camCtrl;
+  const camCtrlRef = useRef(camCtrlForNav);
+  camCtrlRef.current = camCtrlForNav;
 
   /**
    * While navigating, `followUserLocation` uses Mapbox's internal GPS — not
    * `CustomLocationProvider` — which fights the snapped puck (camera feels offset).
-   * With follow off, drive zoom/pitch/padding from `useCameraController` here.
+   * With follow off, drive zoom/pitch/padding from `camCtrlForNav` (native mirror or
+   * {@link useCameraController}).
    */
   useEffect(() => {
-    if (!nav.isNavigating || !cameraLocked || !camCtrl) return;
+    if (!nav.isNavigating || !cameraLocked || !camCtrlForNav) return;
     const cam = cameraRef.current;
     if (!cam?.setCamera) return;
-    const anchor = cameraLeadCoord ?? navDisplayCoord;
+    const useNative = camCtrlForNav.useNativeCenter && camCtrlForNav.centerCoordinate;
+    const anchor = useNative
+      ? camCtrlForNav.centerCoordinate!
+      : cameraLeadCoord ?? navDisplayCoord;
     if (!Number.isFinite(anchor.lat) || !Number.isFinite(anchor.lng)) return;
-    const h = Number.isFinite(navDisplayHeading) ? navDisplayHeading : heading;
-    const pad = camCtrl.followPadding;
+    const h =
+      useNative && camCtrlForNav.headingDeg != null && Number.isFinite(camCtrlForNav.headingDeg)
+        ? camCtrlForNav.headingDeg
+        : Number.isFinite(navDisplayHeading)
+          ? navDisplayHeading
+          : heading;
+    const pad = camCtrlForNav.followPadding;
     cam.setCamera({
       centerCoordinate: [anchor.lng, anchor.lat],
-      zoomLevel: camCtrl.followZoomLevel,
-      pitch: camCtrl.followPitch,
+      zoomLevel: camCtrlForNav.followZoomLevel,
+      pitch: camCtrlForNav.followPitch,
       heading: Number.isFinite(h) ? h : undefined,
       padding: {
         paddingTop: pad.paddingTop,
@@ -1022,18 +1051,22 @@ export default function MapScreen() {
         paddingRight: pad.paddingRight,
       },
       animationMode: 'easeTo',
-      animationDuration: camCtrl.animationDuration,
+      animationDuration: camCtrlForNav.animationDuration,
     });
   }, [
     nav.isNavigating,
     cameraLocked,
-    camCtrl?.followZoomLevel,
-    camCtrl?.followPitch,
-    camCtrl?.followPadding?.paddingTop,
-    camCtrl?.followPadding?.paddingBottom,
-    camCtrl?.followPadding?.paddingLeft,
-    camCtrl?.followPadding?.paddingRight,
-    camCtrl?.animationDuration,
+    camCtrlForNav?.followZoomLevel,
+    camCtrlForNav?.followPitch,
+    camCtrlForNav?.followPadding?.paddingTop,
+    camCtrlForNav?.followPadding?.paddingBottom,
+    camCtrlForNav?.followPadding?.paddingLeft,
+    camCtrlForNav?.followPadding?.paddingRight,
+    camCtrlForNav?.animationDuration,
+    camCtrlForNav?.useNativeCenter,
+    camCtrlForNav?.centerCoordinate?.lat,
+    camCtrlForNav?.centerCoordinate?.lng,
+    camCtrlForNav?.headingDeg,
     navDisplayCoord.lat,
     navDisplayCoord.lng,
     navDisplayHeading,
@@ -3219,10 +3252,15 @@ export default function MapScreen() {
           routeProfile={routeProfileForPlatform()}
           drivingMode={drivingMode}
           followingZoom={navLogicFollowingZoom}
+          followingPitch={navLogicFollowingPitch}
           disableAlternativeRoutes
           vehicleMaxHeight={avoidLowClearances && hasTallVehicle ? vehicleHeight : undefined}
           onRoutesLoaded={handleSdkRoutesLoaded}
           onRouteProgressChanged={(e: { nativeEvent: SdkProgressPayload }) => ingestSdkProgress(e.nativeEvent)}
+          onCameraStateChanged={(e: { nativeEvent: SdkCameraPayload }) => ingestSdkCameraState(e.nativeEvent)}
+          onLaneVisualsChanged={(e: { nativeEvent: { lanes?: NativeLaneAsset[] } }) =>
+            ingestSdkLaneAssets(e.nativeEvent?.lanes ?? null)
+          }
           onVoiceInstruction={(e: { nativeEvent: { text?: string } }) =>
             ingestSdkVoiceSubtitle(e.nativeEvent.text)
           }
@@ -3360,7 +3398,7 @@ export default function MapScreen() {
             }
             animationMode="easeTo"
             animationDuration={
-              (camCtrl ? camCtrl.animationDuration : animDuration) +
+              (camCtrlForNav ? camCtrlForNav.animationDuration : animDuration) +
               (nav.isNavigating && cameraLocked ? 90 : 0)
             }
             followUserLocation={cameraFollowsDeviceGps}
@@ -3374,8 +3412,8 @@ export default function MapScreen() {
                 : undefined
             }
             followPitch={
-              camCtrl
-                ? camCtrl.followPitch
+              camCtrlForNav
+                ? camCtrlForNav.followPitch
                 : nav.isNavigating && cameraLocked
                   ? modeConfig.navPitch
                   : exploreTracksUser
@@ -3385,8 +3423,8 @@ export default function MapScreen() {
                       : undefined
             }
             followZoomLevel={
-              camCtrl
-                ? camCtrl.followZoomLevel
+              camCtrlForNav
+                ? camCtrlForNav.followZoomLevel
                 : nav.isNavigating && cameraLocked
                   ? modeConfig.navZoom
                   : exploreTracksUser
@@ -3396,8 +3434,8 @@ export default function MapScreen() {
                       : undefined
             }
             followPadding={
-              camCtrl
-                ? camCtrl.followPadding
+              camCtrlForNav
+                ? camCtrlForNav.followPadding
                 : nav.isNavigating && cameraLocked
                   ? navFallbackFollowPadding(modeConfig, insets.bottom)
                   : MAPBOX_DEFAULT_FOLLOW_PADDING
@@ -3636,6 +3674,7 @@ export default function MapScreen() {
                 nav.navigationProgress?.displayCoord?.speedMps ??
                 0
               }
+              mirrorNativePosition={isNativeSdkPassThrough}
             />
           ) : null}
         </MapboxGL.MapView>
@@ -3906,19 +3945,22 @@ export default function MapScreen() {
                   : (turnCurrentStep?.distanceMeters ?? 0);
 
         const turnCardNow = Date.now();
-        const cardState = resolveTurnCardState({
-          distanceToNextManeuverM: liveDistMeters,
-          speedMph: displaySpeedMph,
-          mode: drivingMode,
-          inConfirmationWindow: inConfirmWindow,
-          nextStep: nextManeuverCoord,
-          congestionNearManeuver: hasSevereCongestionAhead(
-            nav.navigationData?.congestion,
-            nav.navigationProgress?.snapped?.segmentIndex ?? 0,
-          ),
-          activeEnteredAtMs: turnCardActiveEnteredAtRef.current,
-          nowMs: turnCardNow,
-        });
+        /** Native mirror: one visual state — JS cruise/preview/confirm machine must not override the SDK banner. */
+        const cardState = isSdkNativePassThrough
+          ? 'active'
+          : resolveTurnCardState({
+              distanceToNextManeuverM: liveDistMeters,
+              speedMph: displaySpeedMph,
+              mode: drivingMode,
+              inConfirmationWindow: inConfirmWindow,
+              nextStep: nextManeuverCoord,
+              congestionNearManeuver: hasSevereCongestionAhead(
+                nav.navigationData?.congestion,
+                nav.navigationProgress?.snapped?.segmentIndex ?? 0,
+              ),
+              activeEnteredAtMs: turnCardActiveEnteredAtRef.current,
+              nowMs: turnCardNow,
+            });
         /* Update the dwell-tracking ref: record the moment we first enter
          * 'active'; clear it when we leave so the next entry starts fresh. */
         if (cardState === 'active') {
@@ -3949,7 +3991,7 @@ export default function MapScreen() {
           liveDistMeters > 5 &&
           nextManeuverCoord != null &&
           nextManeuverCoord.maneuver !== 'depart';
-        const distParts =
+        const distPartsBase =
           cardState === 'cruise' && !hasActionableMeters
             ? { value: '—', unit: '' }
             : formatTurnDistanceForCard(liveDistMeters);
@@ -4082,8 +4124,11 @@ export default function MapScreen() {
               mode={drivingMode}
               modeConfig={modeConfig}
               state={cardState}
-              distanceValue={distParts.value}
-              distanceUnit={distParts.unit}
+              distanceValue={distPartsBase.value}
+              distanceUnit={distPartsBase.unit}
+              nativeFormattedDistance={nav.sdkNativeFormattedDistance}
+              isNativeMirror={isSdkNativePassThrough}
+              nativeLaneAssets={nav.sdkNativeLaneAssets}
               primaryInstruction={primary}
               secondaryInstruction={secondary}
               maneuverForIcon={maneuverIconKey}

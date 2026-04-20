@@ -1,4 +1,6 @@
 import type { SdkNavProgressEvent, SdkNavProgressLane, SdkNavProgressShield } from './sdkNavBridgePayload';
+import type { NativeFormattedDistance, NativeLaneAsset, SdkCameraPayload } from './navSdkMirrorTypes';
+import { isValidSdkCameraPayload } from './navSdkMirrorTypes';
 import type { Coordinate } from '../types';
 import type { DirectionsStep } from '../lib/directions';
 import type { NavigationProgress } from './navModel';
@@ -39,6 +41,12 @@ type NavSdkState = {
   progress: SdkProgressPayload | null;
   location: SdkLocationPayload | null;
   routePolyline: Coordinate[];
+  /** Last native navigation camera viewport (mirror RN `setCamera` when valid). */
+  nativeCameraState: SdkCameraPayload | null;
+  /** Locale-aware distance from native (replaces JS formatting when present). */
+  nativeFormattedDistance: NativeFormattedDistance | null;
+  /** Per-lane PNGs from native (parallel to `progress.lanes` when lengths match). */
+  nativeLaneAssets: NativeLaneAsset[] | null;
   /** Last native voice instruction text (SDK TTS only — for HUD / subtitle). */
   lastVoiceInstructionText: string | null;
   /** Wall-clock ms when the last native voice subtitle was ingested (0 if never). Used by
@@ -55,6 +63,9 @@ const initial: NavSdkState = {
   progress: null,
   location: null,
   routePolyline: [],
+  nativeCameraState: null,
+  nativeFormattedDistance: null,
+  nativeLaneAssets: null,
   lastVoiceInstructionText: null,
   lastVoiceInstructionAtMs: 0,
   lastNavVoiceSource: 'none',
@@ -92,6 +103,9 @@ export function resetNavSdkState() {
     progress: null,
     location: null,
     routePolyline: [],
+    nativeCameraState: null,
+    nativeFormattedDistance: null,
+    nativeLaneAssets: null,
     lastVoiceInstructionText: null,
     lastVoiceInstructionAtMs: 0,
     lastNavVoiceSource: 'none',
@@ -109,6 +123,35 @@ export function resetNavSdkState() {
   // heading tick of a new trip isn't pulled toward the last trip's bearing.
   resetHeadingSmoothing();
   emit();
+}
+
+function pickNativeFormattedFromProgress(
+  p: SdkProgressPayload,
+  prev: NativeFormattedDistance | null,
+): NativeFormattedDistance | null {
+  const split = p.formattedDistance?.trim();
+  if (split) {
+    return {
+      value: split,
+      unit: (p.formattedDistanceUnit ?? '').trim(),
+    };
+  }
+  const primary = p.primaryDistanceFormatted?.trim();
+  if (primary) return { value: primary, unit: '' };
+  return prev;
+}
+
+/** True when the last ingested native camera payload has a finite center + zoom/pitch/bearing. */
+export function hasNativeCameraState(): boolean {
+  return isValidSdkCameraPayload(state.nativeCameraState);
+}
+
+export function hasNativeFormattedDistance(): boolean {
+  return !!state.nativeFormattedDistance?.value?.trim();
+}
+
+export function hasNativeLaneAssets(): boolean {
+  return Array.isArray(state.nativeLaneAssets) && state.nativeLaneAssets.length > 0;
 }
 
 /** Call when user starts headless SDK navigation (after route preview → start). */
@@ -138,13 +181,54 @@ export function ingestSdkRouteChangedEvent() {
 
 export function ingestSdkProgress(p: SdkProgressPayload) {
   const tel = { ...state.telemetry, progressEvents: state.telemetry.progressEvents + 1 };
+  const prevFmt = state.nativeFormattedDistance;
   state = {
     ...state,
     progress: p,
     lastProgressIngestAtMs: Date.now(),
     sdkGuidancePhase: 'active',
     telemetry: tel,
+    nativeCameraState: p.cameraState ?? state.nativeCameraState,
+    nativeFormattedDistance: pickNativeFormattedFromProgress(p, prevFmt),
+    nativeLaneAssets: p.laneAssets ?? state.nativeLaneAssets,
   };
+  emit();
+}
+
+/** Standalone native event (or call from a thin `onCameraStateChanged` bridge handler). */
+export function ingestSdkCameraState(payload: SdkCameraPayload | null | undefined) {
+  if (payload === null) {
+    state = { ...state, nativeCameraState: null };
+    emit();
+    return;
+  }
+  if (!payload || !isValidSdkCameraPayload(payload)) return;
+  state = { ...state, nativeCameraState: payload };
+  emit();
+}
+
+export function ingestSdkFormattedDistance(value: string | undefined, unit?: string) {
+  const v = value?.trim();
+  if (!v) return;
+  state = {
+    ...state,
+    nativeFormattedDistance: { value: v, unit: (unit ?? '').trim() },
+  };
+  emit();
+}
+
+export function ingestSdkLaneAssets(assets: NativeLaneAsset[] | null | undefined) {
+  if (assets === null) {
+    state = { ...state, nativeLaneAssets: null };
+    emit();
+    return;
+  }
+  if (!assets?.length) {
+    state = { ...state, nativeLaneAssets: null };
+    emit();
+    return;
+  }
+  state = { ...state, nativeLaneAssets: assets };
   emit();
 }
 

@@ -51,7 +51,7 @@ export function mapSdkLanesToLaneInfo(raw: NonNullable<SdkProgressPayload['lanes
 
 export function mapSdkShieldPayload(sh: NonNullable<NonNullable<SdkProgressPayload['shield']>>): RoadShield {
   const t = sh.text.trim();
-  return { network: 'sdk', ref: t, displayRef: t };
+  return { network: 'sdk', ref: t, displayRef: t, imageBase64: sh.imageBase64 };
 }
 
 /**
@@ -551,6 +551,7 @@ export function buildNavigationProgressFromSdk(args: {
   const banner: NavBannerModel = {
     primaryInstruction: primaryText,
     primaryDistanceMeters: distNext,
+    primaryDistanceFormatted: progress.primaryDistanceFormatted?.trim() || null,
     primaryStreet: nextBaseStep?.streetName ?? ds?.name ?? null,
     secondaryInstruction: secondaryText ?? null,
     signal: signalForStep,

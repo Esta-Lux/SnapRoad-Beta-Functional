@@ -29,6 +29,30 @@ declare module '@badatgil/expo-mapbox-navigation' {
     imageBase64?: string;
   };
 
+  export type SdkCameraPadding = {
+    paddingTop: number;
+    paddingBottom: number;
+    paddingLeft: number;
+    paddingRight: number;
+  };
+
+  export type SdkCameraPayload = {
+    center: { latitude: number; longitude: number };
+    zoom: number;
+    pitch: number;
+    bearing: number;
+    padding?: SdkCameraPadding;
+  };
+
+  export type NativeLaneAsset = {
+    indication: string;
+    active: boolean;
+    preferred: boolean;
+    imageBase64: string;
+    width?: number;
+    height?: number;
+  };
+
   export type SdkNavProgressEvent = {
     distanceRemaining: number;
     distanceTraveled: number;
@@ -48,6 +72,11 @@ declare module '@badatgil/expo-mapbox-navigation' {
     currentRoadName?: string;
     lanes?: SdkNavProgressLane[];
     shield?: SdkNavProgressShield | null;
+    primaryDistanceFormatted?: string;
+    formattedDistance?: string;
+    formattedDistanceUnit?: string;
+    cameraState?: SdkCameraPayload;
+    laneAssets?: NativeLaneAsset[];
   };
 
   export type MapboxNavigationViewRef = {
@@ -84,6 +113,10 @@ declare module '@badatgil/expo-mapbox-navigation' {
     navChromeThemeJson?: string;
     navigationLogicOnly?: boolean;
     onRouteProgressChanged?: (event: { nativeEvent: SdkNavProgressEvent }) => void;
+    /** Native navigation camera viewport — mirror RN map `setCamera` when the bridge emits it. */
+    onCameraStateChanged?: (event: { nativeEvent: SdkCameraPayload }) => void;
+    /** Native-rendered lane bitmaps — same order as banner `lanes` when lengths match. */
+    onLaneVisualsChanged?: (event: { nativeEvent: { lanes?: NativeLaneAsset[] } }) => void;
     onCancelNavigation?: () => void;
     onWaypointArrival?: (event: { nativeEvent: Record<string, unknown> | undefined }) => void;
     onFinalDestinationArrival?: () => void;

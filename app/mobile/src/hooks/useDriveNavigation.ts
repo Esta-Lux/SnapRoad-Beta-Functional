@@ -1854,5 +1854,11 @@ export function useDriveNavigation(params: {
           navSdkSnapshot.progress?.speedLimitMps ??
           null
         : null,
+    /** Native mirror bridge — camera viewport (when native emits it). */
+    sdkNativeCameraState: navSdkHeadless ? navSdkSnapshot.nativeCameraState : null,
+    /** Native mirror bridge — locale-formatted turn distance (from progress or standalone event). */
+    sdkNativeFormattedDistance: navSdkHeadless ? navSdkSnapshot.nativeFormattedDistance : null,
+    /** Native mirror bridge — per-lane PNGs (aligned with `lanes.length` when lengths match). */
+    sdkNativeLaneAssets: navSdkHeadless ? navSdkSnapshot.nativeLaneAssets : null,
   };
 }
