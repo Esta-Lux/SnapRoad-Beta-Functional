@@ -80,15 +80,35 @@ export default React.memo(function RouteOverlay({
    * Use GPU-side `lineTrimOffset` when we have a smooth fractionTraveled AND
    * no congestion shading. Congestion needs the per-segment feature split
    * (distinct colored features), so falls back to the legacy GeoJSON path.
+   *
+   * Additional guard: `fractionTraveled` must be non-trivially > 0. When the
+   * fraction is effectively zero (user just tapped Start and hasn't moved,
+   * or the SDK hasn't emitted real progress yet), Mapbox Maps v11 native
+   * interprets `lineTrimOffset: [0, 0]` ambiguously — on iOS it can render
+   * as "trim the entire line" instead of "trim nothing", which makes the
+   * whole ahead route disappear immediately after tapping Navigate and
+   * stay invisible until the user actually drives forward enough to push
+   * the fraction above zero. Below this threshold we fall through to the
+   * legacy route-split path (empty passed ring, full-polyline ahead ring)
+   * which doesn't rely on the trim-offset paint property at all, so the
+   * route stays drawn at the moment of Start regardless of SDK warm-up
+   * latency. The threshold is picked so even a single SDK tick of real
+   * progress (> 1 m on a route of any length) reliably flips us back to
+   * the GPU-trim path; pure GPS jitter can't reach it because
+   * `smoothedFraction` is clamped to the same snap policy as the puck.
    */
+  const rawFraction =
+    typeof fractionTraveled === 'number' && Number.isFinite(fractionTraveled)
+      ? Math.max(0, Math.min(1, fractionTraveled))
+      : 0;
+  const TRIM_OFFSET_MIN_FRACTION = 5e-4;
   const useTrimOffset =
     isNavigating &&
     !hasCongestion &&
     typeof fractionTraveled === 'number' &&
-    Number.isFinite(fractionTraveled);
-  const trimFraction = useTrimOffset
-    ? Math.max(0, Math.min(1, fractionTraveled as number))
-    : 0;
+    Number.isFinite(fractionTraveled) &&
+    rawFraction > TRIM_OFFSET_MIN_FRACTION;
+  const trimFraction = useTrimOffset ? rawFraction : 0;
 
   const fullCoords = useMemo(
     () => polyline.map((p): [number, number] => [p.lng, p.lat]),

@@ -620,8 +620,24 @@ export default function MapScreen() {
     [nav.applySdkRouteGeometry],
   );
 
-  /** During nav: fused coord for puck/camera (`navigationProgressCoord` → snapped display when JS on-route). */
-  const navDisplayCoordRaw = nav.isNavigating ? nav.navigationProgressCoord : location;
+  /**
+   * During nav: fused coord for puck/camera (`navigationProgressCoord` →
+   * snapped display when JS on-route, `routeSplitSnap.point` on SDK).
+   *
+   * Important waiting-window edge: `nav.navigationProgressCoord` resolves to
+   * `routeSplitSnap.point` which is `polyline[0]` while
+   * `instructionSource === 'sdk_waiting'` — i.e. the route origin captured
+   * at tap-Navigate, not the user's live GPS. If the user has shifted even
+   * a few meters between preview and Start, the puck visibly teleports to
+   * the stale origin. During the waiting window we fall back to `location`
+   * (the EWMA-smoothed live fix from `useLocation`) so the puck stays on
+   * the real user position until the first real SDK / JS progress lands.
+   */
+  const isSdkWaiting =
+    nav.isNavigating && nav.navigationProgress?.instructionSource === 'sdk_waiting';
+  const navDisplayCoordRaw = nav.isNavigating
+    ? (isSdkWaiting ? location : nav.navigationProgressCoord)
+    : location;
   const navDisplayHeading = nav.isNavigating ? nav.navigationDisplayHeading : heading;
 
   /**
