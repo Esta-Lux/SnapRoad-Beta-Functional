@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Text,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { MapboxNavigationView, type MapboxNavigationViewRef } from '@badatgil/expo-mapbox-navigation';
 import type { RouteProp } from '@react-navigation/native';
@@ -17,7 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigationMode } from '../contexts/NavigatingContext';
 import { useAuth } from '../contexts/AuthContext';
 import type { DrivingMode, Incident } from '../types';
-import { useTheme } from '../contexts/ThemeContext';
+import { themePalettes, useTheme } from '../contexts/ThemeContext';
 import { DRIVING_MODES } from '../constants/modes';
 import {
   useNativeNavBridge,
@@ -34,9 +35,17 @@ import {
 } from '../lib/nativeNavHelpers';
 import { isTrafficSafetyLayerEnabled, trafficSafetyRegionQuery } from '../config/restrictedRegions';
 
-/** Classic Mapbox Navigation styles — sport uses night, calm/adaptive use day (see embedded nav theme below). */
-const NAV_MAP_STYLE_DAY = 'mapbox://styles/mapbox/navigation-day-v1';
-const NAV_MAP_STYLE_NIGHT = 'mapbox://styles/mapbox/navigation-night-v1';
+/**
+ * Mapbox **Standard** is required for the native module’s `basemap` StyleImport
+ * (`show3dObjects`, `lightPreset`, etc.). `navigation-day-v1` / `navigation-night-v1`
+ * do not expose that import — 3D buildings vanish and route styling can fail to match.
+ * Driving mode + `appTheme` still control dusk/dawn/day/night via the native patch
+ * (`snapRoadLightPreset`, `SnapRoadDayStyle` / `SnapRoadNightStyle`).
+ *
+ * Turn / bottom stats chrome: native draws UI; colors come from `navChromeThemeJson`
+ * (ThemeContext palettes) plus `drivingMode` / `appTheme`. Corner radius lives in the patch.
+ */
+const MAPBOX_STANDARD = 'mapbox://styles/mapbox/standard';
 
 type NativeNavLocationEvent = {
   latitude: number;
@@ -91,16 +100,30 @@ export default function NativeNavigationScreen() {
   const voiceMuted = normalizedParams?.voiceMuted ?? false;
   const drivingMode: DrivingMode = normalizedParams?.drivingMode ?? 'adaptive';
   /**
-   * Sport → Navigation **night** style + dark app theme (matches SnapRoad sport / dusk intent).
-   * Calm + Adaptive → Navigation **day** style + light app theme (matches JS hybrid “day” browse).
-   * Callers can still override with `mapStyleUrl` in route params (e.g. Standard satellite experiments).
+   * Default **Standard** so native `applySnapRoadBasemapConfig` can enable 3D buildings and
+   * the Navigation SDK route line + our delegate theming stay consistent.
    */
   const resolvedMapStyleUrl = useMemo(() => {
     if (normalizedParams?.mapStyleUrl) return normalizedParams.mapStyleUrl;
-    return drivingMode === 'sport' ? NAV_MAP_STYLE_NIGHT : NAV_MAP_STYLE_DAY;
-  }, [normalizedParams?.mapStyleUrl, drivingMode]);
+    return MAPBOX_STANDARD;
+  }, [normalizedParams?.mapStyleUrl]);
   const embeddedAppTheme: 'light' | 'dark' = drivingMode === 'sport' ? 'dark' : 'light';
   const modeConfig = DRIVING_MODES[drivingMode];
+
+  /** Align native maneuver + trip-progress chrome with JS theme tokens (sport → dark palette). */
+  const navChromeThemeJson = useMemo(() => {
+    const c = drivingMode === 'sport' ? themePalettes.dark : themePalettes.light;
+    const maneuverAccent = drivingMode === 'sport' ? '#93C5FD' : '#E8F4FF';
+    return JSON.stringify({
+      maneuverBg: c.primary,
+      maneuverText: '#FFFFFF',
+      maneuverAccent,
+      statsBg: c.card,
+      statsText: c.text,
+      statsAccent: c.primary,
+      statsBorder: c.border,
+    });
+  }, [drivingMode]);
   const reportHint = useMemo(() => {
     const raw = route.params?.reportHint;
     return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
@@ -139,8 +162,21 @@ export default function NativeNavigationScreen() {
     [origin?.lat, origin?.lng, destination?.lat, destination?.lng, drivingMode, resolvedMapStyleUrl],
   );
 
-  const followingZoom = modeConfig.navZoom;
-  const followingPitch = modeConfig.navPitch;
+  /** Slightly tighter zoom + pitch for a stronger 3D driving perspective (buildings read taller). */
+  const followingZoom = useMemo(
+    () => Math.min(19.25, modeConfig.navZoom + 0.85),
+    [modeConfig.navZoom],
+  );
+  const followingPitch = useMemo(
+    () => Math.min(76, modeConfig.navPitch + 6),
+    [modeConfig.navPitch],
+  );
+
+  /** Until the SDK finishes routing, avoid POI churn competing with the map. */
+  const [routeReady, setRouteReady] = useState(false);
+  useEffect(() => {
+    setRouteReady(false);
+  }, [nativeViewKey]);
 
   const exitWithResult = useCallback(
     async (arrived: boolean) => {
@@ -288,6 +324,24 @@ export default function NativeNavigationScreen() {
     [dismissedIncidentId],
   );
 
+  const handleRoutesLoaded = useCallback(() => {
+    setRouteReady(true);
+  }, []);
+
+  const handleRouteFailedToLoad = useCallback(
+    (event: { nativeEvent: { errorMessage: string } }) => {
+      const errorMessage = event?.nativeEvent?.errorMessage || 'Unknown route-load error';
+      setRouteReady(true);
+      Sentry.captureMessage('native_navigation_route_failed_to_load', {
+        level: 'error',
+        extra: { errorMessage, drivingMode },
+      });
+      console.warn('[NativeNavigation] route load failed', errorMessage);
+      Alert.alert('Could not load route', errorMessage);
+    },
+    [drivingMode],
+  );
+
   const handleLocationUpdate = useCallback(
     (event: { nativeEvent: NativeNavLocationEvent }) => {
       const lat = Number(event.nativeEvent?.latitude);
@@ -295,7 +349,7 @@ export default function NativeNavigationScreen() {
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
       const course = Number(event.nativeEvent?.course);
       if (Number.isFinite(course)) lastCourseRef.current = course;
-      if (!screenFocused) return;
+      if (!screenFocused || !routeReady) return;
       const now = Date.now();
 
       const lastPivot = lastCameraFetchCoordRef.current;
@@ -307,7 +361,7 @@ export default function NativeNavigationScreen() {
         void refreshNativeMapPois(lat, lng);
       }
     },
-    [refreshNativeMapPois, screenFocused],
+    [refreshNativeMapPois, screenFocused, routeReady],
   );
 
   const handleDismissIncident = useCallback(() => {
@@ -350,9 +404,9 @@ export default function NativeNavigationScreen() {
   );
 
   useEffect(() => {
-    if (!origin) return;
+    if (!origin || !routeReady) return;
     void refreshNativeMapPois(origin.lat, origin.lng);
-  }, [refreshNativeMapPois, origin]);
+  }, [refreshNativeMapPois, origin, routeReady]);
 
   useEffect(() => {
     if (!orionQuickReply) return;
@@ -404,6 +458,7 @@ export default function NativeNavigationScreen() {
         trafficCameras={trafficCamerasJson}
         drivingMode={drivingMode}
         appTheme={embeddedAppTheme}
+        navChromeThemeJson={navChromeThemeJson}
         navigationLogicOnly={false}
         onRouteProgressChanged={handleProgressChanged}
         onNavigationLocationUpdate={handleLocationUpdate}
@@ -412,15 +467,8 @@ export default function NativeNavigationScreen() {
         onFinalDestinationArrival={handleArrival}
         onRouteChanged={() => {}}
         onUserOffRoute={() => {}}
-        onRoutesLoaded={() => {}}
-        onRouteFailedToLoad={(event) => {
-          const errorMessage = event?.nativeEvent?.errorMessage || 'Unknown route-load error';
-          Sentry.captureMessage('native_navigation_route_failed_to_load', {
-            level: 'error',
-            extra: { errorMessage, drivingMode },
-          });
-          console.warn('[NativeNavigation] route load failed', errorMessage);
-        }}
+        onRoutesLoaded={handleRoutesLoaded}
+        onRouteFailedToLoad={handleRouteFailedToLoad}
       />
       {activeIncident ? (
         <View
@@ -501,14 +549,27 @@ export default function NativeNavigationScreen() {
           </Text>
         </View>
       )}
+      {/* Left side: native “End” / cancel stays on the right — avoids covering exit. */}
       <TouchableOpacity
-        style={[styles.recenterBtn, { bottom: insets.bottom + 12 }]}
+        style={[styles.recenterBtn, { left: 14, bottom: insets.bottom + 96 }]}
         activeOpacity={0.85}
         onPress={() => navRef.current?.recenterMap?.()}
       >
         <Ionicons name="locate" size={16} color="#fff" />
         <Text style={styles.recenterText}>Recenter</Text>
       </TouchableOpacity>
+
+      {!routeReady && (
+        <View
+          style={styles.routeLoadingOverlay}
+          pointerEvents="none"
+        >
+          <View style={styles.routeLoadingCard}>
+            <ActivityIndicator size="large" color="#fff" />
+            <Text style={styles.routeLoadingText}>Calculating route…</Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -608,7 +669,7 @@ const styles = StyleSheet.create({
   },
   recenterBtn: {
     position: 'absolute',
-    right: 14,
+    zIndex: 16,
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -620,4 +681,23 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   recenterText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  routeLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 24,
+  },
+  routeLoadingCard: {
+    paddingHorizontal: 28,
+    paddingVertical: 22,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.58)',
+    alignItems: 'center',
+  },
+  routeLoadingText: {
+    color: '#fff',
+    marginTop: 12,
+    fontSize: 15,
+    fontWeight: '700',
+  },
 });

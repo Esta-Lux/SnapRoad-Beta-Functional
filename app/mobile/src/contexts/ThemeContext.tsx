@@ -118,6 +118,12 @@ const LIGHT: ThemeColors = {
   rewardsGradientEnd: '#3B82F6',
 };
 
+/** Static palettes for screens that must pin light/dark tokens (e.g. native nav chrome). */
+export const themePalettes: { light: ThemeColors; dark: ThemeColors } = {
+  light: LIGHT,
+  dark: DARK,
+};
+
 interface ThemeContextType {
   theme: Theme;
   isLight: boolean;

@@ -40,6 +40,11 @@ declare module '@badatgil/expo-mapbox-navigation' {
     trafficCameras?: string;
     drivingMode?: 'calm' | 'adaptive' | 'sport';
     appTheme?: 'light' | 'dark';
+    /**
+     * JSON: maneuverBg, maneuverText, maneuverAccent, statsBg, statsText, statsAccent, statsBorder (hex #RRGGBB).
+     * When set, native turn + bottom stats chrome use these instead of built-in mode palettes.
+     */
+    navChromeThemeJson?: string;
     navigationLogicOnly?: boolean;
     onRouteProgressChanged?: (event: {
       nativeEvent: {
