@@ -3,6 +3,7 @@ import type { Coordinate } from '../types';
 import type { NavigationProgress, NavStep, NavBannerModel } from './navModel';
 import {
   coordinateAtCumulativeMeters,
+  haversineMeters,
   polylineLengthMeters,
   projectOntoPolyline,
   segmentAndTFromCumAlongPolyline,
@@ -16,6 +17,7 @@ import {
   navStepFromDirectionsAtIndex,
   resolveManeuverKind,
 } from './navStepsFromDirections';
+import { logNavVerify } from './navLogicDebug';
 
 /**
  * iOS emits `String(describing: step.maneuverType)` and
@@ -120,9 +122,39 @@ function routeNavStepMatchesSdk(
 let smoothedHeadingDeg: number | null = null;
 let smoothedHeadingAtMs = 0;
 
+/**
+ * Last-projection hysteresis state — prevents the matched-location projection
+ * from flipping to a parallel segment / lane within a single tick.
+ *
+ * `projectOntoPolyline` returns the globally closest point on the polyline.
+ * On real-world roads with HOV lanes, frontage roads, or roads that loop
+ * back on themselves, two segments of the polyline can be within a few
+ * metres of each other. A single noisy GPS sample can flip the projection
+ * from one segment to the other even though the driver hasn't moved —
+ * which manifests visually as the puck "jumping into a different lane"
+ * during or just after a reroute.
+ *
+ * Guard: reject a new projection when
+ *   1. the polyline **identity hasn't changed** (same route — i.e. not a
+ *      legitimate reroute handoff), AND
+ *   2. the new `cumulativeMeters` is more than 10 m **backward** along the
+ *      route from the previous projection, AND
+ *   3. the matched location is still within 20 m of the previous snap point
+ *      (we haven't physically moved enough to justify the jump).
+ *
+ * In all other cases (forward motion, small jitter, large lateral move,
+ * polyline swap) we accept the new projection.
+ */
+let lastProjectionPolyline: Coordinate[] | null = null;
+let lastProjectionCumMeters: number | null = null;
+let lastProjectionPoint: Coordinate | null = null;
+
 export function resetHeadingSmoothing(): void {
   smoothedHeadingDeg = null;
   smoothedHeadingAtMs = 0;
+  lastProjectionPolyline = null;
+  lastProjectionCumMeters = null;
+  lastProjectionPoint = null;
 }
 
 function shortestAngleDeltaDeg(target: number, current: number): number {
@@ -175,13 +207,21 @@ export function clampBearingToTangentDeg(
 /**
  * Smooth `course` toward the previous emitted heading.
  *
- * - `alpha` = EWMA factor toward the new raw course.
- *   - Slow (≤ 4 m/s ≈ 9 mph): 0.35 — heavy damping, kills pedestrian-mode hunt.
- *   - Cruise (≥ 15 m/s ≈ 34 mph): 0.85 — near pass-through, no lag on turns.
+ * Time-based EWMA: `alpha = 1 - exp(-dt / tau)` so the perceived smoothness
+ * is frame-rate independent. Matches what `useSmoothedNavFraction` does for
+ * along-route position — iOS at ~10 Hz and Android at ~3–7 Hz now feel
+ * identical.
+ *
+ * Time constant (`tau`) scales with speed to kill course jitter at low
+ * speed while staying responsive on turns at cruise:
+ *   - Slow (≤ 4 m/s ≈ 9 mph): tau = 350 ms (heavy damping).
+ *   - Cruise (≥ 15 m/s ≈ 34 mph): tau = 120 ms (responsive).
  *   - Linear blend in between.
- * - Sharp turns (|Δ| ≥ 25°) bypass damping so real lane changes land instantly.
- * - Stale previous sample (> 2 s since last update, e.g. first tick after a
- *   reroute) bypasses damping.
+ *
+ * Bypass paths (same as before):
+ *   - First sample or stale > 2 s → accept raw course verbatim (no lag).
+ *   - Sharp turns (|Δ| ≥ 25°) → accept raw course verbatim (real lane
+ *     changes must land instantly, not ease in).
  */
 function smoothCourseDeg(
   rawCourseDeg: number,
@@ -189,7 +229,8 @@ function smoothCourseDeg(
   nowMs: number,
 ): number {
   const prev = smoothedHeadingDeg;
-  const stale = smoothedHeadingAtMs > 0 && nowMs - smoothedHeadingAtMs > 2000;
+  const prevAt = smoothedHeadingAtMs;
+  const stale = prevAt > 0 && nowMs - prevAt > 2000;
   if (prev == null || stale) {
     smoothedHeadingDeg = wrap360(rawCourseDeg);
     smoothedHeadingAtMs = nowMs;
@@ -203,7 +244,9 @@ function smoothCourseDeg(
   }
   const sp = Number.isFinite(speedMps as number) ? Math.max(0, speedMps as number) : 0;
   const tSpeed = Math.max(0, Math.min(1, (sp - 4) / (15 - 4)));
-  const alpha = 0.35 + (0.85 - 0.35) * tSpeed;
+  const tauMs = 350 + (120 - 350) * tSpeed;
+  const dt = Math.max(1, nowMs - prevAt);
+  const alpha = 1 - Math.exp(-dt / Math.max(16, tauMs));
   smoothedHeadingDeg = wrap360(prev + delta * alpha);
   smoothedHeadingAtMs = nowMs;
   return smoothedHeadingDeg;
@@ -236,7 +279,82 @@ export function buildNavigationProgressFromSdk(args: {
     ? { lat: location.latitude, lng: location.longitude }
     : null;
   const frac = Math.max(0, Math.min(1, Number.isFinite(progress.fractionTraveled) ? progress.fractionTraveled : 0));
-  const proj = locCoord ? projectOntoPolyline(locCoord, polyline) : null;
+  const rawProj = locCoord ? projectOntoPolyline(locCoord, polyline) : null;
+
+  /**
+   * Lateral hysteresis — see `lastProjectionPolyline` docs above. Reject
+   * backward flips of the projection that almost certainly represent the
+   * matcher switching to a neighbouring segment (HOV / frontage / loop)
+   * rather than real reverse motion. We only apply the guard when the
+   * polyline identity hasn't changed — a reroute resets state below.
+   */
+  const BACKWARD_JUMP_THRESHOLD_M = 10;
+  const LATERAL_HOLD_RADIUS_M = 20;
+  let effectiveProj = rawProj;
+  if (
+    rawProj &&
+    locCoord &&
+    lastProjectionPolyline === polyline &&
+    lastProjectionCumMeters != null &&
+    lastProjectionPoint != null
+  ) {
+    const backwardDelta = lastProjectionCumMeters - rawProj.cumFromStartMeters;
+    if (backwardDelta > BACKWARD_JUMP_THRESHOLD_M) {
+      const lateralToLastSnap = haversineMeters(
+        locCoord.lat,
+        locCoord.lng,
+        lastProjectionPoint.lat,
+        lastProjectionPoint.lng,
+      );
+      if (lateralToLastSnap < LATERAL_HOLD_RADIUS_M) {
+        effectiveProj = {
+          ...rawProj,
+          snapCoord: { lat: lastProjectionPoint.lat, lng: lastProjectionPoint.lng },
+          cumFromStartMeters: lastProjectionCumMeters,
+        };
+      }
+    }
+  }
+
+  const polylineSwapped =
+    lastProjectionPolyline != null && lastProjectionPolyline !== polyline;
+  if (polylineSwapped) {
+    logNavVerify('reroute.handoff', {
+      event: 'polyline_swap',
+      oldCum: lastProjectionCumMeters,
+      newProjCum: rawProj?.cumFromStartMeters ?? null,
+      newPolylineLen: polyline.length,
+    });
+  }
+  if (rawProj && effectiveProj !== rawProj) {
+    logNavVerify('projection', {
+      event: 'backward_flip_held',
+      rawCum: rawProj.cumFromStartMeters,
+      heldCum: lastProjectionCumMeters,
+      lateralM: locCoord && lastProjectionPoint
+        ? haversineMeters(
+            locCoord.lat,
+            locCoord.lng,
+            lastProjectionPoint.lat,
+            lastProjectionPoint.lng,
+          )
+        : null,
+    });
+  }
+  if (effectiveProj) {
+    lastProjectionPolyline = polyline;
+    lastProjectionCumMeters = effectiveProj.cumFromStartMeters;
+    lastProjectionPoint = {
+      lat: effectiveProj.snapCoord.lat,
+      lng: effectiveProj.snapCoord.lng,
+    };
+  } else if (lastProjectionPolyline !== polyline) {
+    lastProjectionPolyline = polyline;
+    lastProjectionCumMeters = null;
+    lastProjectionPoint = null;
+  }
+
+  const proj = effectiveProj;
   const snap = proj
     ? {
         point: proj.snapCoord,
@@ -361,63 +479,117 @@ export function buildNavigationProgressFromSdk(args: {
     nextManeuverDistanceMeters: followingDistanceMeters,
   };
 
+  /**
+   * Single-source banner: when MapScreen resolves `banner?.lanes ?? prog.nextStep?.lanes`
+   * (and the analogous chains for icon kind / signal / shields / roundabout exit)
+   * we want every field to describe the SAME maneuver the banner's `primaryInstruction`
+   * is talking about. Previously these rich fields were left `undefined` on the
+   * banner, so MapScreen always fell through to `prog.nextStep.*` — which can be
+   * a different step than the banner text when `nextBaseStep` (geometric pick)
+   * disagrees with the SDK's banner. Populating them here from the same
+   * `nextBaseStep` (the step whose `displayInstruction` fed `primaryText`) pins
+   * all turn-card UI to one step reference and eliminates the "icon points
+   * straight while voice says turn right" class of drift.
+   */
+  const bannerManeuverKind =
+    preferRouteStepFields && nextBaseStep?.kind ? nextBaseStep.kind : kind;
   const banner: NavBannerModel = {
     primaryInstruction: primaryText,
     primaryDistanceMeters: distNext,
     primaryStreet: nextBaseStep?.streetName ?? ds?.name ?? null,
     secondaryInstruction: secondaryText ?? null,
+    signal: nextBaseStep?.signal,
+    lanes: nextBaseStep?.lanes ?? [],
+    shields: nextBaseStep?.shields ?? [],
+    maneuverKind: bannerManeuverKind,
+    roundaboutExitNumber: nextBaseStep?.roundaboutExitNumber ?? null,
   };
 
   const durRem = Math.max(0, Math.round(progress.durationRemaining ?? 0));
   const distRem = Math.max(0, progress.distanceRemaining ?? 0);
 
   /**
-   * Heading source priority — Apple-Maps style, matches what Mapbox Navigation's
-   * own NavigationCamera does when driving the embedded UI:
+   * Heading source priority — Apple-Maps-style, three-band fusion:
    *
-   * 1. Route tangent (forward direction of upcoming road) at the snapped
-   *    point — whenever the user is stationary / slow (<1.5 m/s ≈ 3.4 mph)
-   *    or the native SDK hasn't produced a valid `course` sample yet.
-   *    `location.course` is a direction-of-motion estimate; it's -1 or
-   *    noise before the user actually starts rolling, so feeding it to
-   *    `FollowWithCourse` causes the camera to spin toward the device
-   *    compass (often ~180° off). Route tangent is always a valid
-   *    forward direction along the path and matches what the native
-   *    Mapbox Navigation camera does in the same condition.
-   * 2. Smoothed SDK course (EWMA over shortest angle) — once the driver is
-   *    rolling fast enough for `course` to be meaningful, we honour it so
-   *    curve-following bearing looks natural.
+   * 1. Moving (speed ≥ 2.0 m/s ≈ 4.5 mph) AND course valid
+   *    → use **course** (GPS direction of travel). This is the only regime
+   *    where `location.course` is reliable; feed it through the time-based
+   *    EWMA so curve-following reads natural.
+   * 2. Creep (0.5–2.0 m/s) AND course valid
+   *    → still use **course**, but the EWMA's low-speed alpha damps noise.
+   *    Falling back to tangent here was the old behaviour and it caused
+   *    the puck to rotate toward the *road centreline direction* at lights
+   *    and stop-and-go, not the direction the car is actually pointed.
+   * 3. Stopped (< 0.5 m/s) OR course invalid
+   *    → **hold** the previously-smoothed heading. Apple Maps does this: at
+   *    a red light your arrow keeps pointing the way you were going until
+   *    you move again. Never revert to route tangent mid-trip — that
+   *    produces visible "snap to road" rotations that look wrong whenever
+   *    the car is legitimately off-axis (angled parking, in a driveway,
+   *    at the far side of an intersection).
    *
-   * Both cases go through `smoothCourseDeg` so sharp transitions from
-   * tangent → course (and back) don't whip the camera.
+   * First-sample seed: when we have no last-known smoothed heading yet
+   * (very first progress tick of the trip) we do use route tangent as a
+   * safe starting value so the puck doesn't flash pointing north.
    */
   const rawCourseDeg = location != null && location.course >= 0 ? location.course : null;
   const speedMpsForSmoothing =
     location != null && location.speed >= 0 ? location.speed : null;
   const tangentDeg = tangentBearingAlongPolyline(polyline, cumulativeMeters);
-  const movingFastEnoughForCourse =
-    speedMpsForSmoothing != null && speedMpsForSmoothing >= 1.5;
-  const bearingSeed =
-    rawCourseDeg != null && movingFastEnoughForCourse
-      ? rawCourseDeg
-      : tangentDeg != null
-        ? tangentDeg
-        : rawCourseDeg;
+  const nowMs = Date.now();
+  const MOVING_THRESHOLD_MPS = 2.0;
+  const CREEP_THRESHOLD_MPS = 0.5;
+  const speedForBand = Number.isFinite(speedMpsForSmoothing as number)
+    ? (speedMpsForSmoothing as number)
+    : 0;
+  const courseIsValid = rawCourseDeg != null && Number.isFinite(rawCourseDeg);
+  const moving = speedForBand >= MOVING_THRESHOLD_MPS;
+  const creeping = speedForBand >= CREEP_THRESHOLD_MPS && speedForBand < MOVING_THRESHOLD_MPS;
+  let bearingSeed: number | null;
+  if (courseIsValid && (moving || creeping)) {
+    bearingSeed = rawCourseDeg as number;
+  } else if (smoothedHeadingDeg != null) {
+    bearingSeed = smoothedHeadingDeg;
+  } else if (tangentDeg != null && Number.isFinite(tangentDeg)) {
+    bearingSeed = tangentDeg;
+  } else if (courseIsValid) {
+    bearingSeed = rawCourseDeg as number;
+  } else {
+    bearingSeed = null;
+  }
   /**
    * After smoothing, cap the result so it never deviates more than 45° from
    * the forward route tangent — Mapbox's `BearingSmoothing.maximumBearingSmoothingAngle`
    * pattern. This guarantees the camera keeps the road centered even when
    * the matcher briefly disagrees with the polyline (urban canyon,
-   * ramp pickup). See `clampBearingToTangentDeg` docstring.
+   * ramp pickup). The clamp is only applied when `bearingSeed` came from
+   * a live course sample; when we're holding a stale smoothed value
+   * (stopped at a light), the clamp is skipped so the puck doesn't rotate
+   * to an arbitrary tangent direction while the car isn't moving.
    */
   const smoothedBearing =
     bearingSeed != null
-      ? smoothCourseDeg(bearingSeed, speedMpsForSmoothing, Date.now())
+      ? smoothCourseDeg(bearingSeed, speedMpsForSmoothing, nowMs)
       : undefined;
+  const shouldClampToTangent = courseIsValid && (moving || creeping);
   const headingDeg =
     smoothedBearing != null
-      ? clampBearingToTangentDeg(smoothedBearing, tangentDeg)
+      ? shouldClampToTangent
+        ? clampBearingToTangentDeg(smoothedBearing, tangentDeg)
+        : smoothedBearing
       : undefined;
+
+  logNavVerify('bearing', {
+    rawCourse: rawCourseDeg,
+    courseValid: courseIsValid,
+    speedMps: speedMpsForSmoothing,
+    band: moving ? 'moving' : creeping ? 'creep' : 'stopped',
+    tangent: tangentDeg,
+    seed: bearingSeed,
+    smoothed: smoothedBearing,
+    heading: headingDeg,
+    clamped: shouldClampToTangent,
+  });
   const displayCoord = {
     lat: routeSplitSnap.point.lat,
     lng: routeSplitSnap.point.lng,

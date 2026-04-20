@@ -44,8 +44,20 @@ type Props = {
 };
 
 function NavSdkPuckImpl({ lng, lat, course, color = '#0A66FF' }: Props) {
+  /**
+   * Keep the last known valid course. The native SDK publishes `course` as
+   * −1 on the very first few ticks (before the matcher locks), and can
+   * briefly publish NaN/negative values on reroute boundaries. Showing 0
+   * in those frames makes the chevron snap to north for a beat, then back
+   * — exactly the "puck weak / faces wrong way for a moment" symptom.
+   * Holding the previous rotation until a new valid sample arrives mirrors
+   * what Apple Maps does in the same condition.
+   */
+  const lastCourseRef = React.useRef<number>(0);
   if (!MapboxGL || !Number.isFinite(lng) || !Number.isFinite(lat)) return null;
-  const rotation = course >= 0 && Number.isFinite(course) ? course : 0;
+  const courseIsValid = course >= 0 && Number.isFinite(course);
+  if (courseIsValid) lastCourseRef.current = course;
+  const rotation = courseIsValid ? course : lastCourseRef.current;
   return (
     <MapboxGL.MarkerView
       id="nav-sdk-puck"
@@ -82,8 +94,9 @@ export const NavSdkPuck = React.memo(NavSdkPuckImpl, (prev, next) => {
   if (prev.color !== next.color) return false;
   if (Math.abs(prev.lat - next.lat) > 1e-6) return false;
   if (Math.abs(prev.lng - next.lng) > 1e-6) return false;
-  // 1° course difference is imperceptible on a 40pt icon.
-  if (Math.abs(prev.course - next.course) > 1) return false;
+  // 0.5° quantization — at 40 pt the pixel delta is sub-pixel, but it halves
+  // the perceived stepping during a curve compared to the previous 1° bucket.
+  if (Math.abs(prev.course - next.course) > 0.5) return false;
   return true;
 });
 

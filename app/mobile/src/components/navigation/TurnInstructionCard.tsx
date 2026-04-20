@@ -186,35 +186,58 @@ export default React.memo(function TurnInstructionCard({
   }, [lanes, step, lanesJson]);
 
   /**
-   * Debounced lanes: hold previous lane data for 300 ms after a change to
-   * prevent 1-frame flicker when the step index advances and lane sources
-   * briefly disagree.
+   * Debounced lanes — two distinct stability rules:
+   *
+   *  1. **Step-change blackout** (primary symptom fix): when the step index
+   *     advances (tracked via `step.instruction` changing) we render **no
+   *     lane guidance** for the 300 ms debounce window. Holding the previous
+   *     step's lane display during that window — even for a single frame —
+   *     was confusing drivers ("the lanes don't match the turn I'm about to
+   *     make"). Showing nothing for 300 ms is strictly better than the
+   *     wrong lanes.
+   *
+   *  2. **Within-step flicker damp**: once the window elapses, if the lane
+   *     JSON keeps flipping between sources (banner vs REST lanes) inside
+   *     the same step, hold the previous value for 300 ms so the glyphs
+   *     don't twitch.
    */
   const debouncedLanesRef = useRef<{
     data: LaneInfo[] | null;
     changedAt: number;
     prevStepInstruction: string | undefined;
-  }>({ data: null, changedAt: 0, prevStepInstruction: undefined });
+    stepChangedAt: number;
+  }>({ data: null, changedAt: 0, prevStepInstruction: undefined, stepChangedAt: 0 });
 
   const effectiveLanes = useMemo((): LaneInfo[] | null => {
     const now = Date.now();
     const prev = debouncedLanesRef.current;
     const stepChanged = step?.instruction !== prev.prevStepInstruction;
-    const lanesChanged = JSON.stringify(rawLanes) !== JSON.stringify(prev.data);
 
-    if (!lanesChanged) return prev.data;
-
-    /* Accept immediately when the step actually advanced (expected lane change). */
     if (stepChanged) {
-      debouncedLanesRef.current = { data: rawLanes, changedAt: now, prevStepInstruction: step?.instruction };
-      return rawLanes;
+      debouncedLanesRef.current = {
+        data: null,
+        changedAt: now,
+        prevStepInstruction: step?.instruction,
+        stepChangedAt: now,
+      };
+      return null;
     }
 
-    /* Within same step: debounce — hold previous briefly. */
+    const inBlackout = now - prev.stepChangedAt < LANE_DEBOUNCE_MS;
+    if (inBlackout) return null;
+
+    const lanesChanged = JSON.stringify(rawLanes) !== JSON.stringify(prev.data);
+    if (!lanesChanged) return prev.data;
+
     if (now - prev.changedAt < LANE_DEBOUNCE_MS) {
       return prev.data;
     }
-    debouncedLanesRef.current = { data: rawLanes, changedAt: now, prevStepInstruction: step?.instruction };
+    debouncedLanesRef.current = {
+      data: rawLanes,
+      changedAt: now,
+      prevStepInstruction: step?.instruction,
+      stepChangedAt: prev.stepChangedAt,
+    };
     return rawLanes;
   }, [rawLanes, step]);
 

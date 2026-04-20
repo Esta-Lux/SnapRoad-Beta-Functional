@@ -130,6 +130,7 @@ import TripSummaryModal from '../components/common/Modal';
 import { useNavigationMode } from '../contexts/NavigatingContext';
 import { useCameraController } from '../hooks/useCameraController';
 import { navLogicDebugEnabled, navLogicSdkEnabled, navNativeFullScreenEnabled } from '../navigation/navFeatureFlags';
+import { logNavVerify } from '../navigation/navLogicDebug';
 import {
   ingestSdkLocation,
   ingestSdkProgress,
@@ -563,7 +564,11 @@ export default function MapScreen() {
       const mr = routes.mainRoute;
       if (poly.length >= 2 && mr && typeof mr.distance === 'number' && typeof mr.expectedTravelTime === 'number') {
         ingestSdkRoutePolyline(poly);
-        nav.applySdkRouteGeometry(poly, mr.distance, mr.expectedTravelTime);
+        // Pass the native routes payload through so `applySdkRouteGeometry`
+        // can seed synthetic steps and kick off a background REST-Directions
+        // hydration, restoring real maneuver types / lanes to the turn card
+        // after an SDK reroute (native payload only carries geometry).
+        nav.applySdkRouteGeometry(poly, mr.distance, mr.expectedTravelTime, routes);
       }
     },
     [nav.applySdkRouteGeometry],
@@ -578,7 +583,7 @@ export default function MapScreen() {
       const mr = routes.mainRoute;
       if (poly.length >= 2 && typeof mr.distance === 'number' && typeof mr.expectedTravelTime === 'number') {
         ingestSdkRoutePolyline(poly);
-        nav.applySdkRouteGeometry(poly, mr.distance, mr.expectedTravelTime);
+        nav.applySdkRouteGeometry(poly, mr.distance, mr.expectedTravelTime, routes);
       }
     },
     [nav.applySdkRouteGeometry],
@@ -631,9 +636,23 @@ export default function MapScreen() {
    */
   const lastKnownNavSpeedMps =
     nav.navigationProgress?.displayCoord?.speedMps ?? 0;
+  /**
+   * Scale the "teleport" threshold by route length so it's always bounded
+   * in *meters*, not percent. A fixed 2% threshold on a 100-mile route is
+   * a 2-mile jump before we consider the delta big enough to snap — that's
+   * a visible teleport. Conversely, on a 0.5 mile route 2% is 50 ft and
+   * even normal reroute deltas snap.
+   *
+   * Policy: always snap on deltas ≥ 100 m of arc, but clamp the fraction
+   * to [0.5%, 5%] so very short and very long routes stay sane.
+   */
+  const snapDeltaFraction =
+    navPolylineLenMetersRaw > 1
+      ? Math.max(0.005, Math.min(0.05, 100 / navPolylineLenMetersRaw))
+      : 0.02;
   const smoothedFraction = useSmoothedNavFraction(targetFraction, nav.isNavigating, {
     timeConstantMs: 180,
-    snapDeltaFraction: 0.02,
+    snapDeltaFraction,
     deadReckoning: navPolylineLenMetersRaw > 1
       ? {
           polylineLengthMeters: navPolylineLenMetersRaw,
@@ -3057,15 +3076,40 @@ export default function MapScreen() {
             on a single point. Heading comes from `navigationDisplayHeading`
             which is the smoothed SDK course (see `navSdkProgressAdapter.ts`).
               - Explore (not navigating) → default Mapbox GPS.
+
+            Mount-window rule: previously the provider was gated on
+            `sdkPuckOwns || !navLogicSdkEnabled()`, which meant that during the
+            first 150–500 ms of an SDK trip (before `onNavigationLocationUpdate`
+            landed) no `CustomLocationProvider` was mounted and the camera
+            followed the default GPS puck — producing the "camera at a wrong
+            angle for a moment" symptom at trip start. We now mount as soon as
+            `nav.isNavigating` with a finite `navDisplayCoord`; the coord falls
+            back to `navDisplayCoordRaw` (= latest GPS) when the smoothed
+            on-polyline point isn't ready yet, so the camera centre is always
+            defined.
           */}
           {nav.isNavigating &&
-          (sdkPuckOwns || !navLogicSdkEnabled()) &&
           Number.isFinite(navDisplayCoord.lat) &&
           Number.isFinite(navDisplayCoord.lng) ? (
-            <MapboxGL.CustomLocationProvider
-              coordinate={[navDisplayCoord.lng, navDisplayCoord.lat]}
-              heading={Number.isFinite(navDisplayHeading) ? navDisplayHeading : heading}
-            />
+            <>
+              <MapboxGL.CustomLocationProvider
+                coordinate={[navDisplayCoord.lng, navDisplayCoord.lat]}
+                heading={Number.isFinite(navDisplayHeading) ? navDisplayHeading : heading}
+              />
+              {navLogicDebugEnabled()
+                ? (() => {
+                    logNavVerify('provider.mount', {
+                      mounted: true,
+                      sdkPuckOwns,
+                      navDisplayHeadingValid: Number.isFinite(navDisplayHeading),
+                      fallbackHeading: !Number.isFinite(navDisplayHeading),
+                      lat: navDisplayCoord.lat,
+                      lng: navDisplayCoord.lng,
+                    });
+                    return null;
+                  })()
+                : null}
+            </>
           ) : null}
           {standardStyleImportsEnabled && MapboxGL.StyleImport ? (
             <MapboxGL.StyleImport
@@ -3230,13 +3274,40 @@ export default function MapScreen() {
               nav.navigationProgress.routePolyline.length >= 2
                 ? nav.navigationProgress.routePolyline
                 : null;
-            if (sdkRouteOwns && !sdkPolyline) return null;
-            const polylineToRender = sdkRouteOwns
-              ? sdkPolyline!
-              : sdkPolyline ?? nav.navigationData.polyline;
+            /**
+             * Reroute / first-progress fallback: when `sdkRouteOwns` is true
+             * (native guidance phase flipped to `active`) but the React state
+             * lags the store for a tick, `sdkPolyline` can be null for a few
+             * frames — during which the entire route would disappear. Rather
+             * than bailing, fall through to `nav.navigationData.polyline`
+             * (the last-known route geometry, hydrated from REST Directions
+             * or a prior SDK snapshot). Authority still flips back to the
+             * SDK polyline on the next frame once it hydrates.
+             */
+            const polylineToRender =
+              sdkPolyline ??
+              (nav.navigationData.polyline.length >= 2
+                ? nav.navigationData.polyline
+                : null);
+            if (!polylineToRender) {
+              logNavVerify('render.polyline', {
+                sdkRouteOwns,
+                sdkPolylineLen: sdkPolyline?.length ?? 0,
+                navDataPolylineLen: nav.navigationData.polyline?.length ?? 0,
+                source: 'none',
+              });
+              return null;
+            }
+            logNavVerify('render.polyline', {
+              sdkRouteOwns,
+              sdkPolylineLen: sdkPolyline?.length ?? 0,
+              navDataPolylineLen: nav.navigationData.polyline?.length ?? 0,
+              source: sdkPolyline ? 'sdk' : 'rest',
+              renderedLen: polylineToRender.length,
+            });
             return (
             <RouteOverlay
-              key={`route-${nav.routeModelRefreshKey}-${polylineToRender.length}-${sdkRouteOwns ? 'sdk' : 'js'}`}
+              key={`route-${nav.routeModelRefreshKey}-${polylineToRender.length}-${sdkPolyline ? 'sdk' : 'js'}`}
               polyline={polylineToRender}
               isNavigating={nav.isNavigating}
               routeSplit={navigationRouteSplit}
