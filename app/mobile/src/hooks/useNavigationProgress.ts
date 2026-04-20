@@ -73,14 +73,14 @@ export function useNavigationProgress({
       lastGlobalSnapAtRef.current = nowTs;
     }
     let tryGlobalReanchor = false;
-    if (nowTs - lastGlobalSnapAtRef.current >= 10_000) {
+    if (nowTs - lastGlobalSnapAtRef.current >= 6_000) {
       tryGlobalReanchor = true;
       lastGlobalSnapAtRef.current = nowTs;
     } else if (
       previous?.snapped &&
-      previous.snapped.distanceMeters > 42 &&
+      previous.snapped.distanceMeters > 30 &&
       speedMps > 2.5 &&
-      nowTs - lastQualityGlobalAtRef.current >= 3000
+      nowTs - lastQualityGlobalAtRef.current >= 2000
     ) {
       tryGlobalReanchor = true;
       lastQualityGlobalAtRef.current = nowTs;

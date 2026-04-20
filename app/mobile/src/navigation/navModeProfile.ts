@@ -57,7 +57,7 @@ export type NavModeProfile = {
 
 export const DEFAULT_PROGRESS_TUNING: ProgressTuning = {
   leadScale: 1,
-  leadCapMeters: 22,
+  leadCapMeters: 28,
   snapLookaheadSegments: 52,
   alphaOffset: 0,
 };
@@ -76,7 +76,7 @@ export function getProgressTuning(mode: DrivingMode): ProgressTuning {
     case 'sport':
       return {
         leadScale: 1.14,
-        leadCapMeters: 28,
+        leadCapMeters: 38,
         snapLookaheadSegments: 58,
         alphaOffset: 0.06,
       };

@@ -1,6 +1,6 @@
 export const DEFAULT_BLEND = {
   vFloorMps: 2,
-  maxSwingSecPerTick: 15,
+  maxSwingSecPerTick: 8,
 } as const;
 
 /**

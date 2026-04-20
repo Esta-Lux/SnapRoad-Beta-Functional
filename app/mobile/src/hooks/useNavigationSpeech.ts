@@ -7,6 +7,7 @@ import { phraseForManeuverKind } from '../navigation/spokenManeuver';
 import {
   setLastTurnByTurnPhrase,
   isNavigationGuidanceSuppressed,
+  setNavigationGuidanceSuppressedUntil,
 } from '../navigation/navigationGuidanceMemory';
 import {
   distanceClauseForTurnSpeech,
@@ -67,7 +68,7 @@ function roundaboutPhrase(step: NavStep): string {
     : `At the roundabout, take the ${ord} exit`;
 }
 
-/** Only chain the *next* maneuver when it is close — avoids “then …” while still on the current leg. */
+/** Only chain the *next* maneuver when it is close — avoids "then …" while still on the current leg. */
 const CHAIN_NEXT_MAX_M = 240;
 
 function chainPhrase(step: NavStep): string {
@@ -214,7 +215,6 @@ export function useNavigationSpeech({
     if (navLogicSdkEnabled()) return;
     if (!enabled || !progress?.nextStep) return;
     if (progress.nextStep.kind === 'arrive') return;
-    if (isNavigationGuidanceSuppressed()) return;
 
     const speechStep = aligned?.step ?? progress.nextStep;
     const d = aligned?.distanceMeters ?? progress.nextStepDistanceMeters;
@@ -223,11 +223,14 @@ export function useNavigationSpeech({
     const prevIdx = lastStepIndexRef.current;
     if (prevIdx !== stepIdx) {
       if (prevIdx !== null && stepIdx > prevIdx) {
+        setNavigationGuidanceSuppressedUntil(0);
         suppressFarVoiceUntilRef.current = Date.now() + VOICE_POST_STEP_SUPPRESS_MS;
         lastKey.current = null;
       }
       lastStepIndexRef.current = stepIdx;
     }
+
+    if (isNavigationGuidanceSuppressed()) return;
 
     const { imminentM, advanceMaxM, advanceMinM, preparatoryMaxM } = voiceT;
 

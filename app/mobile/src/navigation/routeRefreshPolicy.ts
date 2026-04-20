@@ -8,7 +8,7 @@ export const DEFAULT_REFRESH_POLICY = {
   periodicStaleMs: 300_000,
   /** Soft floor between periodic checks when v2 policy is active. */
   policyEvalIntervalMs: 10_000,
-  debounceMs: 4500,
+  debounceMs: 2000,
   driftGapSec: 120,
   driftSustainMs: 45_000,
   longStepMeters: 8000,

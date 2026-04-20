@@ -91,12 +91,13 @@ function headingBlend(current: number, target: number, alpha: number) {
 function confidenceFrom(raw: RawLocation, distanceToRoute: number) {
   let c = 1;
   const acc = raw.accuracy ?? 999;
-  if (acc > 12) c -= 0.08;
-  if (acc > 20) c -= 0.12;
-  if (acc > 35) c -= 0.18;
-  if (distanceToRoute > 10) c -= 0.08;
-  if (distanceToRoute > 20) c -= 0.15;
-  if (distanceToRoute > 35) c -= 0.2;
+  if (acc > 10) c -= 0.10;
+  if (acc > 15) c -= 0.12;
+  if (acc > 25) c -= 0.15;
+  if (acc > 40) c -= 0.15;
+  if (distanceToRoute > 10) c -= 0.10;
+  if (distanceToRoute > 20) c -= 0.18;
+  if (distanceToRoute > 35) c -= 0.22;
   return clamp(c, 0, 1);
 }
 
@@ -182,7 +183,7 @@ export function computeNavigationProgressFrame({
   );
   const corridorOff =
     snap.distanceMeters > maxSnapEffective && confidence < offRouteTuning.minConfidence;
-  /** Beyond ~32% past the snap corridor, always off-route (avoids rare stuck “on route” when confidence stays high). */
+  /** Beyond ~32% past the snap corridor, always off-route (avoids rare stuck "on route" when confidence stays high). */
   const catastrophicOff = snap.distanceMeters > maxSnapEffective * 1.32;
   const isOffRoute = corridorOff || catastrophicOff;
 
@@ -275,14 +276,18 @@ export function computeNavigationProgressFrame({
    * spin / wobble from GPS course noise at moderate-to-low speed.  At highway
    * speed the threshold narrows to let the camera track gentle lane changes.
    */
-  const headingDeadZone = speed < 8 ? 3 : speed < 20 ? 2 : 1;
-  const headingDelta = ((targetHeading - prevHeading + 540) % 360) - 180;
-  const headingAlpha =
-    speed < 2 ? 0.1 : speed < 6 ? 0.15 : speed < 14 ? 0.22 : speed < 22 ? 0.3 : 0.38;
-  displayCoord.heading =
-    Math.abs(headingDelta) < headingDeadZone
-      ? prevHeading
-      : headingBlend(prevHeading, targetHeading ?? prevHeading, headingAlpha);
+  if (speed < 0.6) {
+    displayCoord.heading = prevHeading;
+  } else {
+    const headingDeadZone = speed < 3 ? 5 : speed < 8 ? 3 : speed < 20 ? 2 : 1;
+    const headingDelta = ((targetHeading - prevHeading + 540) % 360) - 180;
+    const headingAlpha =
+      speed < 1 ? 0.06 : speed < 3 ? 0.10 : speed < 6 ? 0.15 : speed < 14 ? 0.22 : speed < 22 ? 0.3 : 0.38;
+    displayCoord.heading =
+      Math.abs(headingDelta) < headingDeadZone
+        ? prevHeading
+        : headingBlend(prevHeading, targetHeading ?? prevHeading, headingAlpha);
+  }
 
   /** Puck tracks the road immediately; heading matches the smoothed beam used for navigation UI. */
   const puckCoord: RawLocation = {
