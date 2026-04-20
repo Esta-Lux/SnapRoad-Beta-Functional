@@ -7,12 +7,13 @@ import type { LaneIndication, LaneInfo } from './navModel';
 
 /** Normalize Mapbox / OSRM-style lane strings to our finite glyph set. */
 export function parseLaneIndication(raw: string): LaneIndication {
-  const s = (raw ?? '').toLowerCase().trim().replace(/-/g, ' ');
+  const s = (raw ?? '').toLowerCase().trim().replace(/-/g, ' ').replace(/_/g, ' ');
   if (s === 'left' || s === 'merge left' || s === 'sharp left') return 'left';
   if (s === 'slight left') return 'slight_left';
   if (s === 'right' || s === 'merge right' || s === 'sharp right') return 'right';
   if (s === 'slight right') return 'slight_right';
   if (s === 'uturn' || s === 'u-turn' || s === 'u turn') return 'uturn';
+  if (s === 'straight' || s === 'straight ahead' || s === 'none') return 'straight';
   return 'straight';
 }
 

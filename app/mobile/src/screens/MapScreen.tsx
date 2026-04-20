@@ -85,7 +85,7 @@ import NavigationDebugHud from '../components/navigation/NavigationDebugHud';
 import { labelAnchorLayerIdForStyleUrl } from '../map/mapLayerRegistry';
 import { getPrimaryBannerText, isActionableGuidanceStep, mergeLaneSources, pickGuidanceStep } from '../navigation/bannerInstructions';
 import { isLiveShareFresh } from '../lib/friendPresence';
-import type { MapFocusFriendParams, NavigateToFriendParams } from '../types';
+import type { Coordinate, MapFocusFriendParams, NavigateToFriendParams } from '../types';
 import {
   formatTurnDistanceForCard,
   resolveTurnCardState,
@@ -661,25 +661,14 @@ export default function MapScreen() {
    *     point all ride on a single continuously-interpolated coordinate,
    *     matching the same physical point the route split uses.
    */
-  const navPolylineForSmoothing = nav.navigationData?.polyline ?? null;
-  /**
-   * Last-known-good route polyline for the **render layer only**. Whenever we
-   * successfully render a route (SDK or REST), we stash its reference here so
-   * a transient empty frame — e.g. the single tick between
-   * `applySdkRouteGeometry` clearing `steps/congestion` and the next
-   * progress / SDK event populating `navigationProgress.routePolyline` — can
-   * still draw the previous polyline instead of blanking. This is a
-   * presentation-layer belt-and-suspenders on top of the SDK/REST fallback
-   * chain below; it is NOT used to make any navigation decisions (authority
-   * still flows through `navigationData.polyline` / `navigationProgress`).
-   * The ref is cleared when `isNavigating` flips to false.
-   */
-  const lastRenderedPolylineRef = useRef<NonNullable<typeof nav.navigationData>['polyline'] | null>(null);
-  useEffect(() => {
-    if (!nav.isNavigating) {
-      lastRenderedPolylineRef.current = null;
-    }
-  }, [nav.isNavigating]);
+  /** Same polyline the route overlay draws — prefer native SDK geometry whenever present. */
+  const navPolylineForSmoothing = useMemo((): Coordinate[] | null => {
+    const sdk = nav.navigationProgress?.routePolyline;
+    if (sdk && sdk.length >= 2) return sdk;
+    const rest = nav.navigationData?.polyline;
+    if (rest && rest.length >= 2) return rest;
+    return null;
+  }, [nav.navigationProgress?.routePolyline, nav.navigationData?.polyline]);
   const navPolylineLenMetersRaw = useMemo(
     () => (navPolylineForSmoothing && navPolylineForSmoothing.length >= 2 ? polylineLengthMeters(navPolylineForSmoothing) : 0),
     [navPolylineForSmoothing],
@@ -789,6 +778,31 @@ export default function MapScreen() {
   const sdkPuckOwns = nav.isNavigating && isSdkPuckAuthoritative();
   const sdkRouteOwns = nav.isNavigating && isSdkRouteAuthoritative();
   const sdkBannerOwns = nav.isNavigating && isSdkBannerAuthoritative();
+
+  /** Holds last ≥2-point route through transient SDK/REST handoffs (state updates, not render). */
+  const [stickyRoutePolyline, setStickyRoutePolyline] = useState<Coordinate[] | null>(null);
+  useEffect(() => {
+    if (!nav.isNavigating) {
+      setStickyRoutePolyline(null);
+      return;
+    }
+    const sdk = nav.navigationProgress?.routePolyline;
+    const rest = nav.navigationData?.polyline;
+    const next = sdk && sdk.length >= 2 ? sdk : rest && rest.length >= 2 ? rest : null;
+    if (next) setStickyRoutePolyline(next);
+  }, [nav.isNavigating, nav.navigationProgress?.routePolyline, nav.navigationData?.polyline]);
+
+  const polylineToRender = useMemo((): Coordinate[] | null => {
+    const sdk = nav.navigationProgress?.routePolyline;
+    const rest = nav.navigationData?.polyline;
+    if (sdkRouteOwns) {
+      if (sdk && sdk.length >= 2) return sdk;
+      return stickyRoutePolyline;
+    }
+    if (sdk && sdk.length >= 2) return sdk;
+    if (rest && rest.length >= 2) return rest;
+    return stickyRoutePolyline;
+  }, [sdkRouteOwns, nav.navigationProgress?.routePolyline, nav.navigationData?.polyline, stickyRoutePolyline]);
 
   /**
    * Route split geometry must consume the **same** point as the puck so the
@@ -969,6 +983,51 @@ export default function MapScreen() {
 
   const camCtrlRef = useRef(camCtrl);
   camCtrlRef.current = camCtrl;
+
+  /**
+   * While navigating, `followUserLocation` uses Mapbox's internal GPS — not
+   * `CustomLocationProvider` — which fights the snapped puck (camera feels offset).
+   * With follow off, drive zoom/pitch/padding from `useCameraController` here.
+   */
+  useEffect(() => {
+    if (!nav.isNavigating || !cameraLocked || !camCtrl) return;
+    const cam = cameraRef.current;
+    if (!cam?.setCamera) return;
+    const anchor = cameraLeadCoord ?? navDisplayCoord;
+    if (!Number.isFinite(anchor.lat) || !Number.isFinite(anchor.lng)) return;
+    const h = Number.isFinite(navDisplayHeading) ? navDisplayHeading : heading;
+    const pad = camCtrl.followPadding;
+    cam.setCamera({
+      centerCoordinate: [anchor.lng, anchor.lat],
+      zoomLevel: camCtrl.followZoomLevel,
+      pitch: camCtrl.followPitch,
+      heading: Number.isFinite(h) ? h : undefined,
+      padding: {
+        paddingTop: pad.paddingTop,
+        paddingBottom: pad.paddingBottom,
+        paddingLeft: pad.paddingLeft,
+        paddingRight: pad.paddingRight,
+      },
+      animationMode: 'easeTo',
+      animationDuration: camCtrl.animationDuration,
+    });
+  }, [
+    nav.isNavigating,
+    cameraLocked,
+    camCtrl?.followZoomLevel,
+    camCtrl?.followPitch,
+    camCtrl?.followPadding?.paddingTop,
+    camCtrl?.followPadding?.paddingBottom,
+    camCtrl?.followPadding?.paddingLeft,
+    camCtrl?.followPadding?.paddingRight,
+    camCtrl?.animationDuration,
+    navDisplayCoord.lat,
+    navDisplayCoord.lng,
+    navDisplayHeading,
+    heading,
+    cameraLeadCoord?.lat,
+    cameraLeadCoord?.lng,
+  ]);
 
   // ── Reports ──
   const [nearbyIncidents, setNearbyIncidents] = useState<Incident[]>([]);
@@ -3288,15 +3347,13 @@ export default function MapScreen() {
               (camCtrl ? camCtrl.animationDuration : animDuration) +
               (nav.isNavigating && cameraLocked ? 90 : 0)
             }
-            followUserLocation={(nav.isNavigating && cameraLocked) || compassMode || exploreTracksUser}
+            followUserLocation={!nav.isNavigating && (compassMode || exploreTracksUser)}
             followUserMode={
-              nav.isNavigating && cameraLocked
-                ? MapboxGL.UserTrackingMode.FollowWithCourse
-                : compassMode || followMode === 'heading'
-                  ? MapboxGL.UserTrackingMode.FollowWithHeading
-                  : exploreTracksUser && followMode === 'follow'
-                    ? MapboxGL.UserTrackingMode.Follow
-                    : undefined
+              compassMode || followMode === 'heading'
+                ? MapboxGL.UserTrackingMode.FollowWithHeading
+                : exploreTracksUser && followMode === 'follow'
+                  ? MapboxGL.UserTrackingMode.Follow
+                  : undefined
             }
             followPitch={
               camCtrl
@@ -3404,104 +3461,60 @@ export default function MapScreen() {
           })()}
 
           {/*
-            Route-line authority:
-              - SDK route authority (`sdkRouteOwns`) → only render when native
-                geometry has landed; never fall back to `navigationData.polyline`
-                because that's stale JS Directions geometry from route preview
-                (pre-trip) that will not reflect native reroutes.
-              - Otherwise → use the SDK-derived polyline from `navigationProgress`
-                when present (headless SDK in the waiting window), else the JS
-                Directions polyline (JS-only trips / preview).
-            See `docs/NATIVE_NAVIGATION.md#single-authority-matrix`.
+            Route-line authority: `polylineToRender` (useMemo + sticky state) —
+            native `navigationProgress.routePolyline` when present; else REST;
+            else last-known-good during transient handoffs. See `sdkRouteOwns`.
           */}
-          {(() => {
-            /**
-             * Render priority:
-             *   1. SDK-derived polyline from `navigationProgress.routePolyline`
-             *      (when active / waiting; always ≥ 2 points in both states).
-             *   2. REST Directions polyline on `navigationData.polyline`
-             *      (preview + first frames of nav before SDK emits).
-             *   3. `lastRenderedPolylineRef` — the previous successfully
-             *      rendered polyline, carried over a transient empty frame so
-             *      the route never blanks during reroute / first-progress
-             *      handoff.
-             *
-             * The outer gate used to be `nav.navigationData?.polyline &&`,
-             * which meant if REST polyline was briefly null the entire SDK
-             * fallback block was skipped and the route disappeared — exactly
-             * the "polyline doesn't render when you tap Navigate" symptom.
-             * We now evaluate priorities independently and only bail when
-             * *all three* are empty.
-             */
-            const sdkPolyline =
-              nav.navigationProgress?.routePolyline?.length &&
-              nav.navigationProgress.routePolyline.length >= 2
-                ? nav.navigationProgress.routePolyline
-                : null;
-            const restPolyline =
-              nav.navigationData?.polyline && nav.navigationData.polyline.length >= 2
-                ? nav.navigationData.polyline
-                : null;
-            const lastGoodPolyline =
-              nav.isNavigating &&
-              lastRenderedPolylineRef.current &&
-              lastRenderedPolylineRef.current.length >= 2
-                ? lastRenderedPolylineRef.current
-                : null;
-            const polylineToRender = sdkPolyline ?? restPolyline ?? lastGoodPolyline;
-            if (!polylineToRender) {
-              logNavVerify('render.polyline', {
-                sdkRouteOwns,
-                sdkPolylineLen: sdkPolyline?.length ?? 0,
-                navDataPolylineLen: nav.navigationData?.polyline?.length ?? 0,
-                lastGoodLen: lastRenderedPolylineRef.current?.length ?? 0,
-                source: 'none',
-              });
-              return null;
-            }
-            /**
-             * Stash whatever we just rendered so the next frame can fall back
-             * to it if both SDK + REST polylines go empty simultaneously.
-             * Ref writes during render are safe here — we only ever write a
-             * polyline we just confirmed has ≥ 2 points and we don't read
-             * the ref again in this same render pass.
-             */
-            lastRenderedPolylineRef.current = polylineToRender;
-            const source = sdkPolyline
-              ? 'sdk'
-              : restPolyline
-                ? 'rest'
-                : 'last-good';
-            logNavVerify('render.polyline', {
-              sdkRouteOwns,
-              sdkPolylineLen: sdkPolyline?.length ?? 0,
-              navDataPolylineLen: nav.navigationData?.polyline?.length ?? 0,
-              lastGoodLen: lastRenderedPolylineRef.current?.length ?? 0,
-              source,
-              renderedLen: polylineToRender.length,
-            });
-            return (
-            <RouteOverlay
-              key={`route-${nav.routeModelRefreshKey}-${polylineToRender.length}-${source}`}
-              polyline={polylineToRender}
-              isNavigating={nav.isNavigating}
-              routeSplit={navigationRouteSplit}
-              fractionTraveled={nav.isNavigating ? smoothedFraction : null}
-              routeColor={navRouteColors.routeColor}
-              casingColor={navRouteColors.routeCasing}
-              passedColor={navRouteColors.passedColor}
-              routeWidth={modeConfig.routeWidth}
-              glowColor={navRouteColors.routeGlowColor}
-              glowOpacity={navRouteColors.routeGlowOpacity}
-              congestion={nav.navigationData?.congestion}
-              showCongestion={
-                modeConfig.showCongestion && (nav.showRoutePreview || nav.isNavigating)
-              }
-              isRerouting={nav.isRerouting}
-              belowLayerID={buildingsBelowLayerId}
-            />
-            );
-          })()}
+          {polylineToRender && polylineToRender.length >= 2
+            ? (() => {
+                const sdkLen = nav.navigationProgress?.routePolyline?.length ?? 0;
+                const restLen = nav.navigationData?.polyline?.length ?? 0;
+                const source =
+                  sdkLen >= 2 && polylineToRender === nav.navigationProgress?.routePolyline
+                    ? 'sdk'
+                    : restLen >= 2 && polylineToRender === nav.navigationData?.polyline
+                      ? 'rest'
+                      : 'sticky';
+                logNavVerify('render.polyline', {
+                  sdkRouteOwns,
+                  sdkPolylineLen: sdkLen,
+                  navDataPolylineLen: restLen,
+                  stickyLen: stickyRoutePolyline?.length ?? 0,
+                  source,
+                  renderedLen: polylineToRender.length,
+                });
+                return (
+                  <RouteOverlay
+                    key={`route-${nav.routeModelRefreshKey}-${polylineToRender.length}`}
+                    polyline={polylineToRender}
+                    isNavigating={nav.isNavigating}
+                    routeSplit={navigationRouteSplit}
+                    fractionTraveled={nav.isNavigating ? smoothedFraction : null}
+                    routeColor={navRouteColors.routeColor}
+                    casingColor={navRouteColors.routeCasing}
+                    passedColor={navRouteColors.passedColor}
+                    routeWidth={modeConfig.routeWidth}
+                    glowColor={navRouteColors.routeGlowColor}
+                    glowOpacity={navRouteColors.routeGlowOpacity}
+                    congestion={nav.navigationData?.congestion}
+                    showCongestion={
+                      modeConfig.showCongestion && (nav.showRoutePreview || nav.isNavigating)
+                    }
+                    isRerouting={nav.isRerouting}
+                    belowLayerID={buildingsBelowLayerId}
+                  />
+                );
+              })()
+            : (() => {
+                logNavVerify('render.polyline', {
+                  sdkRouteOwns,
+                  sdkPolylineLen: nav.navigationProgress?.routePolyline?.length ?? 0,
+                  navDataPolylineLen: nav.navigationData?.polyline?.length ?? 0,
+                  stickyLen: stickyRoutePolyline?.length ?? 0,
+                  source: 'none',
+                });
+                return null;
+              })()}
 
           {!nav.isNavigating && (
             <OfferMarkers offers={recommendedNearbyOffers} zoomLevel={mapZoomLevel} onOfferTap={setSelectedOffer} />
@@ -4042,7 +4055,7 @@ export default function MapScreen() {
           isActionableGuidanceStep(guidanceStep, true) ? guidanceStep : (isActionableGuidanceStep(nextManeuverCoord, true) ? nextManeuverCoord : undefined);
 
         return (
-          <View style={[s.turnWrap, { top: insets.top }]} key={nav.currentStepIndex}>
+          <View style={[s.turnWrap, { top: insets.top }]} key="turn-card-stable">
             <TurnInstructionCard
               mode={drivingMode}
               modeConfig={modeConfig}

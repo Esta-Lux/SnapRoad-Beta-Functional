@@ -57,6 +57,46 @@ function projectAhead(lat: number, lng: number, headingDeg: number, meters: numb
   return { lat: (lat2 * 180) / Math.PI, lng: (lng2 * 180) / Math.PI };
 }
 
+/**
+ * RAF ease between native ticks so `MarkerView` coordinate updates ~60fps instead of jumping.
+ */
+function useSmoothCoordinate(lat: number, lng: number, durationMs: number): { lat: number; lng: number } {
+  const currentRef = React.useRef({ lat, lng });
+  const [smooth, setSmooth] = React.useState(() => ({ lat, lng }));
+  const rafRef = React.useRef<number | null>(null);
+
+  React.useEffect(() => {
+    const startLat = currentRef.current.lat;
+    const startLng = currentRef.current.lng;
+    const startTime =
+      typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now();
+    let cancelled = false;
+
+    const tick = (now: number) => {
+      if (cancelled) return;
+      const elapsed = now - startTime;
+      const t = Math.min(1, elapsed / durationMs);
+      const eased = 1 - (1 - t) ** 3;
+      const newLat = startLat + (lat - startLat) * eased;
+      const newLng = startLng + (lng - startLng) * eased;
+      currentRef.current = { lat: newLat, lng: newLng };
+      setSmooth({ lat: newLat, lng: newLng });
+      if (t < 1) {
+        rafRef.current = requestAnimationFrame(tick);
+      }
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      cancelled = true;
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    };
+  }, [lat, lng, durationMs]);
+
+  return smooth;
+}
+
 function NavSdkPuckImpl({
   lng,
   lat,
@@ -77,12 +117,15 @@ function NavSdkPuckImpl({
   const effectiveCourse = courseIsValid ? course : lastValidCourseRef.current;
   if (courseIsValid) lastValidCourseRef.current = course;
 
+  const smoothCoord = useSmoothCoordinate(lat, lng, moving ? 120 : 200);
   const { lat: puckLat, lng: puckLng } = React.useMemo(() => {
-    if (!moving || !courseIsValid) return { lat, lng };
+    const baseLat = smoothCoord.lat;
+    const baseLng = smoothCoord.lng;
+    if (!moving || !courseIsValid) return { lat: baseLat, lng: baseLng };
     const meters = Math.max(0, speedMps ?? 0) * (PREDICTIVE_MS / 1000);
-    const p = projectAhead(lat, lng, course, meters);
+    const p = projectAhead(baseLat, baseLng, course, meters);
     return { lat: p.lat, lng: p.lng };
-  }, [lat, lng, course, courseIsValid, moving, speedMps]);
+  }, [smoothCoord.lat, smoothCoord.lng, course, courseIsValid, moving, speedMps]);
 
   React.useEffect(() => {
     if (!Number.isFinite(effectiveCourse)) return;

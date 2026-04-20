@@ -26,6 +26,7 @@ import {
   resolveManeuverKind,
 } from './navStepsFromDirections';
 import { logNavVerify } from './navLogicDebug';
+import { parseLaneIndication } from './laneIndication';
 
 function roadSignalFromSdkPayload(progress: SdkProgressPayload, fallback: RoadSignal | undefined): RoadSignal {
   const n = progress.upcomingIntersectionName?.trim();
@@ -35,35 +36,15 @@ function roadSignalFromSdkPayload(progress: SdkProgressPayload, fallback: RoadSi
   return fallback ?? { kind: 'none', label: '' };
 }
 
-const LANE_INDICATION_ALIASES: Record<string, LaneIndication> = {
-  left: 'left',
-  slight_left: 'slight_left',
-  slightleft: 'slight_left',
-  'slight left': 'slight_left',
-  right: 'right',
-  slight_right: 'slight_right',
-  slightright: 'slight_right',
-  'slight right': 'slight_right',
-  straight: 'straight',
-  uturn: 'uturn',
-  'u-turn': 'uturn',
-};
-
-function mapLaneIndicationString(s: string): LaneIndication | null {
-  const k = s.trim().toLowerCase().replace(/\s+/g, '_');
-  return LANE_INDICATION_ALIASES[k] ?? LANE_INDICATION_ALIASES[s.trim().toLowerCase()] ?? null;
-}
-
 function mapSdkLanesToLaneInfo(raw: NonNullable<SdkProgressPayload['lanes']>): LaneInfo[] {
   return raw.map((l) => {
-    const indications = l.indications
-      .map((x) => mapLaneIndicationString(String(x)))
-      .filter((x): x is LaneIndication => x != null);
+    const indications = l.indications.map((x) => parseLaneIndication(String(x)));
     return {
       indications: indications.length ? indications : ['straight' as LaneIndication],
       displayIndication: undefined,
-      active: l.active,
-      preferred: l.valid,
+      /** Bridge: `active` = preferred lane, `valid` = usable — match {@link LaneInfo} semantics. */
+      active: l.valid,
+      preferred: l.active,
     };
   });
 }
