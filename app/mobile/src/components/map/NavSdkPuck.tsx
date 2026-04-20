@@ -28,6 +28,12 @@ type Props = {
   color?: string;
   accuracy?: number | null;
   speedMps?: number;
+  /**
+   * When true (native SDK pass-through): place the marker at the exact native
+   * matched coordinate — no RAF position ease, no predictive lead-ahead. Keeps
+   * Reanimated rotation smoothing only.
+   */
+  mirrorNativePosition?: boolean;
 };
 
 const PREDICTIVE_MS = 80;
@@ -61,10 +67,15 @@ function projectAhead(lat: number, lng: number, headingDeg: number, meters: numb
 const SNAP_JUMP_METERS = 85;
 
 /**
- * Continuous RAF ease toward the latest native coordinate so `MarkerView` glides at ~60fps
- * even when the SDK emits faster than one cubic ease can finish (moving target).
+ * Continuous RAF ease toward the latest coordinate. When `enabled` is false (native mirror
+ * mode), returns `{ lat, lng }` directly and does not run RAF.
  */
-function useSmoothCoordinate(lat: number, lng: number, durationMs: number): { lat: number; lng: number } {
+function useSmoothCoordinate(
+  lat: number,
+  lng: number,
+  durationMs: number,
+  enabled: boolean,
+): { lat: number; lng: number } {
   const targetRef = React.useRef({ lat, lng });
   const displayRef = React.useRef({ lat, lng });
   const [smooth, setSmooth] = React.useState(() => ({ lat, lng }));
@@ -73,15 +84,27 @@ function useSmoothCoordinate(lat: number, lng: number, durationMs: number): { la
 
   React.useLayoutEffect(() => {
     targetRef.current = { lat, lng };
+    if (!enabled) {
+      displayRef.current = { lat, lng };
+      setSmooth({ lat, lng });
+      return;
+    }
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
     const d = haversineMeters(displayRef.current.lat, displayRef.current.lng, lat, lng);
     if (d > SNAP_JUMP_METERS) {
       displayRef.current = { lat, lng };
       setSmooth({ lat, lng });
     }
-  }, [lat, lng]);
+  }, [lat, lng, enabled]);
 
   React.useEffect(() => {
+    if (!enabled) {
+      if (rafRef.current != null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      return;
+    }
     let cancelled = false;
     lastNowRef.current =
       typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -109,9 +132,9 @@ function useSmoothCoordinate(lat: number, lng: number, durationMs: number): { la
       cancelled = true;
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     };
-  }, [durationMs]);
+  }, [durationMs, enabled]);
 
-  return smooth;
+  return enabled ? smooth : { lat, lng };
 }
 
 function NavSdkPuckImpl({
@@ -121,6 +144,7 @@ function NavSdkPuckImpl({
   color = '#0A66FF',
   accuracy = null,
   speedMps = 0,
+  mirrorNativePosition = false,
 }: Props) {
   const rotationSv = useSharedValue(0);
   const pulseScale = useSharedValue(1);
@@ -134,15 +158,26 @@ function NavSdkPuckImpl({
   const effectiveCourse = courseIsValid ? course : lastValidCourseRef.current;
   if (courseIsValid) lastValidCourseRef.current = course;
 
-  const smoothCoord = useSmoothCoordinate(lat, lng, moving ? 120 : 200);
+  const positionEaseEnabled = !mirrorNativePosition;
+  const smoothCoord = useSmoothCoordinate(lat, lng, moving ? 120 : 200, positionEaseEnabled);
   const { lat: puckLat, lng: puckLng } = React.useMemo(() => {
-    const baseLat = smoothCoord.lat;
-    const baseLng = smoothCoord.lng;
-    if (!moving || !courseIsValid) return { lat: baseLat, lng: baseLng };
+    const baseLat = mirrorNativePosition ? lat : smoothCoord.lat;
+    const baseLng = mirrorNativePosition ? lng : smoothCoord.lng;
+    if (mirrorNativePosition || !moving || !courseIsValid) return { lat: baseLat, lng: baseLng };
     const meters = Math.max(0, speedMps ?? 0) * (PREDICTIVE_MS / 1000);
     const p = projectAhead(baseLat, baseLng, course, meters);
     return { lat: p.lat, lng: p.lng };
-  }, [smoothCoord.lat, smoothCoord.lng, course, courseIsValid, moving, speedMps]);
+  }, [
+    mirrorNativePosition,
+    lat,
+    lng,
+    smoothCoord.lat,
+    smoothCoord.lng,
+    course,
+    courseIsValid,
+    moving,
+    speedMps,
+  ]);
 
   React.useEffect(() => {
     if (!Number.isFinite(effectiveCourse)) return;
@@ -259,6 +294,7 @@ function NavSdkPuckImpl({
 
 export const NavSdkPuck = React.memo(NavSdkPuckImpl, (prev, next) => {
   if (prev.color !== next.color) return false;
+  if (prev.mirrorNativePosition !== next.mirrorNativePosition) return false;
   if (Math.abs(prev.lat - next.lat) > 1e-7) return false;
   if (Math.abs(prev.lng - next.lng) > 1e-7) return false;
   if (Math.abs(prev.course - next.course) > 0.2) return false;

@@ -138,9 +138,12 @@ export function buildMinimalNavigationProgressFromSdk(
     nextManeuverDistanceMeters: null,
   };
 
+  const nativeFormatted = progress.primaryDistanceFormatted?.trim() || null;
+
   const banner = {
     primaryInstruction: primaryText,
     primaryDistanceMeters: distNext,
+    primaryDistanceFormatted: nativeFormatted,
     primaryStreet: progress.currentRoadName ?? progress.upcomingIntersectionName ?? null,
     secondaryInstruction: secondaryText ?? null,
     signal: signalForStep,

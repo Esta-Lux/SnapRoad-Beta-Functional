@@ -53,6 +53,8 @@ export interface RoadShield {
   ref: string;
   /** Display text shown on the sign */
   displayRef: string;
+  /** Optional PNG from native `shield.imageBase64` when the bridge sends it. */
+  imageBase64?: string;
 }
 
 // ── Maneuver kind (superset of Mapbox type + modifier) ──
@@ -153,6 +155,8 @@ export type SnapPoint = {
 export type NavBannerModel = {
   primaryInstruction: string;
   primaryDistanceMeters: number;
+  /** When native bridge sends a pre-formatted distance string, UI should show it verbatim. */
+  primaryDistanceFormatted?: string | null;
   primaryStreet?: string | null;
   secondaryInstruction?: string | null;
   subInstruction?: string | null;

@@ -1,23 +1,25 @@
 /**
  * LaneGuidance — row of lane arrows showing which lanes are valid.
  *
+ * Native `onRouteProgressChanged` supplies `lanes[]` (indications + active/valid).
+ * When the bridge sends per-lane bitmaps (`nativeLaneAssets`, same length as `lanes`),
+ * those render as PNGs; otherwise we draw indications with local SVG paths.
+ *
  * Active lanes are highlighted, inactive lanes are dimmed.
  * Preferred lane gets an extra emphasis ring.
- *
- * Paths are closed fills in a 14×14 viewBox (Mapbox-style lane indications). The
- * straight/forward glyph has its tip at the top of the viewBox — i.e. “ahead” matches
- * the top of the turn card. Do not apply a Y-flip: flipping would invert that and point
- * forward toward the driver.
  */
 
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Image } from 'react-native';
 import Svg, { Path, G } from 'react-native-svg';
 import type { LaneInfo, LaneIndication } from '../../navigation/navModel';
+import type { NativeLaneAsset } from '../../navigation/navSdkMirrorTypes';
 import { primaryLaneGlyph } from '../../navigation/laneIndication';
 
 interface Props {
   lanes: LaneInfo[];
+  /** When present and aligned with `lanes.length`, render native PNGs instead of SVG. */
+  nativeLaneAssets?: NativeLaneAsset[] | null;
   activeColor: string;
   inactiveColor: string;
 }
@@ -81,19 +83,53 @@ function LaneArrow({
   );
 }
 
-export default React.memo(function LaneGuidance({ lanes, activeColor, inactiveColor }: Props) {
+function LaneNativeBitmap({
+  lane,
+  asset,
+}: {
+  lane: LaneInfo;
+  asset: NativeLaneAsset;
+}) {
+  const w = asset.width ?? 26;
+  const h = asset.height ?? 26;
+  const opacity = lane.active ? 1.0 : 0.3;
+  const uri = `data:image/png;base64,${asset.imageBase64}`;
+
+  return (
+    <View
+      style={[
+        styles.laneSlot,
+        lane.preferred && lane.active && styles.preferredSlot,
+        lane.preferred && lane.active && { borderColor: 'rgba(255,255,255,0.55)' },
+      ]}
+    >
+      <Image source={{ uri }} style={{ width: w, height: h, opacity }} resizeMode="contain" />
+    </View>
+  );
+}
+
+export default React.memo(function LaneGuidance({
+  lanes,
+  nativeLaneAssets,
+  activeColor,
+  inactiveColor,
+}: Props) {
   if (!lanes.length) return null;
+
+  const useNative =
+    nativeLaneAssets != null &&
+    nativeLaneAssets.length === lanes.length &&
+    nativeLaneAssets.every((a) => typeof a.imageBase64 === 'string' && a.imageBase64.length > 0);
 
   return (
     <View style={styles.container}>
-      {lanes.map((lane, i) => (
-        <LaneArrow
-          key={i}
-          lane={lane}
-          activeColor={activeColor}
-          inactiveColor={inactiveColor}
-        />
-      ))}
+      {useNative
+        ? lanes.map((lane, i) => (
+            <LaneNativeBitmap key={i} lane={lane} asset={nativeLaneAssets![i]} />
+          ))
+        : lanes.map((lane, i) => (
+            <LaneArrow key={i} lane={lane} activeColor={activeColor} inactiveColor={inactiveColor} />
+          ))}
     </View>
   );
 });

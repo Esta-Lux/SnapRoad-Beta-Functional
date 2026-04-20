@@ -9,7 +9,7 @@
  */
 
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Image } from 'react-native';
 import type { RoadShield } from '../../navigation/navModel';
 
 interface Props {
@@ -42,6 +42,18 @@ function shieldStyle(network: string): {
 }
 
 function ShieldChip({ shield }: { shield: RoadShield }) {
+  const img = shield.imageBase64?.trim();
+  if (img) {
+    return (
+      <Image
+        accessibilityIgnoresInvertColors
+        source={{ uri: `data:image/png;base64,${img}` }}
+        style={styles.nativeShieldImg}
+        resizeMode="contain"
+      />
+    );
+  }
+
   const s = shieldStyle(shield.network);
   const displayText = shield.displayRef || shield.ref;
 
@@ -87,6 +99,10 @@ export default React.memo(function HighwayShieldBadge({ shields, textColor: _tex
 });
 
 const styles = StyleSheet.create({
+  nativeShieldImg: {
+    width: 40,
+    height: 22,
+  },
   row: {
     flexDirection: 'row',
     gap: 4,

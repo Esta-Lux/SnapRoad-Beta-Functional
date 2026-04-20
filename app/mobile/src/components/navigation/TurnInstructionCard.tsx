@@ -16,6 +16,8 @@ import type { ModeConfig } from '../../constants/modes';
 import type { TurnCardState } from '../../navigation/turnCardModel';
 import type { DirectionsStep } from '../../lib/directions';
 import type { ManeuverKind, RoadSignal, LaneInfo, RoadShield } from '../../navigation/navModel';
+import type { NativeFormattedDistance, NativeLaneAsset } from '../../navigation/navSdkMirrorTypes';
+import { resolveDisplayDistance } from '../../navigation/navDisplayDistance';
 import { getBannerThenLine, getLaneData, lanesFromLegacyJson } from '../../navigation/bannerInstructions';
 import {
   resolveStableText,
@@ -121,6 +123,11 @@ export type TurnInstructionCardProps = {
   shields?: RoadShield[];
   roundaboutExitNumber?: number | null;
   chainInstruction?: string | null;
+  /** Native mirror: locale-formatted distance from SDK (overrides {@link distanceValue} / {@link distanceUnit}). */
+  nativeFormattedDistance?: NativeFormattedDistance | null;
+  isNativeMirror?: boolean;
+  /** Native mirror: per-lane PNGs when aligned with `lanes.length`. */
+  nativeLaneAssets?: NativeLaneAsset[] | null;
 };
 
 export default React.memo(function TurnInstructionCard({
@@ -147,12 +154,20 @@ export default React.memo(function TurnInstructionCard({
   shields,
   roundaboutExitNumber,
   chainInstruction,
+  nativeFormattedDistance,
+  isNativeMirror,
+  nativeLaneAssets,
 }: TurnInstructionCardProps) {
   const tcGrad = modeConfig.turnCardGradient;
   const tcRadius = modeConfig.turnCardRadius;
   const tcShadowColor = modeConfig.turnCardShadowColor;
   const tcTextColor = modeConfig.turnCardTextColor;
   const d = DENSITY[mode];
+
+  const displayDistance = useMemo(
+    () => resolveDisplayDistance(isNativeMirror, nativeFormattedDistance, distanceValue, distanceUnit),
+    [isNativeMirror, nativeFormattedDistance, distanceValue, distanceUnit],
+  );
 
   /**
    * Primary text source precedence (flicker-proof):
@@ -375,9 +390,9 @@ export default React.memo(function TurnInstructionCard({
               style={[styles.distVal, { color: tcTextColor, fontSize: distFont }]}
               numberOfLines={1}
             >
-              {distanceValue}
+              {displayDistance.value}
             </Text>
-            <Text style={[styles.distUnit, { color: tcTextColor }]}>{distanceUnit}</Text>
+            <Text style={[styles.distUnit, { color: tcTextColor }]}>{displayDistance.unit}</Text>
           </Animated.View>
 
           <View
@@ -479,6 +494,7 @@ export default React.memo(function TurnInstructionCard({
         {showLanes && (
           <LaneGuidance
             lanes={effectiveLanes!}
+            nativeLaneAssets={nativeLaneAssets}
             activeColor={tcTextColor}
             inactiveColor={tcTextColor}
           />

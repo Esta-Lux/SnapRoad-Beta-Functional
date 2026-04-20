@@ -12,17 +12,24 @@ export {
   resetNavSdkState,
   enterSdkGuidanceWaiting,
   ingestSdkProgress,
+  ingestSdkCameraState,
+  ingestSdkFormattedDistance,
+  ingestSdkLaneAssets,
   ingestSdkLocation,
   ingestSdkRoutePolyline,
   ingestSdkRouteChangedEvent,
   ingestSdkVoiceSubtitle,
   markNavVoiceFromJs,
+  hasNativeCameraState,
+  hasNativeFormattedDistance,
+  hasNativeLaneAssets,
   getSdkNavigationProgress,
   getMinimalSdkNavigationProgress,
   getSdkMatchedCoordinate,
 } from './navSdkStore';
 
 export type { SdkProgressPayload, SdkLocationPayload } from './navSdkStore';
+export type { NativeFormattedDistance, NativeLaneAsset, SdkCameraPayload } from './navSdkMirrorTypes';
 
 export { polylineFromSdkRoutes } from './navSdkGeometry';
 export type { SdkRoutesNative } from './navSdkGeometry';
