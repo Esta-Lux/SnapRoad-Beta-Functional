@@ -688,19 +688,18 @@ export function buildNavigationProgressFromSdk(args: {
   };
 }
 
-/** Before first native progress event: no maneuver text from JS Directions API. */
+/**
+ * Before first native progress tick: show a neutral waiting shell only when **native** route
+ * geometry is already in `navSdkStore` (`onRoutesLoaded`). No REST preview polyline — JS must not
+ * paint a route the SDK has not committed.
+ */
 export function buildSdkWaitingNavigationProgress(
   navigationData: { polyline: Coordinate[]; distance: number; duration: number } | null,
   routePolylineFromSdk: Coordinate[],
 ): NavigationProgress | null {
   if (!navigationData) return null;
-  const poly =
-    routePolylineFromSdk.length >= 2
-      ? routePolylineFromSdk
-      : navigationData.polyline?.length
-        ? navigationData.polyline
-        : [];
-  if (poly.length < 2) return null;
+  if (routePolylineFromSdk.length < 2) return null;
+  const poly = routePolylineFromSdk;
   const first = poly[0]!;
   const distRem = Math.max(0, navigationData.distance ?? 0);
   const durRem = Math.max(0, Math.round(navigationData.duration ?? 0));
@@ -737,7 +736,7 @@ export function buildSdkWaitingNavigationProgress(
     followingStep: null,
     nextStepDistanceMeters: 0,
     banner: {
-      primaryInstruction: 'Starting navigation…',
+      primaryInstruction: 'Waiting for route guidance…',
       primaryDistanceMeters: 0,
       primaryStreet: null,
       secondaryInstruction: null,

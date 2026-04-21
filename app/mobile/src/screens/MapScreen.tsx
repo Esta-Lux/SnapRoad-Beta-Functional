@@ -630,24 +630,8 @@ export default function MapScreen() {
     [nav.applySdkRouteGeometry],
   );
 
-  /**
-   * During nav: fused coord for puck/camera (`navigationProgressCoord` →
-   * snapped display when JS on-route, `routeSplitSnap.point` on SDK).
-   *
-   * Important waiting-window edge: `nav.navigationProgressCoord` resolves to
-   * `routeSplitSnap.point` which is `polyline[0]` while
-   * `instructionSource === 'sdk_waiting'` — i.e. the route origin captured
-   * at tap-Navigate, not the user's live GPS. If the user has shifted even
-   * a few meters between preview and Start, the puck visibly teleports to
-   * the stale origin. During the waiting window we fall back to `location`
-   * (the EWMA-smoothed live fix from `useLocation`) so the puck stays on
-   * the real user position until the first real SDK / JS progress lands.
-   */
-  const isSdkWaiting =
-    nav.isNavigating && nav.navigationProgress?.instructionSource === 'sdk_waiting';
-  const navDisplayCoordRaw = nav.isNavigating
-    ? (isSdkWaiting ? location : nav.navigationProgressCoord)
-    : location;
+  /** During nav: single fused coord from `useDriveNavigation` (native matcher when logic SDK; JS snap otherwise). */
+  const navDisplayCoordRaw = nav.isNavigating ? nav.navigationProgressCoord : location;
   const navDisplayHeading = nav.isNavigating ? nav.navigationDisplayHeading : heading;
 
   /**
@@ -671,14 +655,26 @@ export default function MapScreen() {
    *     point all ride on a single continuously-interpolated coordinate,
    *     matching the same physical point the route split uses.
    */
-  /** Same polyline the route overlay draws — prefer native SDK geometry whenever present. */
+  /** Polyline for JS-only smoothing / tangents. Logic SDK trips: native store line only (no REST preview line). */
   const navPolylineForSmoothing = useMemo((): Coordinate[] | null => {
+    if (navLogicSdkEnabled() && nav.isNavigating) {
+      const fromStore = nav.sdkRoutePolyline;
+      if (fromStore.length >= 2) return fromStore;
+      const fromProg = nav.navigationProgress?.routePolyline;
+      if (fromProg && fromProg.length >= 2) return fromProg;
+      return null;
+    }
     const sdk = nav.navigationProgress?.routePolyline;
     if (sdk && sdk.length >= 2) return sdk;
     const rest = nav.navigationData?.polyline;
     if (rest && rest.length >= 2) return rest;
     return null;
-  }, [nav.navigationProgress?.routePolyline, nav.navigationData?.polyline]);
+  }, [
+    nav.isNavigating,
+    nav.sdkRoutePolyline,
+    nav.navigationProgress?.routePolyline,
+    nav.navigationData?.polyline,
+  ]);
   const navPolylineLenMetersRaw = useMemo(
     () => (navPolylineForSmoothing && navPolylineForSmoothing.length >= 2 ? polylineLengthMeters(navPolylineForSmoothing) : 0),
     [navPolylineForSmoothing],
@@ -803,6 +799,22 @@ export default function MapScreen() {
 
   /** POI / offers / incidents fetches use route-snapped position while navigating so pins stay near the corridor. */
   const poiSearchCoord = useMemo(() => {
+    if (nav.isNavigating && navLogicSdkEnabled()) {
+      if (
+        Number.isFinite(navDisplayCoord.lat) &&
+        Number.isFinite(navDisplayCoord.lng) &&
+        !(Math.abs(navDisplayCoord.lat) < 1e-6 && Math.abs(navDisplayCoord.lng) < 1e-6)
+      ) {
+        return { lat: navDisplayCoord.lat, lng: navDisplayCoord.lng };
+      }
+      if (nav.sdkNavLocation) {
+        return { lat: nav.sdkNavLocation.latitude, lng: nav.sdkNavLocation.longitude };
+      }
+      if (nav.sdkRoutePolyline.length >= 2) {
+        const o = nav.sdkRoutePolyline[0]!;
+        return { lat: o.lat, lng: o.lng };
+      }
+    }
     if (
       nav.isNavigating &&
       Number.isFinite(navDisplayCoord.lat) &&
@@ -812,7 +824,15 @@ export default function MapScreen() {
       return { lat: navDisplayCoord.lat, lng: navDisplayCoord.lng };
     }
     return { lat: location.lat, lng: location.lng };
-  }, [nav.isNavigating, navDisplayCoord.lat, navDisplayCoord.lng, location.lat, location.lng]);
+  }, [
+    nav.isNavigating,
+    nav.sdkNavLocation,
+    nav.sdkRoutePolyline,
+    navDisplayCoord.lat,
+    navDisplayCoord.lng,
+    location.lat,
+    location.lng,
+  ]);
 
   /**
    * Chevron / camera bearing during navigation: bias toward **route tangent** at the current
@@ -821,6 +841,8 @@ export default function MapScreen() {
    */
   const navPuckHeading = useMemo(() => {
     if (!nav.isNavigating) return navDisplayHeading;
+    if (navLogicSdkEnabled()) return navDisplayHeading;
+    if (isNativeSdkPassThrough) return navDisplayHeading;
     const poly = navPolylineForSmoothing;
     const cum = navSnapshotCumMeters;
     if (!poly || poly.length < 2) return navDisplayHeading;
@@ -843,6 +865,7 @@ export default function MapScreen() {
     nav.fusedNavState?.displayCoord?.speedMps,
     nav.navigationProgress?.displayCoord?.speedMps,
     nav.sdkNavLocation?.speed,
+    isNativeSdkPassThrough,
   ]);
 
   const poiSearchCoordRef = useRef(poiSearchCoord);
@@ -870,13 +893,33 @@ export default function MapScreen() {
       setStickyRoutePolyline(null);
       return;
     }
+    if (navLogicSdkEnabled()) {
+      const fromStore = nav.sdkRoutePolyline;
+      const fromProg = nav.navigationProgress?.routePolyline;
+      const next =
+        fromStore.length >= 2 ? fromStore : fromProg && fromProg.length >= 2 ? fromProg : null;
+      if (next) setStickyRoutePolyline(next);
+      return;
+    }
     const sdk = nav.navigationProgress?.routePolyline;
     const rest = nav.navigationData?.polyline;
     const next = sdk && sdk.length >= 2 ? sdk : rest && rest.length >= 2 ? rest : null;
     if (next) setStickyRoutePolyline(next);
-  }, [nav.isNavigating, nav.navigationProgress?.routePolyline, nav.navigationData?.polyline]);
+  }, [
+    nav.isNavigating,
+    nav.sdkRoutePolyline,
+    nav.navigationProgress?.routePolyline,
+    nav.navigationData?.polyline,
+  ]);
 
   const polylineToRender = useMemo((): Coordinate[] | null => {
+    if (navLogicSdkEnabled() && nav.isNavigating) {
+      const fromStore = nav.sdkRoutePolyline;
+      if (fromStore.length >= 2) return fromStore;
+      const fromProg = nav.navigationProgress?.routePolyline;
+      if (fromProg && fromProg.length >= 2) return fromProg;
+      return stickyRoutePolyline;
+    }
     const sdk = nav.navigationProgress?.routePolyline;
     const rest = nav.navigationData?.polyline;
     if (isNativeSdkPassThrough) {
@@ -891,6 +934,8 @@ export default function MapScreen() {
     if (rest && rest.length >= 2) return rest;
     return stickyRoutePolyline;
   }, [
+    nav.isNavigating,
+    nav.sdkRoutePolyline,
     isNativeSdkPassThrough,
     sdkRouteOwns,
     nav.navigationProgress?.routePolyline,
@@ -919,9 +964,24 @@ export default function MapScreen() {
     nav.navigationProgress?.snapped?.segmentIndex,
     nav.navigationProgress?.snapped?.t,
   ]);
-  const displaySpeedMph = nav.isNavigating
-    ? Math.max(0, (nav.fusedNavState?.displayCoord?.speedMps ?? speed * 0.44704) * 2.236936)
-    : speed;
+  const displaySpeedMph = useMemo(() => {
+    if (!nav.isNavigating) return speed;
+    if (navLogicSdkEnabled()) {
+      const mps =
+        nav.sdkNavLocation?.speed ?? nav.navigationProgress?.displayCoord?.speedMps ?? null;
+      if (typeof mps === 'number' && Number.isFinite(mps) && mps >= 0) {
+        return Math.max(0, mps * 2.236936);
+      }
+      return 0;
+    }
+    return Math.max(0, (nav.fusedNavState?.displayCoord?.speedMps ?? speed * 0.44704) * 2.236936);
+  }, [
+    nav.isNavigating,
+    nav.sdkNavLocation?.speed,
+    nav.navigationProgress?.displayCoord?.speedMps,
+    nav.fusedNavState?.displayCoord?.speedMps,
+    speed,
+  ]);
 
   /**
    * LocationPuck beam: with CustomLocationProvider we pass a single `heading` — native `course` mode
@@ -3397,36 +3457,24 @@ export default function MapScreen() {
           onPress={handleMapPress}
         >
           {/*
-            Location provider strategy — "Apple Maps single frame" (AGENTS.md
-            single-authority rule):
+            Location provider strategy — single frame, Navigation SDK authority:
 
-            Raw native matched GPS (`sdkNavLocation.latitude/longitude`) can sit
-            1–3 m off the rendered route polyline because the native map-matcher
-            and our client-side projection onto the same polyline disagree at
-            the sub-lane level. If we feed that raw coord to
-            `CustomLocationProvider`, the map camera centres on a point that is
-            *not* the point where `RouteOverlay` draws the traveled-to-remaining
-            split — the puck visibly slides along the side of the route and the
-            camera appears to "track from a side".
+            Headless SDK trips: `navigationProgressCoord` / `navDisplayCoordRaw`
+            follow the **native map-matched** fix from `onNavigationLocationUpdate`
+            (see `navSdkMinimalAdapter` + `useDriveNavigation`). Route travelled /
+            remaining split still uses the SDK’s `fractionTraveled` on the native
+            polyline (`RouteOverlay`), so the line trim stays locked to the same
+            session the matcher uses; the chevron may sit a few metres laterally
+            from the decoded polyline vertex — that is preferable to a puppet
+            puck interpolated only along arc length (laggy vs real motion and
+            wrong through reroutes).
 
-            Fix: during any active trip (SDK or JS-only), feed the provider with
-            the on-polyline `navigationProgressCoord` (= `routeSplitSnap.point`
-            on the SDK path, snap-blended puck on the JS path). `NavSdkPuck`
-            below reads the same coord, so puck + camera + route split all land
-            on a single point. Heading comes from `navigationDisplayHeading`
-            which is the smoothed SDK course (see `navSdkProgressAdapter.ts`).
-              - Explore (not navigating) → default Mapbox GPS.
+            JS-only trips: feed the snap-blended on-polyline puck (RAF-smoothed
+            fraction) so the camera + `NavSdkPuck` + split share one point.
 
-            Mount-window rule: previously the provider was gated on
-            `sdkPuckOwns || !navLogicSdkEnabled()`, which meant that during the
-            first 150–500 ms of an SDK trip (before `onNavigationLocationUpdate`
-            landed) no `CustomLocationProvider` was mounted and the camera
-            followed the default GPS puck — producing the "camera at a wrong
-            angle for a moment" symptom at trip start. We now mount as soon as
-            `nav.isNavigating` with a finite `navDisplayCoord`; the coord falls
-            back to `navDisplayCoordRaw` (= latest GPS) when the smoothed
-            on-polyline point isn't ready yet, so the camera centre is always
-            defined.
+            Explore: default Mapbox GPS via browse `CustomLocationProvider` below.
+
+            Mount as soon as `nav.isNavigating` with a finite `navDisplayCoord`.
           */}
           {nav.isNavigating &&
           Number.isFinite(navDisplayCoord.lat) &&
@@ -3437,7 +3485,13 @@ export default function MapScreen() {
                   (cameraLeadCoord ?? navDisplayCoord).lng,
                   (cameraLeadCoord ?? navDisplayCoord).lat,
                 ]}
-                heading={Number.isFinite(navPuckHeading) ? navPuckHeading : heading}
+                heading={
+                  navLogicSdkEnabled() && nav.isNavigating && (!Number.isFinite(navPuckHeading) || navPuckHeading < 0)
+                    ? 0
+                    : Number.isFinite(navPuckHeading) && navPuckHeading >= 0
+                      ? navPuckHeading
+                      : heading
+                }
               />
               {navLogicDebugEnabled()
                 ? (() => {
@@ -3782,7 +3836,9 @@ export default function MapScreen() {
                 nav.navigationProgress?.displayCoord?.speedMps ??
                 0
               }
-              mirrorNativePosition={isNativeSdkPassThrough || sdkPuckOwns}
+              mirrorNativePosition={navLogicSdkEnabled() && nav.isNavigating
+                ? true
+                : isNativeSdkPassThrough || sdkPuckOwns}
             />
           ) : null}
         </MapboxGL.MapView>
@@ -3984,7 +4040,7 @@ export default function MapScreen() {
                 state="preview"
                 distanceValue="—"
                 distanceUnit=""
-                primaryInstruction={prog.banner?.primaryInstruction ?? 'Starting navigation…'}
+                primaryInstruction={prog.banner?.primaryInstruction ?? 'Waiting for route guidance…'}
                 secondaryInstruction={undefined}
                 maneuverForIcon="straight"
                 maneuverKind="straight"

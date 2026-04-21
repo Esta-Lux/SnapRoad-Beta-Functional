@@ -20,6 +20,7 @@ import {
 import { splitRouteAtSnap } from './navGeometry';
 import {
   coordinateAtCumulativeMeters,
+  haversineMeters,
   polylineLengthMeters,
   segmentAndTFromCumAlongPolyline,
 } from '../utils/distance';
@@ -78,18 +79,29 @@ export function buildMinimalNavigationProgressFromSdk(
 
   const rawCourseDeg = location != null && location.course >= 0 ? location.course : null;
   /**
-   * Map puck position rides the **polyline at `fractionTraveled`**, not the raw matched GPS fix.
-   * The SDK’s matched lat/lng can sit a few meters off the JS polyline while `lineTrimOffset` is
-   * driven by arc length — that produced a visible seam (gray/blue split not under the puck).
-   * Heading / speed / accuracy still come from the native matched sample.
+   * Puck position follows the **native matched fix** from `onNavigationLocationUpdate` whenever it
+   * is present. Route trim / `fractionTraveled` still come from the SDK so the GPU line split
+   * matches the Navigation session; the chevron should reflect where the matcher places the user
+   * on the road network (reroutes, lane geometry, and map-matched course), not a synthetic point
+   * derived only from arc length on the decoded polyline (which lagged real motion and fought
+   * reroutes). When location has not arrived yet, fall back to the on-polyline point at
+   * `fractionTraveled`.
    */
   const onLine = routeSplitPoint ?? {
     lat: polyline[0]!.lat,
     lng: polyline[0]!.lng,
   };
+  const hasMatchedFix =
+    location != null &&
+    Number.isFinite(location.latitude) &&
+    Number.isFinite(location.longitude);
+  const lateralMeters =
+    hasMatchedFix && routeSplitPoint
+      ? haversineMeters(location!.latitude, location!.longitude, routeSplitPoint.lat, routeSplitPoint.lng)
+      : 0;
   const displayCoord: RawLocation = {
-    lat: onLine.lat,
-    lng: onLine.lng,
+    lat: hasMatchedFix ? location!.latitude : onLine.lat,
+    lng: hasMatchedFix ? location!.longitude : onLine.lng,
     heading: rawCourseDeg != null && Number.isFinite(rawCourseDeg) ? rawCourseDeg : undefined,
     speedMps: location != null && location.speed >= 0 ? location.speed : undefined,
     accuracy: location?.horizontalAccuracy ?? null,
@@ -173,7 +185,7 @@ export function buildMinimalNavigationProgressFromSdk(
       point: { lat: displayCoord.lat, lng: displayCoord.lng },
       segmentIndex: routeSplitSnap.segmentIndex,
       t: routeSplitSnap.t,
-      distanceMeters: 0,
+      distanceMeters: lateralMeters,
       cumulativeMeters,
     },
     routeSplitSnap,

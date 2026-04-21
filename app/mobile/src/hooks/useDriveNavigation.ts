@@ -368,6 +368,14 @@ export function useDriveNavigation(params: {
       if (split && Number.isFinite(split.lat) && Number.isFinite(split.lng)) {
         return { lat: split.lat, lng: split.lng };
       }
+      const rp = navSdkSnapshot.routePolyline;
+      if (rp.length >= 2) {
+        const o = rp[0]!;
+        if (Number.isFinite(o.lat) && Number.isFinite(o.lng)) {
+          return { lat: o.lat, lng: o.lng };
+        }
+      }
+      return { lat: Number.NaN, lng: Number.NaN };
     }
 
     /* On-route: always use snapped puck (polyline + lead-ahead). The old <45 m gate let the
@@ -402,6 +410,7 @@ export function useDriveNavigation(params: {
     navigationProgress?.puckCoord?.lat,
     navigationProgress?.puckCoord?.lng,
     navigationProgress?.isOffRoute,
+    navSdkSnapshot.routePolyline,
   ]);
 
   /**
@@ -415,15 +424,14 @@ export function useDriveNavigation(params: {
    */
   const navigationDisplayHeading = useMemo(() => {
     const smoothed = navigationProgress?.displayCoord?.heading;
-    if (
-      sdkActive &&
-      typeof smoothed === 'number' &&
-      Number.isFinite(smoothed)
-    ) {
-      return smoothed;
-    }
-    if (sdkActive && navSdkSnapshot.location && navSdkSnapshot.location.course >= 0) {
-      return navSdkSnapshot.location.course;
+    if (sdkActive) {
+      if (typeof smoothed === 'number' && Number.isFinite(smoothed)) {
+        return smoothed;
+      }
+      if (navSdkSnapshot.location && navSdkSnapshot.location.course >= 0) {
+        return navSdkSnapshot.location.course;
+      }
+      return -1;
     }
     if (
       isNavigating &&
@@ -449,11 +457,21 @@ export function useDriveNavigation(params: {
         etaMinutes: Math.max(0, navigationProgress.durationRemainingSeconds / 60),
       };
     }
-    if (sdkActive && navigationData) {
-      return {
-        distanceMiles: Math.max(0, navigationData.distance / 1609.34),
-        etaMinutes: Math.max(0, navigationData.duration / 60),
-      };
+    if (sdkActive) {
+      const pr = navSdkSnapshot.progress;
+      if (
+        pr &&
+        typeof pr.distanceRemaining === 'number' &&
+        Number.isFinite(pr.distanceRemaining) &&
+        typeof pr.durationRemaining === 'number' &&
+        Number.isFinite(pr.durationRemaining)
+      ) {
+        return {
+          distanceMiles: Math.max(0, pr.distanceRemaining / 1609.34),
+          etaMinutes: Math.max(0, pr.durationRemaining / 60),
+        };
+      }
+      return null;
     }
     return null;
   }, [
@@ -461,8 +479,8 @@ export function useDriveNavigation(params: {
     navigationProgress?.distanceRemainingMeters,
     navigationProgress?.durationRemainingSeconds,
     sdkActive,
-    navigationData?.distance,
-    navigationData?.duration,
+    navSdkSnapshot.progress?.distanceRemaining,
+    navSdkSnapshot.progress?.durationRemaining,
   ]);
 
   const navigationDataRef = useRef(navigationData);
@@ -927,15 +945,6 @@ export function useDriveNavigation(params: {
     [],
   );
 
-  /**
-   * Token used to cancel background REST-Directions step hydrations kicked off
-   * from `applySdkRouteGeometry` when a subsequent reroute supersedes the
-   * in-flight request. We don't need an `AbortController` because
-   * `getMapboxRouteOptions` doesn't accept one — comparing tokens after the
-   * await is enough (and cheap).
-   */
-  const sdkStepsHydrationTokenRef = useRef(0);
-
   /** Apply geometry + length/time from native Navigation SDK after `onRoutesLoaded` / reroute. */
   const applySdkRouteGeometry = useCallback(
     (
@@ -968,80 +977,6 @@ export function useDriveNavigation(params: {
       });
       routeModelRefreshedAtRef.current = Date.now();
       setRouteModelRefreshKey((k) => k + 1);
-
-      /**
-       * Background step hydration: the native `Routes` payload only contains
-       * per-step `shape.coordinates` (no maneuver types, lanes, shields, or
-       * banner instructions). Without richer step data the turn card after a
-       * reroute falls back to generic "Continue / straight-arrow" icons even
-       * when the native voice is saying "turn right" — precisely the
-       * "disturbing turn card" symptom.
-       *
-       * Fire a parallel, best-effort Mapbox Directions request using the
-       * first point of the new polyline as origin and the current navigation
-       * destination as destination. On success (and only if another reroute
-       * hasn't superseded this request) we merge REAL maneuver types / lanes
-       * / banners into `navigationData.steps`. The SDK is still the single
-       * authority for the polyline, progress, and voice — this only
-       * enriches the step metadata the JS turn card consumes.
-       */
-      if (
-        routesNative != null &&
-        polyline.length >= 2 &&
-        isMapboxDirectionsConfigured() &&
-        navSdkHeadlessRef.current
-      ) {
-        const destination = navigationDataRef.current?.destination ?? null;
-        if (
-          destination &&
-          Number.isFinite(destination.lat) &&
-          Number.isFinite(destination.lng)
-        ) {
-          sdkStepsHydrationTokenRef.current += 1;
-          const myToken = sdkStepsHydrationTokenRef.current;
-          const originSeed = polyline[0]!;
-          void (async () => {
-            try {
-              const options = await getMapboxRouteOptions(
-                { lat: originSeed.lat, lng: originSeed.lng },
-                { lat: destination.lat, lng: destination.lng },
-                { mode: drivingMode, fastSingleRoute: true },
-              );
-              if (
-                myToken !== sdkStepsHydrationTokenRef.current ||
-                !isNavigatingRef.current ||
-                !options.length ||
-                !options[0].steps?.length
-              ) {
-                return;
-              }
-              const realSteps = options[0].steps;
-              setNavigationData((prev) => {
-                if (!prev) return prev;
-                // Guard against a reroute that replaced our polyline between
-                // the fetch and this setState — compare first/last coords.
-                const samePolyline =
-                  prev.polyline.length >= 2 &&
-                  prev.polyline[0]!.lat === polyline[0]!.lat &&
-                  prev.polyline[0]!.lng === polyline[0]!.lng &&
-                  prev.polyline[prev.polyline.length - 1]!.lat ===
-                    polyline[polyline.length - 1]!.lat &&
-                  prev.polyline[prev.polyline.length - 1]!.lng ===
-                    polyline[polyline.length - 1]!.lng;
-                if (!samePolyline) return prev;
-                return {
-                  ...prev,
-                  steps: realSteps,
-                };
-              });
-              routeModelRefreshedAtRef.current = Date.now();
-              setRouteModelRefreshKey((k) => k + 1);
-            } catch {
-              // Best-effort hydration — failures leave synthetic steps in place.
-            }
-          })();
-        }
-      }
     },
     [drivingMode],
   );
@@ -1863,5 +1798,7 @@ export function useDriveNavigation(params: {
     sdkNativeFormattedDistance: navSdkHeadless ? navSdkSnapshot.nativeFormattedDistance : null,
     /** Native mirror bridge — per-lane PNGs (aligned with `lanes.length` when lengths match). */
     sdkNativeLaneAssets: navSdkHeadless ? navSdkSnapshot.nativeLaneAssets : null,
+    /** Native route polyline from `ingestSdkRoutePolyline` — use for map visuals during logic SDK trips (no REST line). */
+    sdkRoutePolyline: navSdkHeadless ? navSdkSnapshot.routePolyline : [],
   };
 }
