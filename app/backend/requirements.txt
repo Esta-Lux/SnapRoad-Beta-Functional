@@ -6,7 +6,7 @@ starlette>=0.47.2,<1.0.0
 uvicorn[standard]==0.34.0
 # Align with supabase realtime (>=2.11.7) and fastapi (>=2.9)
 pydantic>=2.11.7,<3.0.0
-python-dotenv==1.2.1
+python-dotenv==1.2.2
 
 # Auth / security
 PyJWT==2.12.1
