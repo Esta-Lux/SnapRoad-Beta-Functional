@@ -1132,7 +1132,12 @@ export default function MapScreen() {
   const lastCameraUpdate = useRef({ lat: 0, lng: 0, heading: 0 });
   const wasNavigatingForOdomRef = useRef(false);
   useEffect(() => {
-    if (nav.isNavigating && !wasNavigatingForOdomRef.current) {
+    if (
+      nav.isNavigating &&
+      !wasNavigatingForOdomRef.current &&
+      Number.isFinite(navDisplayCoord.lat) &&
+      Number.isFinite(navDisplayCoord.lng)
+    ) {
       lastCameraUpdate.current = {
         lat: navDisplayCoord.lat,
         lng: navDisplayCoord.lng,
@@ -1931,6 +1936,7 @@ export default function MapScreen() {
 
   // Fix 14: Camera tick + odometry. `navDisplayCoord` is SDK-matched when `navLogicSdkEnabled` (single engine); else JS snap.
   useEffect(() => {
+    if (!Number.isFinite(navDisplayCoord.lat) || !Number.isFinite(navDisplayCoord.lng)) return;
     const moveThresholdM = nav.isNavigating ? 0.45 : 1.5;
     const moved = haversineMeters(lastCameraUpdate.current.lat, lastCameraUpdate.current.lng, navDisplayCoord.lat, navDisplayCoord.lng) > moveThresholdM;
     const turned = Math.abs(navPuckHeading - lastCameraUpdate.current.heading) > 1;

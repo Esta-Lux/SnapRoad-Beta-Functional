@@ -31,9 +31,9 @@ Covered by `navSdkAuthority.unit.test.ts`. The adapter's native-first primary/se
 
 When `sdkRouteOwns` flips true but the SDK polyline hasn't landed yet, `MapScreen` intentionally renders **nothing** for the route instead of falling back to stale JS geometry — the next native tick will paint the correct route (typically within one RAF). When `sdkBannerOwns` flips true, `TurnInstructionCard` is forced through the `useBannerCopy` path and reads `banner.primaryInstruction` / `banner.secondaryInstruction` verbatim — JS cruise / confirm copy helpers are bypassed.
 
-### `sdk_waiting` (native geometry only, no REST bootstrap)
+### `sdk_waiting` (handoff from preview → native)
 
-Between `onRoutesLoaded` (polyline in `navSdkStore`) and the first `onRouteProgressChanged`, `buildSdkWaitingNavigationProgress` may render **`instructionSource: 'sdk_waiting'`** using **only** `state.routePolyline` — never the pre-trip REST preview line. Maneuver copy stays neutral (“Waiting for route guidance…”) until native progress arrives. Trip/banner authority flags remain false until a real `ingestSdkProgress`.
+`startNavigation` resets `navSdkStore`, so **`routePolyline` is empty** until `onRoutesLoaded`. During that short window, `buildSdkWaitingNavigationProgress` may use the **same Directions preview polyline** already shown in route preview so `NavigationProgress`, puck coords, and `RouteOverlay` stay finite (no `NaN` camera/odometry). As soon as native geometry lands, `polylineToRender` prefers `sdkRoutePolyline`; maneuver copy stays neutral (“Waiting for route guidance…”) until a real `ingestSdkProgress`. No synthetic REST **progress** bootstrap — only transient geometry.
 
 ### Native matched puck (minimal SDK adapter)
 

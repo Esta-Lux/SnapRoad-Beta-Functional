@@ -689,17 +689,25 @@ export function buildNavigationProgressFromSdk(args: {
 }
 
 /**
- * Before first native progress tick: show a neutral waiting shell only when **native** route
- * geometry is already in `navSdkStore` (`onRoutesLoaded`). No REST preview polyline — JS must not
- * paint a route the SDK has not committed.
+ * Before first native progress tick: show a neutral waiting shell.
+ *
+ * `startNavigation` calls `resetNavSdkState()`, so `routePolylineFromSdk` is empty until
+ * `onRoutesLoaded`. Use the **same preview polyline** the user just confirmed (Directions)
+ * only for this transient window; `MapScreen` + `polylineToRender` prefer `sdkRoutePolyline`
+ * as soon as native geometry lands, so the line does not fight an active SDK session.
  */
 export function buildSdkWaitingNavigationProgress(
   navigationData: { polyline: Coordinate[]; distance: number; duration: number } | null,
   routePolylineFromSdk: Coordinate[],
 ): NavigationProgress | null {
   if (!navigationData) return null;
-  if (routePolylineFromSdk.length < 2) return null;
-  const poly = routePolylineFromSdk;
+  const poly =
+    routePolylineFromSdk.length >= 2
+      ? routePolylineFromSdk
+      : navigationData.polyline?.length && navigationData.polyline.length >= 2
+        ? navigationData.polyline
+        : [];
+  if (poly.length < 2) return null;
   const first = poly[0]!;
   const distRem = Math.max(0, navigationData.distance ?? 0);
   const durRem = Math.max(0, Math.round(navigationData.duration ?? 0));

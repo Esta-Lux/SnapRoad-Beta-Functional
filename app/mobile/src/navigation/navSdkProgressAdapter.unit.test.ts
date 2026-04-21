@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { DirectionsStep } from '../lib/directions';
-import { buildNavigationProgressFromSdk } from './navSdkProgressAdapter';
+import { buildNavigationProgressFromSdk, buildSdkWaitingNavigationProgress } from './navSdkProgressAdapter';
 
 function baseStep(overrides: Partial<DirectionsStep> & Pick<DirectionsStep, 'instruction'>): DirectionsStep {
   return {
@@ -445,4 +445,19 @@ test('buildNavigationProgressFromSdk prefers upcoming actionable maneuver over c
   assert.equal(prog.nextStep.kind, 'turn_right');
   assert.equal(prog.nextStep.displayInstruction, 'Turn right onto Oak Ave');
   assert.equal(prog.nextStep.distanceMetersToNext, 65);
+});
+
+test('buildSdkWaitingNavigationProgress uses preview poly when native store poly is still empty', () => {
+  const preview = [
+    { lat: 37.77, lng: -122.42 },
+    { lat: 37.771, lng: -122.419 },
+  ];
+  const w = buildSdkWaitingNavigationProgress(
+    { polyline: preview, distance: 500, duration: 120 },
+    [],
+  );
+  assert.ok(w);
+  assert.equal(w!.instructionSource, 'sdk_waiting');
+  assert.equal(w!.routePolyline.length, 2);
+  assert.equal(w!.puckCoord.lat, preview[0]!.lat);
 });

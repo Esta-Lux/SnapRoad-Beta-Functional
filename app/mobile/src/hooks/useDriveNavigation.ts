@@ -375,6 +375,10 @@ export function useDriveNavigation(params: {
           return { lat: o.lat, lng: o.lng };
         }
       }
+      /* Brief gap after `resetNavSdkState` + before waiting progress or matcher: stay on device GPS. */
+      if (Number.isFinite(userLocation.lat) && Number.isFinite(userLocation.lng)) {
+        return { lat: userLocation.lat, lng: userLocation.lng };
+      }
       return { lat: Number.NaN, lng: Number.NaN };
     }
 
