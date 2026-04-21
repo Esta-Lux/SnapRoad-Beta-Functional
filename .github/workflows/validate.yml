@@ -166,12 +166,13 @@ jobs:
       - run: npm audit --omit=dev --audit-level=moderate
       - run: npx tsc --noEmit
 
-  # Runs only when SONAR_TOKEN is configured. Fork PRs skip (no base-repo secrets on untrusted workflows).
+  # Sonar step runs only when SONAR_TOKEN is set (job-level `if` cannot use `secrets.*`; see GitHub Actions docs).
+  # Fork PRs skip the whole job (no base-repo secrets on untrusted workflows).
   sonarqube:
     name: SonarQube
     runs-on: ubuntu-latest
     needs: [backend, frontend, mobile]
-    if: ${{ secrets.SONAR_TOKEN != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) }}
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     permissions:
       contents: read
       pull-requests: write
@@ -189,6 +190,7 @@ jobs:
           name: sonar-frontend-lcov
 
       - name: SonarQube Scan
+        if: ${{ secrets.SONAR_TOKEN != '' }}
         # Pinned to v6.0.0 commit (supply-chain policy: full SHA, not floating @v6).
         uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602
         env:

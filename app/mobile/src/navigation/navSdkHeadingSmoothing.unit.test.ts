@@ -82,20 +82,24 @@ test('first heading tick passes through (seeds the smoother)', () => {
   assert.ok(Math.abs((out.heading as number) - 42) < 0.001);
 });
 
-test('cruise-speed small delta (~5°) is mostly passed through', () => {
+test('cruise-speed small delta (~5°) is mostly passed through', async () => {
   resetHeadingSmoothing();
   runTick(40, 20); // seed
+  // `smoothCourseDeg` uses `Date.now()` for dt; same-ms ticks → ~0 alpha. ~160 ms at cruise tau ≈ 120 ms
+  // gives enough blend that heading lands mid-way toward 45 (see assertion band below).
+  await new Promise((r) => setTimeout(r, 160));
   const out = runTick(45, 20);
-  // At 20 m/s alpha ≈ 0.85, so heading moves ~4.25° toward 45
+  // At 20 m/s tau ≈ 120 ms — expect a strong step toward 45, not stuck near the seed
   const h = out.heading as number;
   assert.ok(h > 43.5 && h < 45, `cruise delta not pass-through: ${h}`);
 });
 
-test('slow-speed small delta (~5°) is heavily damped', () => {
+test('slow-speed small delta (~5°) is heavily damped', async () => {
   resetHeadingSmoothing();
   runTick(40, 2); // seed at walking pace
+  await new Promise((r) => setTimeout(r, 100));
   const out = runTick(45, 2);
-  // At ≤ 4 m/s alpha = 0.35 — heading should barely move
+  // Low speed → tau ≈ 350 ms — small alpha at 100 ms; heading should barely move from 40
   const h = out.heading as number;
   assert.ok(h > 41 && h < 42.5, `slow delta not damped: ${h}`);
 });

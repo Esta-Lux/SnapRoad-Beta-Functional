@@ -1,3 +1,4 @@
+import './src/location/friendLiveShareBackgroundTask';
 import './src/lib/sentry';
 import { registerRootComponent } from 'expo';
 import * as Sentry from '@sentry/react-native';

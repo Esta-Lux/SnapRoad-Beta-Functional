@@ -45,6 +45,7 @@ import {
   fetchFriendCategories,
 } from '../features/social/friendsApi';
 import { extractLocationSharingValue, getApiErrorMessage } from '../features/social/locationSharing';
+import { syncFriendLiveShareBackgroundFromPolicy } from '../location/friendLiveShareBackgroundTask';
 import type { MapFocusFriendParams } from '../types';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -1219,6 +1220,11 @@ export default function DashboardScreen() {
                     storage.set(SHARE_LOC_STORAGE_KEY, prev ? '1' : '0');
                     shareLocationNeedsCoordsSyncRef.current = prev && !myCoord;
                     Alert.alert('Location sharing', err);
+                  } else {
+                    void syncFriendLiveShareBackgroundFromPolicy({
+                      sharingEnabled: v,
+                      canPublish: Boolean(user?.isPremium),
+                    });
                   }
                 }}
                 trackColor={{ false: colors.border, true: '#34C759' }}

@@ -27,7 +27,7 @@ export function mergeLiveLocationUpdate(
   const friendId = String(payloadNew.friend_id ?? payloadNew.user_id ?? '');
   if (!friendId) return prev;
   return prev.map((f) => {
-    if (f.id !== friendId) return f;
+    if (String(f.id) !== String(friendId)) return f;
     return {
       ...f,
       lat: Number(payloadNew.lat ?? f.lat),

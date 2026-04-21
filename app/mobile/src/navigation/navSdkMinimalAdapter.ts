@@ -77,9 +77,19 @@ export function buildMinimalNavigationProgressFromSdk(
   const { traveled, remaining } = splitRouteAtSnap(polyline, routeSplitSnap);
 
   const rawCourseDeg = location != null && location.course >= 0 ? location.course : null;
+  /**
+   * Map puck position rides the **polyline at `fractionTraveled`**, not the raw matched GPS fix.
+   * The SDK’s matched lat/lng can sit a few meters off the JS polyline while `lineTrimOffset` is
+   * driven by arc length — that produced a visible seam (gray/blue split not under the puck).
+   * Heading / speed / accuracy still come from the native matched sample.
+   */
+  const onLine = routeSplitPoint ?? {
+    lat: polyline[0]!.lat,
+    lng: polyline[0]!.lng,
+  };
   const displayCoord: RawLocation = {
-    lat: location != null ? location.latitude : polyline[0]!.lat,
-    lng: location != null ? location.longitude : polyline[0]!.lng,
+    lat: onLine.lat,
+    lng: onLine.lng,
     heading: rawCourseDeg != null && Number.isFinite(rawCourseDeg) ? rawCourseDeg : undefined,
     speedMps: location != null && location.speed >= 0 ? location.speed : undefined,
     accuracy: location?.horizontalAccuracy ?? null,
