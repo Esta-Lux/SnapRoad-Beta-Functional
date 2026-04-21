@@ -24,7 +24,15 @@ import { haversineMeters } from '../../utils/distance';
 type Props = {
   lng: number;
   lat: number;
+  /** True north ° Clockwise — GPS / SDK course. */
   course: number;
+  /**
+   * Map camera bearing (° clockwise from north). When set, the chevron rotates by
+   * `course - mapBearing` so **forward** stays toward the **top of the screen** in
+   * heading-up follow mode, and stays aligned with the road in north-up mode — matching
+   * native navigation (MarkerView content is screen-axis, not map-rotated).
+   */
+  mapBearingDeg?: number | null;
   color?: string;
   accuracy?: number | null;
   speedMps?: number;
@@ -45,6 +53,24 @@ const ROTATION_EASE_MS = 220;
 function shortestAngleDelta(from: number, to: number): number {
   const diff = ((to - from + 540) % 360) - 180;
   return diff;
+}
+
+/** Wrap degrees to [0, 360). */
+function normalize360Deg(deg: number): number {
+  let x = deg % 360;
+  if (x < 0) x += 360;
+  return x;
+}
+
+/** Bearing to use for the on-screen chevron (map rotation compensated). */
+function screenBearingDeg(
+  courseDeg: number,
+  mapBearingDeg: number | null | undefined,
+): number {
+  if (mapBearingDeg == null || !Number.isFinite(mapBearingDeg)) {
+    return normalize360Deg(courseDeg);
+  }
+  return normalize360Deg(courseDeg - mapBearingDeg);
 }
 
 function projectAhead(lat: number, lng: number, headingDeg: number, meters: number) {
@@ -142,6 +168,7 @@ function NavSdkPuckImpl({
   lng,
   lat,
   course,
+  mapBearingDeg = null,
   color = '#0A66FF',
   accuracy = null,
   speedMps = 0,
@@ -158,6 +185,11 @@ function NavSdkPuckImpl({
   const courseIsValid = course >= 0 && Number.isFinite(course);
   const effectiveCourse = courseIsValid ? course : lastValidCourseRef.current;
   if (courseIsValid) lastValidCourseRef.current = course;
+
+  const orientDeg = React.useMemo(
+    () => screenBearingDeg(effectiveCourse, mapBearingDeg),
+    [effectiveCourse, mapBearingDeg],
+  );
 
   const positionEaseEnabled = !mirrorNativePosition;
   const smoothCoord = useSmoothCoordinate(lat, lng, moving ? 120 : 200, positionEaseEnabled);
@@ -181,31 +213,39 @@ function NavSdkPuckImpl({
   ]);
 
   React.useEffect(() => {
-    if (!Number.isFinite(effectiveCourse)) return;
+    if (!Number.isFinite(orientDeg)) return;
     const prev = lastTargetRotationRef.current;
 
     if (!moving) {
       if (prev == null) {
-        rotationSv.value = effectiveCourse;
-        lastTargetRotationRef.current = effectiveCourse;
+        rotationSv.value = orientDeg;
+        lastTargetRotationRef.current = orientDeg;
+      } else {
+        const delta = shortestAngleDelta(prev, orientDeg);
+        const nextAbsolute = prev + delta;
+        lastTargetRotationRef.current = nextAbsolute;
+        rotationSv.value = withTiming(nextAbsolute, {
+          duration: mapBearingDeg != null && Number.isFinite(mapBearingDeg) ? 120 : ROTATION_EASE_MS,
+          easing: Easing.out(Easing.cubic),
+        });
       }
       return;
     }
 
     if (prev == null) {
-      rotationSv.value = effectiveCourse;
-      lastTargetRotationRef.current = effectiveCourse;
+      rotationSv.value = orientDeg;
+      lastTargetRotationRef.current = orientDeg;
       return;
     }
 
-    const delta = shortestAngleDelta(prev, effectiveCourse);
+    const delta = shortestAngleDelta(prev, orientDeg);
     const nextAbsolute = prev + delta;
     lastTargetRotationRef.current = nextAbsolute;
     rotationSv.value = withTiming(nextAbsolute, {
       duration: ROTATION_EASE_MS,
       easing: Easing.out(Easing.cubic),
     });
-  }, [effectiveCourse, moving, rotationSv]);
+  }, [orientDeg, moving, rotationSv, mapBearingDeg]);
 
   const showAccuracyRing = (accuracy ?? 0) > ACCURACY_RING_THRESHOLD_M;
   React.useEffect(() => {
@@ -241,8 +281,6 @@ function NavSdkPuckImpl({
     opacity: pulseOpacity.value,
   }));
 
-  const haloStyle = useAnimatedStyle(() => ({ opacity: 0.32 }));
-
   if (!MapboxGL || !Number.isFinite(puckLng) || !Number.isFinite(puckLat)) return null;
 
   return (
@@ -260,32 +298,23 @@ function NavSdkPuckImpl({
           />
         )}
 
-        <Animated.View style={[styles.halo, { backgroundColor: `${color}22` }, haloStyle]} />
-
-        <View style={[styles.glowRing, { backgroundColor: `${color}33` }]} />
-
-        <View style={styles.disc}>
-          <View style={[styles.discInner, { backgroundColor: color }]} />
-        </View>
-
         <Animated.View style={[styles.arrow, rotateStyle]}>
-          <Svg width={32} height={32} viewBox="0 0 64 64">
+          <Svg width={36} height={36} viewBox="0 0 64 64">
             <Defs>
               <LinearGradient id="navPuckFill" x1="0" y1="0" x2="0" y2="1">
                 <Stop offset="0%" stopColor={color} stopOpacity={1} />
-                <Stop offset="100%" stopColor={color} stopOpacity={0.9} />
+                <Stop offset="100%" stopColor={color} stopOpacity={0.92} />
               </LinearGradient>
             </Defs>
             <Path
-              d="M32 6 L54 52 L32 42 L10 52 Z"
+              d="M32 8 L50 48 L32 40 L14 48 Z"
               fill="url(#navPuckFill)"
               stroke="#FFFFFF"
-              strokeWidth={4.5}
+              strokeWidth={3.5}
               strokeLinejoin="round"
               strokeLinecap="round"
             />
-            <Path d="M32 18 L42 42 L32 37 L22 42 Z" fill="#FFFFFF" opacity={0.3} />
-            <Circle cx={32} cy={40} r={2.5} fill="#FFFFFF" opacity={0.95} />
+            <Circle cx={32} cy={38} r={3} fill="#FFFFFF" opacity={0.9} />
           </Svg>
         </Animated.View>
       </View>
@@ -299,6 +328,12 @@ export const NavSdkPuck = React.memo(NavSdkPuckImpl, (prev, next) => {
   if (Math.abs(prev.lat - next.lat) > 1e-7) return false;
   if (Math.abs(prev.lng - next.lng) > 1e-7) return false;
   if (Math.abs(prev.course - next.course) > 0.2) return false;
+  const pb = prev.mapBearingDeg;
+  const nb = next.mapBearingDeg;
+  if (pb !== nb) {
+    if (pb == null || nb == null || !Number.isFinite(pb) || !Number.isFinite(nb)) return false;
+    if (Math.abs(pb - nb) > 0.35) return false;
+  }
   if (prev.accuracy !== next.accuracy) return false;
   const pStop = (prev.speedMps ?? 0) < STOPPED_THRESHOLD_MPS;
   const nStop = (next.speedMps ?? 0) < STOPPED_THRESHOLD_MPS;
@@ -307,53 +342,22 @@ export const NavSdkPuck = React.memo(NavSdkPuckImpl, (prev, next) => {
 });
 
 const styles = StyleSheet.create({
+  /** Tight bounds — map-stuck SVG metaphor (no elevated “widget” stack). */
   wrap: {
-    width: 80,
-    height: 80,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   accuracyRing: {
     position: 'absolute',
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 1.5,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 1.25,
     backgroundColor: 'transparent',
   },
-  halo: {
-    position: 'absolute',
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-  },
-  glowRing: {
-    position: 'absolute',
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-  },
-  disc: {
-    position: 'absolute',
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 8,
-  },
-  discInner: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-  },
   arrow: {
-    position: 'absolute',
     width: 36,
     height: 36,
     alignItems: 'center',

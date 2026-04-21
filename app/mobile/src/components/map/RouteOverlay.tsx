@@ -102,12 +102,24 @@ export default React.memo(function RouteOverlay({
       ? Math.max(0, Math.min(1, fractionTraveled))
       : 0;
   const TRIM_OFFSET_MIN_FRACTION = 5e-4;
+  const hasAuthoritativeSplit =
+    routeSplit != null &&
+    Number.isFinite(routeSplit.segmentIndex) &&
+    Number.isFinite(routeSplit.tOnSegment);
+  /**
+   * GPU `lineTrimOffset` is sensitive to the *exact* [0,1] fraction matching the GeoJSON
+   * vertex parameterization. Native `fractionTraveled` + JS polyline can disagree slightly
+   * with iOS Mapbox Maps v11, which made the **ahead** line vanish after the first movement
+   * while trim mode was active. When we have snap-derived `routeSplit` (same basis as puck),
+   * prefer the legacy split-ring path — it stays visually correct.
+   */
   const useTrimOffset =
     isNavigating &&
     !hasCongestion &&
     typeof fractionTraveled === 'number' &&
     Number.isFinite(fractionTraveled) &&
-    rawFraction > TRIM_OFFSET_MIN_FRACTION;
+    rawFraction > TRIM_OFFSET_MIN_FRACTION &&
+    !hasAuthoritativeSplit;
   const trimFraction = useTrimOffset ? rawFraction : 0;
 
   const fullCoords = useMemo(

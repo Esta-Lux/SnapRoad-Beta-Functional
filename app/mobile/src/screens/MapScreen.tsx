@@ -1203,6 +1203,8 @@ export default function MapScreen() {
     lng: number;
   } | null>(null);
   const [mapZoomLevel, setMapZoomLevel] = useState(15);
+  /** Map camera bearing (° CW from north) — drives nav puck screen rotation vs absolute course. */
+  const [mapCameraHeadingDeg, setMapCameraHeadingDeg] = useState(0);
   const mapZoomDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
   const [nearbyOffersPickerOpen, setNearbyOffersPickerOpen] = useState(false);
@@ -3088,7 +3090,11 @@ export default function MapScreen() {
     [dismissRoutePreview],
   );
 
-  const handleMapCameraChanged = useCallback((state: { properties?: { zoom?: number } }) => {
+  const handleMapCameraChanged = useCallback((state: { properties?: { zoom?: number; heading?: number } }) => {
+    const h = state?.properties?.heading;
+    if (typeof h === 'number' && Number.isFinite(h)) {
+      setMapCameraHeadingDeg(h);
+    }
     const z = state?.properties?.zoom;
     if (typeof z !== 'number' || !isFinite(z)) return;
     if (mapZoomDebounceRef.current) clearTimeout(mapZoomDebounceRef.current);
@@ -3768,6 +3774,7 @@ export default function MapScreen() {
               lng={navDisplayCoord.lng}
               lat={navDisplayCoord.lat}
               course={Number.isFinite(navPuckHeading) ? navPuckHeading : -1}
+              mapBearingDeg={mapCameraHeadingDeg}
               color={navRouteColors.routeColor}
               accuracy={nav.sdkNavLocation?.horizontalAccuracy ?? null}
               speedMps={
@@ -3775,7 +3782,7 @@ export default function MapScreen() {
                 nav.navigationProgress?.displayCoord?.speedMps ??
                 0
               }
-              mirrorNativePosition={isNativeSdkPassThrough}
+              mirrorNativePosition={isNativeSdkPassThrough || sdkPuckOwns}
             />
           ) : null}
         </MapboxGL.MapView>
@@ -4029,6 +4036,7 @@ export default function MapScreen() {
         const turnCardManeuverFields = resolveManeuverFieldsForTurnCard({
           nextManeuverCoord: nextManeuverCoord ?? undefined,
           progNext: prog.nextStep ?? null,
+          sdkAuthoritative: isSdkActive,
         });
 
         const turnCurrentStep = isSdkActive

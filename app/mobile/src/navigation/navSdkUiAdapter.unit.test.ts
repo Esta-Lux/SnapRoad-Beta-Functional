@@ -97,6 +97,31 @@ test('resolveManeuverFieldsForTurnCard prefers synthetic maneuver string over st
   assert.equal(fields.rawModifier, 'left');
 });
 
+test('resolveManeuverFieldsForTurnCard sdkAuthoritative prefers native progNext over synthetic row', () => {
+  const nativeStep = navStep({
+    index: 2,
+    kind: 'turn_right',
+    rawType: 'turn',
+    rawModifier: 'right',
+    displayInstruction: 'Turn right',
+    distanceMetersToNext: 80,
+  });
+  const synthetic = directionsStepFromSdkProgress({
+    nextStep: nativeStep,
+    banner,
+    at: { lat: 40, lng: -74 },
+  });
+  assert.ok(synthetic);
+  const wrongSynthetic = { ...synthetic, mapboxManeuver: { type: 'turn' as const, modifier: 'left' as const } };
+  const fields = resolveManeuverFieldsForTurnCard({
+    nextManeuverCoord: wrongSynthetic,
+    progNext: nativeStep,
+    sdkAuthoritative: true,
+  });
+  assert.equal(fields.kind, 'turn_right');
+  assert.equal(fields.rawModifier, 'right');
+});
+
 test('directionsStepFromSdkProgress does not let stale route step override SDK maneuver', () => {
   const next = navStep({
     index: 3,

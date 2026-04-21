@@ -33,6 +33,13 @@ const VB_CENTER = VB / 2;
  */
 const LANE_GLYPH_ROTATION_FIX_DEG = 0;
 
+/**
+ * Native lane PNGs from the Navigation SDK are authored for map / viewport coordinates; on the
+ * turn card “ahead” is toward the **top** of the screen (same as the route view). A 180° fix
+ * aligns bitmap lanes with SVG lanes and driving intuition.
+ */
+const NATIVE_LANE_BITMAP_ROTATE_DEG = '180deg';
+
 /** Filled arrow paths (Mapbox-style lane indications), 0–14 space. */
 const ARROW_PATHS: Record<LaneIndication, string> = {
   straight:
@@ -103,7 +110,16 @@ function LaneNativeBitmap({
         lane.preferred && lane.active && { borderColor: 'rgba(255,255,255,0.55)' },
       ]}
     >
-      <Image source={{ uri }} style={{ width: w, height: h, opacity }} resizeMode="contain" />
+      <Image
+        source={{ uri }}
+        style={{
+          width: w,
+          height: h,
+          opacity,
+          transform: [{ rotate: NATIVE_LANE_BITMAP_ROTATE_DEG }],
+        }}
+        resizeMode="contain"
+      />
     </View>
   );
 }

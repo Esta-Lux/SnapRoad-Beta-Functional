@@ -295,12 +295,26 @@ export function iconManeuverKindForState(
  * Turn-card glyph fields from the same {@link nextManeuverCoord} the card uses for distance
  * (Mapbox `mapboxManeuver`, else `maneuver` string). {@link progNext} is only used when there
  * is no step row (e.g. waiting / no geometry).
+ *
+ * When **`sdkAuthoritative`** is true (native Mapbox Navigation SDK), **always** use
+ * `progNext.rawType` / `rawModifier` / `kind` from the same progress tick as voice + banner.
+ * The synthetic {@link DirectionsStep} can still carry a stale REST `mapboxManeuver` or a
+ * weak `maneuver` string — that produced wrong icons while TTS matched the native step.
  */
 export function resolveManeuverFieldsForTurnCard(args: {
   nextManeuverCoord: DirectionsStep | null | undefined;
   progNext: NavStep | null | undefined;
+  /** When true, native `progNext` wins over parsed `nextManeuverCoord` (SDK path). */
+  sdkAuthoritative?: boolean;
 }): { rawType: string; rawModifier: string; kind: ManeuverKind } {
-  const { nextManeuverCoord, progNext } = args;
+  const { nextManeuverCoord, progNext, sdkAuthoritative } = args;
+  if (sdkAuthoritative && progNext) {
+    return {
+      rawType: progNext.rawType,
+      rawModifier: progNext.rawModifier,
+      kind: progNext.kind,
+    };
+  }
   if (nextManeuverCoord) {
     const fields = navManeuverFieldsFromDirectionsStep(nextManeuverCoord);
     if (fields.kind !== 'unknown') return fields;
