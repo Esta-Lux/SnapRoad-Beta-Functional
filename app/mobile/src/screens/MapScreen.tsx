@@ -100,6 +100,7 @@ import {
   buildChainInstruction,
   iconManeuverForState,
   iconManeuverKindForState,
+  resolveManeuverFieldsForTurnCard,
   shouldShowRoadDisambiguation,
 } from '../navigation/turnCardModel';
 import { useTurnConfirmationUntil } from '../hooks/useTurnConfirmationWindow';
@@ -735,24 +736,17 @@ export default function MapScreen() {
         : undefined,
   });
   /**
-   * Native SDK: trim the route with the **same** arc-length ratio as `routeSplitSnap`
-   * (`cumulativeMeters / polylineLength`). Using only `nativeFractionTraveled` can diverge by
-   * epsilon from the split geometry; the line then fights the passed/ahead seam. JS path keeps
-   * `smoothedFraction` (eased) so puck + trim stay matched.
+   * Native SDK: **only** `nativeFractionTraveled` from the bridge — same scalar the SDK uses
+   * internally. No JS recomputation from cumulative meters / polyline length (those can drift
+   * if arc-length differs from the native router’s fraction). JS-only trips keep eased `smoothedFraction`.
    */
   const routeOverlayFraction = useMemo(() => {
     if (!nav.isNavigating) return null;
-    if (isNativeSdkPassThrough && navPolylineLenMetersRaw > 1) {
-      return Math.max(0, Math.min(1, navSnapshotCumMeters / navPolylineLenMetersRaw));
+    if (isNativeSdkPassThrough && typeof nativeFractionTraveled === 'number' && Number.isFinite(nativeFractionTraveled)) {
+      return Math.max(0, Math.min(1, nativeFractionTraveled));
     }
     return smoothedFraction;
-  }, [
-    nav.isNavigating,
-    isNativeSdkPassThrough,
-    navPolylineLenMetersRaw,
-    navSnapshotCumMeters,
-    smoothedFraction,
-  ]);
+  }, [nav.isNavigating, isNativeSdkPassThrough, nativeFractionTraveled, smoothedFraction]);
   /**
    * Has the nav pipeline actually produced real progress yet? Used to gate
    * `smoothedNavPuckCoord` below — without this check the smoothed fraction
@@ -4011,6 +4005,7 @@ export default function MapScreen() {
         const banner = prog.banner ?? null;
         const sdkNavStep = isSdkActive ? prog.nextStep : null;
 
+        /** SDK-only: no REST Directions row merge — icons/distance use native `NavStep` + synthetic maneuver from `kind`. */
         const sdkSyntheticStep =
           isSdkActive && prog.nextStep
             ? directionsStepFromSdkProgress({
@@ -4029,6 +4024,12 @@ export default function MapScreen() {
           : nextIdx != null && !nextStepIsCurrentStep && nav.navigationData?.steps
             ? nav.navigationData.steps[nextIdx] ?? upcomingGuidanceStep
             : upcomingGuidanceStep;
+
+        /** Same step row / synthetic step as distance + primary copy — avoids wrong glyphs when SDK `rawType` lags `kind`. */
+        const turnCardManeuverFields = resolveManeuverFieldsForTurnCard({
+          nextManeuverCoord: nextManeuverCoord ?? undefined,
+          progNext: prog.nextStep ?? null,
+        });
 
         const turnCurrentStep = isSdkActive
           ? sdkSyntheticStep ?? (isSdkNativePassThrough ? undefined : currentStep)
@@ -4191,6 +4192,10 @@ export default function MapScreen() {
         const maneuverKindResolved = isSdkActive
           ? sdkNavStep?.kind ?? banner?.maneuverKind ?? iconManeuverKindForState(cardState, prog.nextStep)
           : banner?.maneuverKind ?? iconManeuverKindForState(cardState, prog.nextStep);
+        const maneuverKindForCard =
+          turnCardManeuverFields.rawType.trim() || turnCardManeuverFields.rawModifier.trim()
+            ? turnCardManeuverFields.kind
+            : maneuverKindResolved;
         const signalResolved = isSdkActive
           ? sdkNavStep?.signal ?? prog.nextStep?.signal
           : banner?.signal ?? prog.nextStep?.signal;
@@ -4239,9 +4244,9 @@ export default function MapScreen() {
               primaryInstruction={primary}
               secondaryInstruction={secondary}
               maneuverForIcon={maneuverIconKey}
-              maneuverKind={maneuverKindResolved}
-              maneuverType={prog.nextStep?.rawType ?? ''}
-              maneuverModifier={prog.nextStep?.rawModifier ?? ''}
+              maneuverKind={maneuverKindForCard}
+              maneuverType={turnCardManeuverFields.rawType}
+              maneuverModifier={turnCardManeuverFields.rawModifier}
               signal={signalResolved}
               lanes={lanesResolved}
               shields={shieldsResolved}

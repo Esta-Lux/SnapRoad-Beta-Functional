@@ -336,15 +336,18 @@ export function useDriveNavigation(params: {
 
   const sdkBuiltNavigationProgress = useMemo((): NavigationProgress | null => {
     if (!sdkActive) return null;
-    const polyFromSdk = navSdkSnapshot.routePolyline;
-    const polyFromRest = navigationData?.polyline ?? [];
-    const poly =
-      polyFromSdk.length >= 2 ? polyFromSdk : polyFromRest.length >= 2 ? polyFromRest : [];
-    if (poly.length >= 2) {
-      const fromSdk = getMinimalSdkNavigationProgress(poly);
+    /**
+     * Native `fractionTraveled` / stepIndex apply only to **SDK-ingested** geometry from
+     * `ingestSdkRoutePolyline`. Feeding the minimal adapter a REST preview polyline while
+     * the store still carries native progress made arc-length trim (`lineTrimOffset`) and
+     * the puck fight the real route — including “whole line vanishes” once the user moves
+     * and trim mode engages. No REST substitute here; wait for SDK poly or show `sdk_waiting`.
+     */
+    const sdkPoly = navSdkSnapshot.routePolyline;
+    if (sdkPoly.length >= 2) {
+      const fromSdk = getMinimalSdkNavigationProgress(sdkPoly);
       if (fromSdk) return fromSdk;
     }
-    /** Do not fall back to JS Directions progress while native session is starting or between ticks. */
     if (navSdkSnapshot.sdkGuidancePhase === 'idle') return null;
     return navigationData ? getSdkWaitingNavigationProgress(navigationData) : null;
   }, [sdkActive, navigationData, navSdkSnapshot]);

@@ -1,8 +1,11 @@
-import Constants from 'expo-constants';
-
 /**
  * EXPO_PUBLIC_* vars are inlined at bundle time. Most flags default off; logic SDK defaults on
  * (see {@link navLogicSdkEnabled}).
+ *
+ * Do **not** statically import `expo-constants`: it resolves to a path that pulls `react-native`
+ * into the module graph, which breaks Node/tsx unit tests (`esbuild` cannot transform RN).
+ * Lazy-require inside {@link nativeNavigationSupportedBuild} only; callers of other exports
+ * never load Expo in the test runner.
  */
 function envBool(key: string, defaultVal: boolean): boolean {
   const v = process.env[key];
@@ -12,12 +15,19 @@ function envBool(key: string, defaultVal: boolean): boolean {
 }
 
 function nativeNavigationSupportedBuild(): boolean {
-  const expoGoConfig =
-    (Constants as unknown as { expoGoConfig?: { debuggerHost?: string } }).expoGoConfig;
-  const executionEnvironment = String(
-    (Constants as unknown as { executionEnvironment?: string }).executionEnvironment ?? '',
-  ).toLowerCase();
-  return !expoGoConfig && executionEnvironment !== 'storeclient';
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Constants = require('expo-constants').default as {
+      expoGoConfig?: { debuggerHost?: string };
+      executionEnvironment?: string;
+    };
+    const expoGoConfig = Constants.expoGoConfig;
+    const executionEnvironment = String(Constants.executionEnvironment ?? '').toLowerCase();
+    return !expoGoConfig && executionEnvironment !== 'storeclient';
+  } catch {
+    // Node / tsx tests: no Expo module — env flags alone decide; treat as dev-client capable.
+    return true;
+  }
 }
 
 export function navRefreshV2Enabled(): boolean {
