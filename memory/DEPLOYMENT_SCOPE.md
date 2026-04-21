@@ -466,9 +466,9 @@ AUTH0_CLIENT_ID=your-client-id
 AUTH0_CLIENT_SECRET=your-client-secret
 
 # Maps (Apple MapKit JS)
-APPLE_MAPKIT_TEAM_ID=your-team-id
-APPLE_MAPKIT_KEY_ID=your-key-id
-APPLE_MAPKIT_PRIVATE_KEY=your-p8-private-key-contents
+MAPKIT_TEAM_ID=your-team-id
+MAPKIT_KEY_ID=your-key-id
+MAPKIT_PRIVATE_KEY=your-p8-private-key-contents
 
 # Payments
 STRIPE_SECRET_KEY=<stripe-secret-key>
