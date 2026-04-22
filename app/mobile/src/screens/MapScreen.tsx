@@ -16,6 +16,7 @@ import * as Battery from 'expo-battery';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useLocation } from '../hooks/useLocation';
 import { useDriveNavigation } from '../hooks/useDriveNavigation';
@@ -50,11 +51,21 @@ import {
   usesStandardStyleConfiguration,
 } from '../lib/mapboxDrivingStyle';
 import { clampStepTowardDeg } from '../navigation/bearingSmoothing';
+import {
+  FRIEND_FOLLOW_REROUTE_LONG_JUMP_M,
+  FRIEND_FOLLOW_REROUTE_LONG_JUMP_MIN_INTERVAL_MS,
+  FRIEND_FOLLOW_REROUTE_MIN_INTERVAL_MS,
+  FRIEND_FOLLOW_REROUTE_MIN_MOVE_M,
+} from '../navigation/friendFollowConfig';
 import RouteOverlay from '../components/map/RouteOverlay';
 import {
   startFriendLiveShareBackgroundUpdates,
   stopFriendLiveShareBackgroundUpdates,
 } from '../location/friendLiveShareBackgroundTask';
+import {
+  FRIEND_LIVE_LAST_NAV_KEY,
+  FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS,
+} from '../location/friendLiveShareConfig';
 import OfferMarkers from '../components/map/OfferMarkers';
 import ReportMarkers from '../components/map/ReportMarkers';
 import FriendMarkers from '../components/map/FriendMarkers';
@@ -482,59 +493,6 @@ export default function MapScreen() {
     enabled: !navVoiceMuted && nav.isNavigating && !navLogicSdkEnabled(),
     drivingMode,
   });
-
-  const enableShareLocationFromMap = useCallback(async () => {
-    const coordsValid =
-      Number.isFinite(location.lat) &&
-      Number.isFinite(location.lng) &&
-      !((Math.abs(location.lat) < 1e-6) && (Math.abs(location.lng) < 1e-6));
-    if (!coordsValid) {
-      Alert.alert('Location sharing', 'Waiting for a valid GPS fix. Try again in a moment.');
-      return;
-    }
-    try {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch {
-      /* optional */
-    }
-    storage.set(SHARE_LOC_STORAGE_KEY, '1');
-    setShareLocEpoch((n) => n + 1);
-    const setShareRes = await api.put('/api/friends/location/sharing', {
-      is_sharing: true,
-      lat: location.lat,
-      lng: location.lng,
-    });
-    const setShareErr = getApiErrorMessage(setShareRes, 'Could not enable location sharing right now.');
-    if (setShareErr) {
-      storage.set(SHARE_LOC_STORAGE_KEY, '0');
-      setShareLocEpoch((n) => n + 1);
-      Alert.alert('Location sharing', setShareErr);
-      return;
-    }
-    let battery_pct: number | undefined;
-    try {
-      const lvl = await Battery.getBatteryLevelAsync();
-      battery_pct = Math.round(Math.max(0, Math.min(1, lvl)) * 100);
-    } catch {
-      /* optional */
-    }
-    const res = await api.post('/api/friends/location/update', {
-      lat: location.lat,
-      lng: location.lng,
-      heading,
-      speed_mph: speed,
-      is_navigating: nav.isNavigating,
-      destination_name: nav.selectedDestination?.name ?? undefined,
-      is_sharing: true,
-      battery_pct,
-    });
-    const updateErr = getApiErrorMessage(res, 'Could not publish your current location yet.');
-    if (updateErr) {
-      if (res.statusCode === 503) setLivePublishPaused503(true);
-      Alert.alert('Location sharing', updateErr);
-      return;
-    }
-  }, [location.lat, location.lng, heading, speed, nav.isNavigating, nav.selectedDestination?.name]);
 
   const navLogicRef = useRef<MapboxNavigationViewRef | null>(null);
   const [navLogicCoords, setNavLogicCoords] = useState<Array<{ latitude: number; longitude: number }>>([]);
@@ -1232,6 +1190,58 @@ export default function MapScreen() {
   const lastLivePublishRef = useRef(0);
   const mapLivePublishCoordsRef = useRef({ lat: 0, lng: 0, heading: 0, speed: 0 });
   const mapLiveNavRef = useRef({ isNavigating: false, destinationName: undefined as string | undefined });
+  const enableShareLocationFromMap = useCallback(async () => {
+    const { lat, lng, heading: h, speed: sp } = mapLivePublishCoordsRef.current;
+    const { isNavigating, destinationName } = mapLiveNavRef.current;
+    const coordsValid =
+      Number.isFinite(lat) && Number.isFinite(lng) && !((Math.abs(lat) < 1e-6) && (Math.abs(lng) < 1e-6));
+    if (!coordsValid) {
+      Alert.alert('Location sharing', 'Waiting for a valid GPS fix. Try again in a moment.');
+      return;
+    }
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {
+      /* optional */
+    }
+    storage.set(SHARE_LOC_STORAGE_KEY, '1');
+    setShareLocEpoch((n) => n + 1);
+    const setShareRes = await api.put('/api/friends/location/sharing', {
+      is_sharing: true,
+      lat,
+      lng,
+    });
+    const setShareErr = getApiErrorMessage(setShareRes, 'Could not enable location sharing right now.');
+    if (setShareErr) {
+      storage.set(SHARE_LOC_STORAGE_KEY, '0');
+      setShareLocEpoch((n) => n + 1);
+      Alert.alert('Location sharing', setShareErr);
+      return;
+    }
+    let battery_pct: number | undefined;
+    try {
+      const lvl = await Battery.getBatteryLevelAsync();
+      battery_pct = Math.round(Math.max(0, Math.min(1, lvl)) * 100);
+    } catch {
+      /* optional */
+    }
+    const res = await api.post('/api/friends/location/update', {
+      lat,
+      lng,
+      heading: h,
+      speed_mph: sp,
+      is_navigating: isNavigating,
+      destination_name: destinationName ?? undefined,
+      is_sharing: true,
+      battery_pct,
+    });
+    const updateErr = getApiErrorMessage(res, 'Could not publish your current location yet.');
+    if (updateErr) {
+      if (res.statusCode === 503) setLivePublishPaused503(true);
+      Alert.alert('Location sharing', updateErr);
+      return;
+    }
+  }, [setShareLocEpoch]);
   const [ephemeralTurnHint, setEphemeralTurnHint] = useState<string | null>(null);
   const ephemeralHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceHintFiredStepRef = useRef<number>(-1);
@@ -1946,21 +1956,34 @@ export default function MapScreen() {
     }
   }, [navDisplayCoord.lat, navDisplayCoord.lng, navPuckHeading, nav.isNavigating, nav.updatePosition]);
 
-  mapLivePublishCoordsRef.current = { lat: location.lat, lng: location.lng, heading, speed };
+  const pubLat = nav.isNavigating ? navDisplayCoord.lat : location.lat;
+  const pubLng = nav.isNavigating ? navDisplayCoord.lng : location.lng;
+  const pubHeading = nav.isNavigating ? navDisplayHeading : heading;
+  mapLivePublishCoordsRef.current = {
+    lat: pubLat,
+    lng: pubLng,
+    heading: pubHeading,
+    speed: displaySpeedMph,
+  };
   mapLiveNavRef.current = {
     isNavigating: nav.isNavigating,
     destinationName: nav.selectedDestination?.name,
   };
 
   useEffect(() => {
+    if (Platform.OS === 'web' || !user?.isPremium) return;
+    void AsyncStorage.setItem(FRIEND_LIVE_LAST_NAV_KEY, nav.isNavigating ? '1' : '0');
+  }, [user?.isPremium, nav.isNavigating]);
+
+  useEffect(() => {
     if (!user?.isPremium || !canPublishFriendLocation) return;
     const sharingOn = storage.getString(SHARE_LOC_STORAGE_KEY) === '1';
     if (!sharingOn) return;
-    const rLat = Math.round(location.lat * 1000);
-    const rLng = Math.round(location.lng * 1000);
+    const rLat = Math.round(pubLat * 1000);
+    const rLng = Math.round(pubLng * 1000);
     if (rLat === 0 && rLng === 0) return;
     const now = Date.now();
-    if (now - lastLivePublishRef.current < 25000) return;
+    if (now - lastLivePublishRef.current < FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS) return;
     lastLivePublishRef.current = now;
 
     let cancelled = false;
@@ -1975,10 +1998,10 @@ export default function MapScreen() {
       }
       if (cancelled) return;
       const res = await api.post('/api/friends/location/update', {
-        lat: location.lat,
-        lng: location.lng,
-        heading,
-        speed_mph: speed,
+        lat: pubLat,
+        lng: pubLng,
+        heading: pubHeading,
+        speed_mph: displaySpeedMph,
         is_navigating: nav.isNavigating,
         destination_name: nav.selectedDestination?.name ?? undefined,
         is_sharing: true,
@@ -1991,10 +2014,10 @@ export default function MapScreen() {
     user?.isPremium,
     canPublishFriendLocation,
     shareLocEpoch,
-    location.lat,
-    location.lng,
-    heading,
-    speed,
+    pubLat,
+    pubLng,
+    pubHeading,
+    displaySpeedMph,
     nav.isNavigating,
     nav.selectedDestination?.name,
   ]);
@@ -2011,7 +2034,7 @@ export default function MapScreen() {
       const rLng = Math.round(lng * 1000);
       if (rLat === 0 && rLng === 0) return;
       const now = Date.now();
-      if (now - lastLivePublishRef.current < 25000) return;
+      if (now - lastLivePublishRef.current < FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS) return;
       lastLivePublishRef.current = now;
       void (async () => {
         let battery_pct: number | undefined;
@@ -2036,7 +2059,7 @@ export default function MapScreen() {
         if (!res.success && res.statusCode === 503) setLivePublishPaused503(true);
       })();
     };
-    const id = setInterval(tick, 28_000);
+    const id = setInterval(tick, FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS);
     return () => {
       cancelled = true;
       clearInterval(id);
@@ -3085,8 +3108,14 @@ export default function MapScreen() {
     if (!last) return;
     const moved = haversineMeters(last.lat, last.lng, fl.lat, fl.lng);
     const now = Date.now();
-    if (moved < 125) return;
-    if (now - friendFollowLastRerouteRef.current < 52_000) return;
+    const sinceLastReroute = now - friendFollowLastRerouteRef.current;
+    if (moved < FRIEND_FOLLOW_REROUTE_MIN_MOVE_M) return;
+    const longJump = moved >= FRIEND_FOLLOW_REROUTE_LONG_JUMP_M;
+    if (longJump) {
+      if (sinceLastReroute < FRIEND_FOLLOW_REROUTE_LONG_JUMP_MIN_INTERVAL_MS) return;
+    } else if (sinceLastReroute < FRIEND_FOLLOW_REROUTE_MIN_INTERVAL_MS) {
+      return;
+    }
     if (friendFollowRerouteBusyRef.current) return;
 
     friendFollowRerouteBusyRef.current = true;
