@@ -91,7 +91,7 @@ function LocationModal({
     setAddressLoading(true)
     try {
       const base = getApiBaseUrl()
-      const res = await fetch(`${base}/api/places/autocomplete?q=${encodeURIComponent(q)}&lat=${formData.lat}&lng=${formData.lng}`)
+      const res = await fetch(`${base}/api/places/autocomplete?q=${encodeURIComponent(q)}`)
       const data = await res.json()
       if (data.success && Array.isArray(data.data)) {
         setAddressSuggestions(

@@ -213,7 +213,8 @@ async def fetch_autocomplete_predictions(
     if _location_bias_ok(lat, lng):
         params["location"] = f"{lat},{lng}"
         params["radius"] = str(r_clamped)
-        params["strictbounds"] = "true"
+        # Keep location as a ranking hint only. strictbounds hard-limits
+        # results to the radius and can block valid global searches.
 
     r = await _get_http().get(f"{_BASE}/autocomplete/json", params=params)
     data = r.json()
