@@ -46,6 +46,7 @@ import {
 } from '../features/social/friendsApi';
 import { extractLocationSharingValue, getApiErrorMessage } from '../features/social/locationSharing';
 import { syncFriendLiveShareBackgroundFromPolicy } from '../location/friendLiveShareBackgroundTask';
+import { FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS } from '../location/friendLiveShareConfig';
 import type { MapFocusFriendParams } from '../types';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -410,7 +411,7 @@ export default function DashboardScreen() {
     const rLng = Math.round(location.lng * 1000);
     if (rLat === 0 && rLng === 0) return;
     const now = Date.now();
-    if (now - dashboardLivePublishRef.current < 25_000) return;
+    if (now - dashboardLivePublishRef.current < FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS) return;
     dashboardLivePublishRef.current = now;
 
     let cancelled = false;
@@ -454,7 +455,7 @@ export default function DashboardScreen() {
       const rLng = Math.round(lng * 1000);
       if (rLat === 0 && rLng === 0) return;
       const now = Date.now();
-      if (now - dashboardLivePublishRef.current < 25_000) return;
+      if (now - dashboardLivePublishRef.current < FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS) return;
       dashboardLivePublishRef.current = now;
       void (async () => {
         let battery_pct: number | undefined;
@@ -482,7 +483,7 @@ export default function DashboardScreen() {
         }
       })();
     };
-    const id = setInterval(tick, 28_000);
+    const id = setInterval(tick, FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS);
     return () => {
       cancelled = true;
       clearInterval(id);

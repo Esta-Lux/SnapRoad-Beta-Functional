@@ -14,8 +14,9 @@ interface Props {
   referenceCoordinate?: MarkerCoordinate | null;
 }
 
-const LERP_MIN_METERS = 2;
-const LERP_DURATION_MS = 580;
+const LERP_MIN_METERS = 1.5;
+/** Ease duration: ~3/4 of the 2s publish cadence so pins glide between server updates. */
+const LERP_DURATION_MS = 1500;
 
 function profileInitials(name: string): string {
   const parts = (name || '').trim().split(/\s+/).filter(Boolean);
@@ -164,7 +165,7 @@ export default React.memo(function FriendMarkers({
           MB={MB}
           friend={f}
           onFriendTap={onFriendTap}
-          allowInterpolation={idx < 12}
+          allowInterpolation={idx < 20}
         />
       ))}
     </>

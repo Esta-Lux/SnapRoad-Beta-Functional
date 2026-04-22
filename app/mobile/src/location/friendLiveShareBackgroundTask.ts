@@ -11,6 +11,11 @@ import * as Location from 'expo-location';
 import * as SecureStore from 'expo-secure-store';
 import * as Battery from 'expo-battery';
 import { API_BASE_URL } from '../api/client';
+import {
+  FRIEND_LIVE_LAST_NAV_KEY,
+  FRIEND_LIVE_SHARE_DISTANCE_INTERVAL_M,
+  FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS,
+} from './friendLiveShareConfig';
 
 export const FRIEND_LIVE_SHARE_TASK_NAME = 'snaproad-friend-live-share';
 
@@ -18,7 +23,7 @@ export const FRIEND_LIVE_SHARE_TASK_NAME = 'snaproad-friend-live-share';
 const SHARE_LOC_STORAGE_KEY = 'snaproad_share_location';
 const TOKEN_KEY = 'snaproad_token';
 
-const MIN_PUBLISH_INTERVAL_MS = 25_000;
+const MIN_PUBLISH_INTERVAL_MS = FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS;
 let lastPublishAtMs = 0;
 
 if (Platform.OS !== 'web') {
@@ -31,10 +36,12 @@ if (Platform.OS !== 'web') {
     const now = Date.now();
     if (now - lastPublishAtMs < MIN_PUBLISH_INTERVAL_MS) return;
 
+    let isNavigating = false;
     try {
       const { default: AsyncStorage } = await import('@react-native-async-storage/async-storage');
       const sharing = await AsyncStorage.getItem(SHARE_LOC_STORAGE_KEY);
       if (sharing !== '1') return;
+      isNavigating = (await AsyncStorage.getItem(FRIEND_LIVE_LAST_NAV_KEY)) === '1';
     } catch {
       return;
     }
@@ -76,7 +83,7 @@ if (Platform.OS !== 'web') {
           lng: longitude,
           heading: headingDeg,
           speed_mph,
-          is_navigating: false,
+          is_navigating: isNavigating,
           is_sharing: true,
           battery_pct,
         }),
@@ -116,13 +123,19 @@ export async function startFriendLiveShareBackgroundUpdates(): Promise<void> {
   }
 
   const running = await isFriendLiveShareBackgroundRunning();
-  if (running) return;
+  if (running) {
+    try {
+      await Location.stopLocationUpdatesAsync(FRIEND_LIVE_SHARE_TASK_NAME);
+    } catch {
+      /* apply new interval/accuracy on code updates */
+    }
+  }
 
   await Location.startLocationUpdatesAsync(FRIEND_LIVE_SHARE_TASK_NAME, {
-    accuracy: Location.Accuracy.Balanced,
-    timeInterval: 28_000,
-    distanceInterval: 35,
-    pausesUpdatesAutomatically: true,
+    accuracy: Location.Accuracy.High,
+    timeInterval: FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS,
+    distanceInterval: FRIEND_LIVE_SHARE_DISTANCE_INTERVAL_M,
+    pausesUpdatesAutomatically: false,
     showsBackgroundLocationIndicator: true,
     foregroundService: {
       notificationTitle: 'Sharing location',
