@@ -86,5 +86,11 @@
   "resolutions": {
     "@expo/prebuild-config": "latest"
   },
+  "overrides": {
+    "@expo/prebuild-config": "latest",
+    "serialize-javascript": "7.0.5",
+    "tmp": "0.2.5",
+    "@xmldom/xmldom": "0.9.10"
+  },
   "private": true
 }
