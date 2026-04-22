@@ -128,6 +128,11 @@ export type TurnInstructionCardProps = {
   isNativeMirror?: boolean;
   /** Native mirror: per-lane PNGs when aligned with `lanes.length`. */
   nativeLaneAssets?: NativeLaneAsset[] | null;
+  /**
+   * When set, drives `useStableText` reset key (e.g. SDK banner + step index) so
+   * primary copy advances with native voice instead of a 120 ms hold on a stale key.
+   */
+  textStabilityKey?: string | null;
 };
 
 export default React.memo(function TurnInstructionCard({
@@ -157,6 +162,7 @@ export default React.memo(function TurnInstructionCard({
   nativeFormattedDistance,
   isNativeMirror,
   nativeLaneAssets,
+  textStabilityKey,
 }: TurnInstructionCardProps) {
   const tcGrad = modeConfig.turnCardGradient;
   const tcRadius = modeConfig.turnCardRadius;
@@ -187,7 +193,9 @@ export default React.memo(function TurnInstructionCard({
     if (fromParent) return fromParent;
     return step?.bannerInstructions?.[0]?.primary?.text?.trim() || '';
   }, [step, primaryInstruction]);
-  const stableTextKey = `${step?.instruction ?? ''}|${_maneuverForIcon}|${state}`;
+  const stableTextKey =
+    textStabilityKey?.trim() ||
+    `${step?.instruction ?? ''}|${_maneuverForIcon}|${state}`;
   const primaryDisplay = useStableText(primaryRaw, stableTextKey);
 
   const hasRawManeuver = !!(maneuverType?.trim() || maneuverModifier?.trim());
@@ -382,13 +390,18 @@ export default React.memo(function TurnInstructionCard({
           <Animated.View
             style={[
               styles.distCol,
-              { minWidth: state === 'cruise' ? 56 : 60 },
+              {
+                minWidth: state === 'cruise' ? 56 : 72,
+                marginRight: 6,
+              },
               distAnimatedStyle,
             ]}
           >
             <Text
               style={[styles.distVal, { color: tcTextColor, fontSize: distFont }]}
               numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
             >
               {displayDistance.value}
             </Text>

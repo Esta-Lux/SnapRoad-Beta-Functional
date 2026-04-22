@@ -3811,13 +3811,9 @@ export default function MapScreen() {
                 puck + camera + route split all sit on a single point from
                 the very first frame of the trip — no "raw-GPS chevron visible
                 for 500 ms while the SDK warms up" seam.
-            Previously the gate was `sdkPuckOwns` (requires matched location +
-            `sdkGuidancePhase==='active'`), which meant the first ~150–500 ms
-            of every trip displayed the raw-GPS `LocationPuck` before flipping
-            to the matched `NavSdkPuck`. That visible handoff is exactly the
-            "puck is weak / moves around on its own" symptom at trip start.
-            The Reanimated-smoothed rotation inside `NavSdkPuck` keeps the
-            chevron pointing stably during the JS-only / waiting window too.
+            The hidden `MapboxNavigationView` still provides matched points; a
+            short ease on `NavSdkPuck` (below) only smooths discrete native
+            location ticks — it does not reintroduce a second GPS source.
           */}
           <MapboxGL.LocationPuck
             visible={!nav.isNavigating}
@@ -3842,9 +3838,7 @@ export default function MapScreen() {
                 nav.navigationProgress?.displayCoord?.speedMps ??
                 0
               }
-              mirrorNativePosition={navLogicSdkEnabled() && nav.isNavigating
-                ? true
-                : isNativeSdkPassThrough || sdkPuckOwns}
+              mirrorNativePosition={false}
             />
           ) : null}
         </MapboxGL.MapView>
@@ -4300,6 +4294,11 @@ export default function MapScreen() {
         const actionableGuidanceStep =
           isActionableGuidanceStep(guidanceStep, true) ? guidanceStep : (isActionableGuidanceStep(nextManeuverCoord, true) ? nextManeuverCoord : undefined);
 
+        const turnTextStabilityKey =
+          isSdkActive
+            ? `${prog.nextStep?.index ?? 0}|${(banner?.primaryInstruction ?? primary ?? '').trim()}`
+            : null;
+
         return (
           <View style={[s.turnWrap, { top: insets.top }]} key="turn-card-stable">
             <TurnInstructionCard
@@ -4308,10 +4307,9 @@ export default function MapScreen() {
               state={cardState}
               distanceValue={distPartsBase.value}
               distanceUnit={distPartsBase.unit}
-              nativeFormattedDistance={nav.sdkNativeFormattedDistance}
-              isNativeMirror={isSdkNativePassThrough}
-              nativeLaneAssets={nav.sdkNativeLaneAssets}
               primaryInstruction={primary}
+              textStabilityKey={turnTextStabilityKey}
+              nativeLaneAssets={nav.sdkNativeLaneAssets}
               secondaryInstruction={secondary}
               maneuverForIcon={maneuverIconKey}
               maneuverKind={maneuverKindForCard}

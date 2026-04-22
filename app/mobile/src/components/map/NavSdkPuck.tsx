@@ -91,7 +91,8 @@ function projectAhead(lat: number, lng: number, headingDeg: number, meters: numb
   return { lat: (lat2 * 180) / Math.PI, lng: (lng2 * 180) / Math.PI };
 }
 
-const SNAP_JUMP_METERS = 85;
+/** Above this, snap the eased position (reroute/teleport). Higher = more glide, less hard snap. */
+const SNAP_JUMP_METERS = 165;
 
 /**
  * Continuous RAF ease toward the latest coordinate. When `enabled` is false (native mirror
@@ -192,7 +193,7 @@ function NavSdkPuckImpl({
   );
 
   const positionEaseEnabled = !mirrorNativePosition;
-  const smoothCoord = useSmoothCoordinate(lat, lng, moving ? 120 : 200, positionEaseEnabled);
+  const smoothCoord = useSmoothCoordinate(lat, lng, moving ? 200 : 280, positionEaseEnabled);
   const { lat: puckLat, lng: puckLng } = React.useMemo(() => {
     const baseLat = mirrorNativePosition ? lat : smoothCoord.lat;
     const baseLng = mirrorNativePosition ? lng : smoothCoord.lng;
