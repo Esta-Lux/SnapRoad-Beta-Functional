@@ -143,7 +143,7 @@ function mirrorFallbackNativeSdk(
     safeAreaBottom,
   });
   const zoom = mode === 'calm' ? 16.5 : mode === 'sport' ? 17.5 : 17.0;
-  const pitch = Math.min(76, DRIVING_MODES[mode].navPitch + 6);
+  const pitch = Math.min(64, DRIVING_MODES[mode].navPitch + 2);
   return {
     followZoomLevel: Math.round(zoom * 4) / 4,
     followPitch: Math.round(pitch),

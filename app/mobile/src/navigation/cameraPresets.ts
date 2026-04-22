@@ -31,7 +31,7 @@ type SpeedZoomPoint = { speed: number; zoom: number };
  * Reserved top space for the floating turn instruction card (primary row + optional
  * lane strip / “then” line). Keeps forward road framed below the card instead of under it.
  */
-export const NAV_TURN_CARD_RESERVE_PX = 168;
+export const NAV_TURN_CARD_RESERVE_PX = 152;
 
 /**
  * Bottom map chrome while navigating: {@link NavigationStatusStrip} + End button + margins.
@@ -105,43 +105,43 @@ const MODE_CONFIG: Record<
   }
 > = {
   calm: {
-    basePitch: 52,
-    minPitch: 42,
-    maxPitch: 58,
-    basePadBottom: NAV_MAP_BOTTOM_CHROME_PX,
-    padTop: 350,
-    padLeft: 30,
-    padRight: 30,
-    padTopSpeed: 52,
-    turnApproachPadBoost: 22,
-    turnApproachMeters: 180,
-    transitionMs: 900,
-  },
-  adaptive: {
     basePitch: 50,
     minPitch: 40,
     maxPitch: 56,
     basePadBottom: NAV_MAP_BOTTOM_CHROME_PX,
-    padTop: 330,
+    padTop: 308,
+    padLeft: 30,
+    padRight: 30,
+    padTopSpeed: 52,
+    turnApproachPadBoost: 20,
+    turnApproachMeters: 180,
+    transitionMs: 980,
+  },
+  adaptive: {
+    basePitch: 48,
+    minPitch: 38,
+    maxPitch: 54,
+    basePadBottom: NAV_MAP_BOTTOM_CHROME_PX,
+    padTop: 292,
     padLeft: 28,
     padRight: 28,
     padTopSpeed: 48,
-    turnApproachPadBoost: 20,
+    turnApproachPadBoost: 18,
     turnApproachMeters: 180,
-    transitionMs: 720,
+    transitionMs: 820,
   },
   sport: {
-    basePitch: 54,
-    minPitch: 42,
-    maxPitch: 60,
+    basePitch: 52,
+    minPitch: 40,
+    maxPitch: 58,
     basePadBottom: NAV_MAP_BOTTOM_CHROME_PX,
-    padTop: 310,
+    padTop: 278,
     padLeft: 24,
     padRight: 24,
     padTopSpeed: 44,
-    turnApproachPadBoost: 18,
+    turnApproachPadBoost: 16,
     turnApproachMeters: 180,
-    transitionMs: 500,
+    transitionMs: 620,
   },
 };
 
@@ -236,7 +236,7 @@ export function getCameraPreset({
     safeAreaTop +
     NAV_UI_HEIGHT +
     speedTopBoost +
-    longRoad01 * (mode === 'calm' ? 34 : mode === 'adaptive' ? 52 : 68);
+    longRoad01 * (mode === 'calm' ? 22 : mode === 'adaptive' ? 36 : 48);
   let paddingBottom = cfg.basePadBottom + safeAreaBottom;
   if (nextManeuverDistanceMeters < cfg.turnApproachMeters) {
     paddingTop += cfg.turnApproachPadBoost * (0.55 + 0.45 * turnNear01);
@@ -279,7 +279,7 @@ export function getLiveNavigationCameraPreset(args: Args): CameraPreset {
   const base = getCameraPreset(args);
   const enh = getCameraConfig(args.mode, args.speedMps);
   const animationDuration = Math.round(
-    clamp(base.animationDuration * 0.52 + enh.animationDuration * 0.48, 320, 980),
+    clamp(base.animationDuration * 0.62 + enh.animationDuration * 0.38, 360, 1100),
   );
   return {
     zoom: base.zoom,

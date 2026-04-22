@@ -4117,8 +4117,12 @@ export default function MapScreen() {
                   : (turnCurrentStep?.distanceMeters ?? 0);
 
         const turnCardNow = Date.now();
-        /** Native mirror: one visual state — JS cruise/preview/confirm machine must not override the SDK banner. */
-        const cardState = isSdkNativePassThrough
+        /**
+         * Headless SDK: always `active` — the JS turn-state machine (cruise/confirm) and
+         * `iconManeuverForState` (straight in cruise) caused wrong glyphs vs native voice.
+         * JS-only nav keeps the existing preview/active/cruise model.
+         */
+        const cardState = isSdkActive
           ? 'active'
           : resolveTurnCardState({
               distanceToNextManeuverM: liveDistMeters,
@@ -4163,10 +4167,15 @@ export default function MapScreen() {
           liveDistMeters > 5 &&
           nextManeuverCoord != null &&
           nextManeuverCoord.maneuver !== 'depart';
-        const distPartsBase =
-          cardState === 'cruise' && !hasActionableMeters
-            ? { value: '—', unit: '' }
-            : formatTurnDistanceForCard(liveDistMeters);
+        const distPartsBase = (() => {
+          if (isSdkActive) {
+            const m = liveDistMeters;
+            if (!Number.isFinite(m) || m < 1) return { value: '—', unit: '' };
+            return formatTurnDistanceForCard(m);
+          }
+          if (cardState === 'cruise' && !hasActionableMeters) return { value: '—', unit: '' };
+          return formatTurnDistanceForCard(liveDistMeters);
+        })();
         const destinationName = nav.navigationData?.destination?.name ?? null;
 
         const useBannerCopy =
@@ -4251,13 +4260,18 @@ export default function MapScreen() {
           }
         }
 
-        const maneuverIconKey = iconManeuverForState(cardState, turnCurrentStep, nextManeuverCoord);
-        const chainInstruction = buildChainInstruction(prog.nextStep);
+        const maneuverIconKey = isSdkActive
+          ? (sdkNavStep?.kind === 'unknown' || sdkNavStep?.kind == null
+              ? 'straight'
+              : String(sdkNavStep.kind))
+          : iconManeuverForState(cardState, turnCurrentStep, nextManeuverCoord);
+        const chainInstruction = isSdkActive ? null : buildChainInstruction(prog.nextStep);
         const maneuverKindResolved = isSdkActive
           ? sdkNavStep?.kind ?? banner?.maneuverKind ?? iconManeuverKindForState(cardState, prog.nextStep)
           : banner?.maneuverKind ?? iconManeuverKindForState(cardState, prog.nextStep);
-        const maneuverKindForCard =
-          turnCardManeuverFields.rawType.trim() || turnCardManeuverFields.rawModifier.trim()
+        const maneuverKindForCard = isSdkActive
+          ? (sdkNavStep?.kind ?? 'straight')
+          : turnCardManeuverFields.rawType.trim() || turnCardManeuverFields.rawModifier.trim()
             ? turnCardManeuverFields.kind
             : maneuverKindResolved;
         const signalResolved = isSdkActive
@@ -4313,8 +4327,8 @@ export default function MapScreen() {
               secondaryInstruction={secondary}
               maneuverForIcon={maneuverIconKey}
               maneuverKind={maneuverKindForCard}
-              maneuverType={turnCardManeuverFields.rawType}
-              maneuverModifier={turnCardManeuverFields.rawModifier}
+              maneuverType={isSdkActive ? (sdkNavStep?.rawType ?? '') : turnCardManeuverFields.rawType}
+              maneuverModifier={isSdkActive ? (sdkNavStep?.rawModifier ?? '') : turnCardManeuverFields.rawModifier}
               signal={signalResolved}
               lanes={lanesResolved}
               shields={shieldsResolved}
