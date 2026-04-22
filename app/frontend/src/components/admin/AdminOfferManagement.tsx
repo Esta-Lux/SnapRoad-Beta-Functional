@@ -541,7 +541,14 @@ export function AdminOfferManagement({ theme, onNavigate, initialBulkOpen = fals
                     ...offer,
                     offer_type: offer.offer_type || (offer.is_admin_offer ? 'admin' : 'partner'),
                     partner_id: offer.partner_id || '',
-                    allocated_locations: Array.isArray(offer.allocated_locations) ? offer.allocated_locations.join(', ') : '',
+                    allocated_locations: Array.isArray(offer.allocated_locations)
+                      ? offer.allocated_locations.join(', ')
+                      : typeof offer.allocated_locations === 'string'
+                        ? offer.allocated_locations
+                        : '',
+                    address: offer.address ?? '',
+                    lat: offer.lat ?? null,
+                    lng: offer.lng ?? null,
                   })}
                   className={`px-3 py-2 rounded-lg text-sm ${isDark ? 'hover:bg-cyan-500/20 text-cyan-300' : 'hover:bg-cyan-50 text-cyan-700'}`}
                   title="Manage allocation"
