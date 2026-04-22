@@ -165,6 +165,9 @@ function standardSatelliteBasemapConfig(
     showTransitLabels: 'true',
     showPedestrianRoads: 'true',
     showAdminBoundaries: 'true',
+    // Documented Standard-Satellite API (v11.11+): max POI density + landmark icons.
+    densityPointOfInterestLabels: '5',
+    showLandmarkIcons: 'true',
   };
 }
 
@@ -172,11 +175,11 @@ function standardSatelliteBasemapConfig(
  * Basemap config for {@link usesStandardStyleConfiguration} styles (`StyleImport` id `basemap`).
  * Values are strings — required by `@rnmapbox/maps` StyleImport on the native bridge.
  *
- * Only officially documented Mapbox Standard API properties are used here.
- * Custom / unverified keys (show3dBuildings, show3dLandmarks, densityPointOfInterestLabels,
- * colorModePointOfInterestLabels, backgroundPointOfInterestLabels, showLandmarkIcons, etc.)
- * have been removed. When the native StyleImport receives unrecognised keys it can silently
- * reject the entire config object, leaving showPointOfInterestLabels unapplied → no POI labels.
+ * Only keys from the public Standard API are included. Unknown keys can cause the
+ * native bridge to reject the whole `config` object (see mapbox style docs), so
+ * we avoid experimental properties.
+ * `densityPointOfInterestLabels` (1–5) and `showLandmarkIcons` are documented
+ * since iOS/Android SDK v11.11.0; they improve POI/landmark visibility vs defaults.
  *
  * @see https://docs.mapbox.com/map-styles/standard/api/
  */
@@ -204,5 +207,7 @@ export function standardBasemapStyleImportConfig(
     showTransitLabels: 'true',
     showPedestrianRoads: 'true',
     showAdminBoundaries: 'true',
+    densityPointOfInterestLabels: '5',
+    showLandmarkIcons: 'true',
   };
 }

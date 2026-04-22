@@ -3541,7 +3541,7 @@ export default function MapScreen() {
           ) : null}
           {standardStyleImportsEnabled && MapboxGL.StyleImport ? (
             <MapboxGL.StyleImport
-              key={`basemap-${mapLightPreset}-${drivingMode}-${isSatelliteStyle ? 'sat' : 'std'}-${nav.isNavigating ? 'nav' : 'exp'}`}
+              key={`basemap-${mapLightPreset}-${drivingMode}-${isSatelliteStyle ? 'sat' : 'std'}`}
               id="basemap"
               existing
               config={standardBasemapImportConfig}
@@ -4044,6 +4044,77 @@ export default function MapScreen() {
                 secondaryInstruction={undefined}
                 maneuverForIcon="straight"
                 maneuverKind="straight"
+                isMuted={navVoiceMuted}
+                onMutePress={() => {
+                  setNavVoiceMuted((m) => {
+                    if (!m) stopSpeaking();
+                    return !m;
+                  });
+                }}
+                lanesJson={undefined}
+                step={undefined}
+                roadDisambiguationLabel={null}
+                isSportBorder={isSport}
+                speedMph={displaySpeedMph}
+              />
+            </View>
+          );
+        }
+
+        /**
+         * Headless Mapbox Navigation SDK: turn card is driven by native banner / NavStep
+         * only — no JS REST merge, no synthetic `DirectionsStep`, no disambig or chain lines.
+         */
+        if (instructionSrc === 'sdk' && navLogicSdkEnabled()) {
+          const b = prog.banner ?? null;
+          const sdkNS = prog.nextStep;
+          const liveM = Math.max(0, b?.primaryDistanceMeters ?? prog.nextStepDistanceMeters ?? 0);
+          const nat = nav.sdkNativeFormattedDistance;
+          const hasNativeDist =
+            nat != null && typeof nat.value === 'string' && String(nat.value).trim() !== '';
+          const distParts = hasNativeDist
+            ? { value: '', unit: '' }
+            : !Number.isFinite(liveM) || liveM < 1
+              ? { value: '—', unit: '' }
+              : formatTurnDistanceForCard(liveM);
+          const primary =
+            b?.primaryInstruction?.trim() ||
+            sdkNS?.displayInstruction?.trim() ||
+            sdkNS?.instruction?.trim() ||
+            '';
+          const secondary = b?.secondaryInstruction?.trim() || undefined;
+          const maneuverIconKey =
+            sdkNS?.kind === 'unknown' || sdkNS?.kind == null
+              ? 'straight'
+              : String(sdkNS.kind);
+          const manKind = sdkNS?.kind ?? b?.maneuverKind ?? 'straight';
+          const textStabKey = `${sdkNS?.index ?? 0}|${(b?.primaryInstruction ?? primary).trim()}`;
+
+          return (
+            <View style={[s.turnWrap, { top: insets.top }]} key="turn-card-sdk-native">
+              <TurnInstructionCard
+                mode={drivingMode}
+                modeConfig={modeConfig}
+                state="active"
+                distanceValue={distParts.value}
+                distanceUnit={distParts.unit}
+                primaryInstruction={primary}
+                secondaryInstruction={secondary}
+                textStabilityKey={textStabKey}
+                nativeFormattedDistance={nav.sdkNativeFormattedDistance}
+                isNativeMirror={hasNativeDist}
+                nativeLaneAssets={nav.sdkNativeLaneAssets}
+                maneuverForIcon={maneuverIconKey}
+                maneuverKind={manKind}
+                maneuverType={sdkNS?.rawType ?? ''}
+                maneuverModifier={sdkNS?.rawModifier ?? ''}
+                signal={sdkNS?.signal}
+                lanes={sdkNS?.lanes?.length ? sdkNS.lanes : prog.nextStep?.lanes ?? []}
+                shields={sdkNS?.shields?.length ? sdkNS.shields : prog.nextStep?.shields ?? []}
+                roundaboutExitNumber={
+                  sdkNS?.roundaboutExitNumber ?? prog.nextStep?.roundaboutExitNumber ?? null
+                }
+                chainInstruction={null}
                 isMuted={navVoiceMuted}
                 onMutePress={() => {
                   setNavVoiceMuted((m) => {
