@@ -744,7 +744,7 @@ export function buildSdkWaitingNavigationProgress(
     followingStep: null,
     nextStepDistanceMeters: 0,
     banner: {
-      primaryInstruction: 'Waiting for route guidance…',
+      primaryInstruction: 'Acquiring route…',
       primaryDistanceMeters: 0,
       primaryStreet: null,
       secondaryInstruction: null,

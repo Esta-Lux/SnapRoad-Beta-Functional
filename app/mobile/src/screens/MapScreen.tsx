@@ -543,27 +543,20 @@ export default function MapScreen() {
 
   /**
    * `navLogicCoords` is the `coordinates` prop on the hidden
-   * `MapboxNavigationView`. Previously this effect depended on
-   * `location.lat/lng`, which meant every GPS tick (once per second under
-   * normal conditions, faster during navigation) rebuilt the array and
-   * re-pushed it into the native SDK. The SDK interprets a new
-   * `coordinates` prop as a fresh waypoint set and cancels/recomputes the
-   * route — which produced the "route line is missing when I tap Navigate"
-   * symptom, because the polyline is in a constant loading-empty-loading
-   * churn. It also explains the puck "moving around on its own": each
-   * reroute resets `navigationProgress` to a waiting state, and the
-   * smoothed puck falls back to `polyline[0]` of whatever fresh route the
-   * SDK is mid-request (see `smoothedNavPuckCoord` — origin of the route,
-   * not the user's live location).
+   * `MapboxNavigationView`. A new `coordinates` value is an instruction to
+   * the native engine to re-seed the trip, so if we re-push on every GPS
+   * tick the route churns, progress resets, and the map line “blinks”.
+   * Once `onRoutesLoaded` runs, `ingestSdkRoutePolyline` fills
+   * `nav.sdkRoutePolyline` and the SDK tracks the user via
+   * `onNavigationLocationUpdate` / `onRouteProgressChanged` without new
+   * waypoints.
    *
-   * Fix: the origin/destination pair is an *initial seed* for the native
-   * Navigation SDK. Once the SDK has been handed the pair, it tracks the
-   * user internally via `onNavigationLocationUpdate` / `onRouteProgress`
-   * and fires `onRouteChanged` for organic reroutes — we do NOT need to
-   * keep pushing `location` back in. The effect now runs only when
-   * `isNavigating` transitions or the destination changes (friend-follow
-   * dynamic destination); the origin is captured from a ref snapshot so
-   * jittery GPS samples don't trigger the effect.
+   * While **waiting for the first native route** (`sdkRoutePolyline` still
+   * empty), a stale or cached origin would otherwise leave headless nav
+   * stuck in “acquiring route” with the wrong start — we **do** re-read
+   * live `location` until the native polyline exists, then we stop
+   * coupling the effect to GPS (origin comes from the ref for session /
+   * destination-only updates).
    */
   // Stable ref for latest location — read inside effects that MUST NOT
   // rebuild on every GPS tick (see `navLogicCoords` effect below and
@@ -572,12 +565,16 @@ export default function MapScreen() {
   useEffect(() => {
     locationRef.current = location;
   }, [location?.lat, location?.lng]);
+  const trackOriginForNavLogic = useMemo(
+    () => navLogicSdkEnabled() && nav.isNavigating && (nav.sdkRoutePolyline?.length ?? 0) < 2,
+    [nav.isNavigating, nav.sdkRoutePolyline.length],
+  );
   useEffect(() => {
     if (!navLogicSdkEnabled() || !nav.isNavigating || !nav.navigationData) {
       setNavLogicCoords([]);
       return;
     }
-    const loc = locationRef.current;
+    const loc = trackOriginForNavLogic ? location : locationRef.current;
     if (!loc || !Number.isFinite(loc.lat) || !Number.isFinite(loc.lng)) return;
     setNavLogicCoords([
       { latitude: loc.lat, longitude: loc.lng },
@@ -590,6 +587,9 @@ export default function MapScreen() {
     nav.isNavigating,
     nav.navigationData?.destination?.lat,
     nav.navigationData?.destination?.lng,
+    trackOriginForNavLogic,
+    trackOriginForNavLogic ? location?.lat : null,
+    trackOriginForNavLogic ? location?.lng : null,
   ]);
 
   useEffect(() => {
@@ -4046,7 +4046,7 @@ export default function MapScreen() {
                 state="preview"
                 distanceValue="—"
                 distanceUnit=""
-                primaryInstruction={prog.banner?.primaryInstruction ?? 'Waiting for route guidance…'}
+                primaryInstruction={prog.banner?.primaryInstruction ?? 'Acquiring route…'}
                 secondaryInstruction={undefined}
                 maneuverForIcon="straight"
                 maneuverKind="straight"

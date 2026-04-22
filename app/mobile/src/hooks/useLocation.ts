@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as Location from 'expo-location';
-import { Platform } from 'react-native';
+import { AppState, Platform, type AppStateStatus } from 'react-native';
 import { loadCachedLocation, persistCachedLocation } from '../utils/locationCache';
 import {
   accuracyQualityFactor,
@@ -235,7 +235,10 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
 
     try {
       const coarse = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
+        /* Highest = faster meaningful fix on cold open; Balanced can linger on stale cells cache. */
+        accuracy: isNavigating
+          ? Location.Accuracy.BestForNavigation
+          : Location.Accuracy.Highest,
       });
       const lat = coarse.coords.latitude;
       const lng = coarse.coords.longitude;
@@ -286,6 +289,11 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
 
         setState((prev) => {
           const movedMeters = haversineMeters(prev.location, rawCoord);
+          /**
+           * Large move at low reported speed: user relocated, first fix after cache, or
+           * app resumed in a new place — do **not** freeze the puck on the old coordinate.
+           * (Previously we dropped the update and kept stale location → "GPS stuck" reports.)
+           */
           if (
             prev.location.lat !== UNKNOWN_LOCATION.lat &&
             prev.location.lng !== UNKNOWN_LOCATION.lng &&
@@ -294,7 +302,14 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
             movedMeters > LOW_SPEED_JUMP_METERS
           ) {
             prevRawFixRef.current = rawCoord;
-            return { ...prev, isLocating: false, accuracy: acc ?? prev.accuracy };
+            positionBlendRef.current = rawCoord;
+            lastGpsFixAtRef.current = now;
+            return {
+              ...prev,
+              location: rawCoord,
+              isLocating: false,
+              accuracy: acc ?? prev.accuracy,
+            };
           }
 
           const prevRaw = prevRawFixRef.current;
@@ -441,6 +456,48 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
       headingSubRef.current = null;
     };
   }, [paused, startWatching]);
+
+  /**
+   * Every time the app returns to the foreground, take a fresh fix so the map does not
+   * sit on an old blended coordinate after driving / flying / poor offline caching.
+   */
+  useEffect(() => {
+    const onAppState = (next: AppStateStatus) => {
+      if (next !== 'active' || paused) return;
+      void (async () => {
+        try {
+          const { status } = await Location.getForegroundPermissionsAsync();
+          if (status !== 'granted') return;
+          const fix = await Location.getCurrentPositionAsync({
+            accuracy: isNavigating
+              ? Location.Accuracy.BestForNavigation
+              : Location.Accuracy.Highest,
+          });
+          const lat = fix.coords.latitude;
+          const lng = fix.coords.longitude;
+          const acc = fix.coords.accuracy;
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+          const initCoord = { lat, lng };
+          const speedMph = Math.max(0, (fix.coords.speed ?? 0) * 2.237);
+          persistCachedLocation(lat, lng);
+          positionBlendRef.current = initCoord;
+          prevRawFixRef.current = initCoord;
+          lastGpsFixAtRef.current = Date.now();
+          setState((prev) => ({
+            ...prev,
+            location: initCoord,
+            speed: speedMph,
+            accuracy: acc ?? null,
+            isLocating: false,
+          }));
+        } catch {
+          /* network-independent — ignore */
+        }
+      })();
+    };
+    const sub = AppState.addEventListener('change', onAppState);
+    return () => sub.remove();
+  }, [paused, isNavigating]);
 
   return state;
 }
