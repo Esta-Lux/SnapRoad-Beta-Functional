@@ -157,7 +157,6 @@ import {
   ingestSdkRoutePolyline,
   ingestSdkVoiceSubtitle,
 } from '../navigation/navEngine';
-import { directionsStepFromSdkProgress } from '../navigation/navSdkUiAdapter';
 import type { NativeLaneAsset, SdkCameraPayload } from '../navigation/navSdkMirrorTypes';
 import type { SdkLocationPayload, SdkProgressPayload } from '../navigation/navSdkStore';
 import { polylineFromSdkRoutes, type SdkRoutesNative } from '../navigation/navSdkGeometry';
@@ -4091,21 +4090,17 @@ export default function MapScreen() {
         }
 
         /**
-         * Headless Mapbox Navigation SDK: turn card is driven by native banner / NavStep
-         * only — no JS REST merge, no synthetic `DirectionsStep`, no disambig or chain lines.
+         * Mapbox Navigation SDK (headless) progress: turn card is **only** from native
+         * banner / NavStep and `sdkNativeFormattedDistance` / `sdkNativeLaneAssets` — no JS
+         * `formatTurnDistanceForCard`, no REST `DirectionsStep`, disambig, or chain line merge.
          */
-        if (instructionSrc === 'sdk' && navLogicSdkEnabled()) {
+        if (instructionSrc === 'sdk') {
           const b = prog.banner ?? null;
           const sdkNS = prog.nextStep;
-          const liveM = Math.max(0, b?.primaryDistanceMeters ?? prog.nextStepDistanceMeters ?? 0);
           const nat = nav.sdkNativeFormattedDistance;
           const hasNativeDist =
             nat != null && typeof nat.value === 'string' && String(nat.value).trim() !== '';
-          const distParts = hasNativeDist
-            ? { value: '', unit: '' }
-            : !Number.isFinite(liveM) || liveM < 1
-              ? { value: '—', unit: '' }
-              : formatTurnDistanceForCard(liveM);
+          const distParts = hasNativeDist ? { value: '', unit: '' } : { value: '—', unit: '' };
           const primary =
             b?.primaryInstruction?.trim() ||
             sdkNS?.displayInstruction?.trim() ||
@@ -4161,82 +4156,53 @@ export default function MapScreen() {
           );
         }
 
-        /** Native SDK is the only authority for maneuver text, distance, lanes, and signals. */
-        const isSdkActive = instructionSrc === 'sdk';
-        const isSdkNativePassThrough =
-          isSdkActive && typeof prog.nativeFractionTraveled === 'number';
         const banner = prog.banner ?? null;
-        const sdkNavStep = isSdkActive ? prog.nextStep : null;
-
-        /** SDK-only: no REST Directions row merge — icons/distance use native `NavStep` + synthetic maneuver from `kind`. */
-        const sdkSyntheticStep =
-          isSdkActive && prog.nextStep
-            ? directionsStepFromSdkProgress({
-                nextStep: prog.nextStep,
-                banner: prog.banner ?? undefined,
-                at: navDisplayCoord,
-              })
-            : null;
-
         const nextIdx = prog?.nextStep?.index;
         const nextStepIsCurrentStep =
           nextIdx != null && nextIdx <= nav.currentStepIndex;
 
-        const nextManeuverCoord = isSdkActive
-          ? sdkSyntheticStep
-          : nextIdx != null && !nextStepIsCurrentStep && nav.navigationData?.steps
+        const nextManeuverCoord =
+          nextIdx != null && !nextStepIsCurrentStep && nav.navigationData?.steps
             ? nav.navigationData.steps[nextIdx] ?? upcomingGuidanceStep
             : upcomingGuidanceStep;
 
-        /** Same step row / synthetic step as distance + primary copy — avoids wrong glyphs when SDK `rawType` lags `kind`. */
         const turnCardManeuverFields = resolveManeuverFieldsForTurnCard({
           nextManeuverCoord: nextManeuverCoord ?? undefined,
           progNext: prog.nextStep ?? null,
-          sdkAuthoritative: isSdkActive,
+          sdkAuthoritative: false,
         });
 
-        const turnCurrentStep = isSdkActive
-          ? sdkSyntheticStep ?? (isSdkNativePassThrough ? undefined : currentStep)
-          : currentStep;
+        const turnCurrentStep = currentStep;
 
         const poly = nav.navigationData?.polyline;
 
-        const liveDistMeters = isSdkActive
-          ? Math.max(0, banner?.primaryDistanceMeters ?? prog.nextStepDistanceMeters ?? 0)
-          : sdkBannerOwns
-            ? Math.max(
-                0,
-                Number.isFinite(prog.nextStepDistanceMeters) ? prog.nextStepDistanceMeters : 0,
-              )
-            : prog != null && Number.isFinite(prog.nextStepDistanceMeters) && !nextStepIsCurrentStep
-              ? prog.nextStepDistanceMeters
-              : poly && poly.length >= 2 && nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
-                ? alongRouteDistanceMeters(poly, navDisplayCoord, { lat: nextManeuverCoord.lat, lng: nextManeuverCoord.lng })
-                : nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
-                  ? haversineMeters(navDisplayCoord.lat, navDisplayCoord.lng, nextManeuverCoord.lat, nextManeuverCoord.lng)
-                  : (turnCurrentStep?.distanceMeters ?? 0);
+        const liveDistMeters = sdkBannerOwns
+          ? Math.max(
+              0,
+              Number.isFinite(prog.nextStepDistanceMeters) ? prog.nextStepDistanceMeters : 0,
+            )
+          : prog != null && Number.isFinite(prog.nextStepDistanceMeters) && !nextStepIsCurrentStep
+            ? prog.nextStepDistanceMeters
+            : poly && poly.length >= 2 && nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
+              ? alongRouteDistanceMeters(poly, navDisplayCoord, { lat: nextManeuverCoord.lat, lng: nextManeuverCoord.lng })
+              : nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
+                ? haversineMeters(navDisplayCoord.lat, navDisplayCoord.lng, nextManeuverCoord.lat, nextManeuverCoord.lng)
+                : (turnCurrentStep?.distanceMeters ?? 0);
 
         const turnCardNow = Date.now();
-        /**
-         * Headless SDK: always `active` — the JS turn-state machine (cruise/confirm) and
-         * `iconManeuverForState` (straight in cruise) caused wrong glyphs vs native voice.
-         * JS-only nav keeps the existing preview/active/cruise model.
-         */
-        const cardState = isSdkActive
-          ? 'active'
-          : resolveTurnCardState({
-              distanceToNextManeuverM: liveDistMeters,
-              speedMph: displaySpeedMph,
-              mode: drivingMode,
-              inConfirmationWindow: inConfirmWindow,
-              nextStep: nextManeuverCoord,
-              congestionNearManeuver: hasSevereCongestionAhead(
-                nav.navigationData?.congestion,
-                nav.navigationProgress?.snapped?.segmentIndex ?? 0,
-              ),
-              activeEnteredAtMs: turnCardActiveEnteredAtRef.current,
-              nowMs: turnCardNow,
-            });
+        const cardState = resolveTurnCardState({
+          distanceToNextManeuverM: liveDistMeters,
+          speedMph: displaySpeedMph,
+          mode: drivingMode,
+          inConfirmationWindow: inConfirmWindow,
+          nextStep: nextManeuverCoord,
+          congestionNearManeuver: hasSevereCongestionAhead(
+            nav.navigationData?.congestion,
+            nav.navigationProgress?.snapped?.segmentIndex ?? 0,
+          ),
+          activeEnteredAtMs: turnCardActiveEnteredAtRef.current,
+          nowMs: turnCardNow,
+        });
         /* Update the dwell-tracking ref: record the moment we first enter
          * 'active'; clear it when we leave so the next entry starts fresh. */
         if (cardState === 'active') {
@@ -4268,37 +4234,19 @@ export default function MapScreen() {
           nextManeuverCoord != null &&
           nextManeuverCoord.maneuver !== 'depart';
         const distPartsBase = (() => {
-          if (isSdkActive) {
-            const m = liveDistMeters;
-            if (!Number.isFinite(m) || m < 1) return { value: '—', unit: '' };
-            return formatTurnDistanceForCard(m);
-          }
           if (cardState === 'cruise' && !hasActionableMeters) return { value: '—', unit: '' };
           return formatTurnDistanceForCard(liveDistMeters);
         })();
         const destinationName = nav.navigationData?.destination?.name ?? null;
 
         const useBannerCopy =
-          !isSdkActive &&
           !!banner &&
           (sdkBannerOwns || !!nextManeuverCoord);
 
         let primary: string;
         let secondary: string | undefined;
 
-        if (isSdkActive) {
-          if (banner) {
-            primary = banner.primaryInstruction;
-            secondary = banner.secondaryInstruction ?? undefined;
-          } else {
-            primary =
-              sdkNavStep?.displayInstruction?.trim() ||
-              prog.nextStep?.instruction?.trim() ||
-              'Continue';
-            secondary = undefined;
-          }
-          if (drivingMode === 'sport' && displaySpeedMph > 50) secondary = undefined;
-        } else if (useBannerCopy) {
+        if (useBannerCopy) {
           switch (cardState) {
             case 'cruise':
               primary = sdkBannerOwns
@@ -4360,44 +4308,24 @@ export default function MapScreen() {
           }
         }
 
-        const maneuverIconKey = isSdkActive
-          ? (sdkNavStep?.kind === 'unknown' || sdkNavStep?.kind == null
-              ? 'straight'
-              : String(sdkNavStep.kind))
-          : iconManeuverForState(cardState, turnCurrentStep, nextManeuverCoord);
-        const chainInstruction = isSdkActive ? null : buildChainInstruction(prog.nextStep);
-        const maneuverKindResolved = isSdkActive
-          ? sdkNavStep?.kind ?? banner?.maneuverKind ?? iconManeuverKindForState(cardState, prog.nextStep)
-          : banner?.maneuverKind ?? iconManeuverKindForState(cardState, prog.nextStep);
-        const maneuverKindForCard = isSdkActive
-          ? (sdkNavStep?.kind ?? 'straight')
-          : turnCardManeuverFields.rawType.trim() || turnCardManeuverFields.rawModifier.trim()
-            ? turnCardManeuverFields.kind
-            : maneuverKindResolved;
-        const signalResolved = isSdkActive
-          ? sdkNavStep?.signal ?? prog.nextStep?.signal
-          : banner?.signal ?? prog.nextStep?.signal;
-        const lanesResolved = isSdkActive
-          ? sdkNavStep?.lanes?.length
-            ? sdkNavStep.lanes
-            : prog.nextStep?.lanes ?? []
-          : banner?.lanes?.length
-            ? banner.lanes
-            : prog.nextStep?.lanes?.length
-              ? prog.nextStep.lanes
-              : undefined;
-        const shieldsResolved = isSdkActive
-          ? sdkNavStep?.shields?.length
-            ? sdkNavStep.shields
-            : prog.nextStep?.shields ?? []
-          : banner?.shields?.length
-            ? banner.shields
-            : prog.nextStep?.shields?.length
-              ? prog.nextStep.shields
-              : undefined;
-        const roundaboutExitResolved = isSdkActive
-          ? sdkNavStep?.roundaboutExitNumber ?? prog.nextStep?.roundaboutExitNumber ?? null
-          : banner?.roundaboutExitNumber ?? prog.nextStep?.roundaboutExitNumber ?? null;
+        const maneuverIconKey = iconManeuverForState(cardState, turnCurrentStep, nextManeuverCoord);
+        const chainInstruction = buildChainInstruction(prog.nextStep);
+        const maneuverKindResolved = banner?.maneuverKind ?? iconManeuverKindForState(cardState, prog.nextStep);
+        const maneuverKindForCard = turnCardManeuverFields.rawType.trim() || turnCardManeuverFields.rawModifier.trim()
+          ? turnCardManeuverFields.kind
+          : maneuverKindResolved;
+        const signalResolved = banner?.signal ?? prog.nextStep?.signal;
+        const lanesResolved = banner?.lanes?.length
+          ? banner.lanes
+          : prog.nextStep?.lanes?.length
+            ? prog.nextStep.lanes
+            : undefined;
+        const shieldsResolved = banner?.shields?.length
+          ? banner.shields
+          : prog.nextStep?.shields?.length
+            ? prog.nextStep.shields
+            : undefined;
+        const roundaboutExitResolved = banner?.roundaboutExitNumber ?? prog.nextStep?.roundaboutExitNumber ?? null;
         const disambigName =
           shouldShowRoadDisambiguation(turnCurrentStep?.name) ? (turnCurrentStep?.name ?? null) :
           shouldShowRoadDisambiguation(nextManeuverCoord?.name) ? (nextManeuverCoord?.name ?? null) :
@@ -4408,10 +4336,7 @@ export default function MapScreen() {
         const actionableGuidanceStep =
           isActionableGuidanceStep(guidanceStep, true) ? guidanceStep : (isActionableGuidanceStep(nextManeuverCoord, true) ? nextManeuverCoord : undefined);
 
-        const turnTextStabilityKey =
-          isSdkActive
-            ? `${prog.nextStep?.index ?? 0}|${(banner?.primaryInstruction ?? primary ?? '').trim()}`
-            : null;
+        const turnTextStabilityKey = null;
 
         return (
           <View style={[s.turnWrap, { top: insets.top }]} key="turn-card-stable">
@@ -4427,8 +4352,8 @@ export default function MapScreen() {
               secondaryInstruction={secondary}
               maneuverForIcon={maneuverIconKey}
               maneuverKind={maneuverKindForCard}
-              maneuverType={isSdkActive ? (sdkNavStep?.rawType ?? '') : turnCardManeuverFields.rawType}
-              maneuverModifier={isSdkActive ? (sdkNavStep?.rawModifier ?? '') : turnCardManeuverFields.rawModifier}
+              maneuverType={turnCardManeuverFields.rawType}
+              maneuverModifier={turnCardManeuverFields.rawModifier}
               signal={signalResolved}
               lanes={lanesResolved}
               shields={shieldsResolved}
@@ -4441,19 +4366,13 @@ export default function MapScreen() {
                   return !m;
                 });
               }}
-              lanesJson={
-                isSdkActive
-                  ? undefined
-                  : mergeLaneSources(
-                      actionableGuidanceStep,
-                      nextManeuverCoord,
-                      cardState === 'confirm' ? turnCurrentStep : undefined,
-                    )
-              }
+              lanesJson={mergeLaneSources(
+                actionableGuidanceStep,
+                nextManeuverCoord,
+                cardState === 'confirm' ? turnCurrentStep : undefined,
+              )}
               step={
-                isSdkActive
-                  ? sdkSyntheticStep ?? undefined
-                  : actionableGuidanceStep ?? nextManeuverCoord ?? (cardState === 'confirm' ? turnCurrentStep : undefined)
+                actionableGuidanceStep ?? nextManeuverCoord ?? (cardState === 'confirm' ? turnCurrentStep : undefined)
               }
               roadDisambiguationLabel={disambigName}
               isSportBorder={isSport}

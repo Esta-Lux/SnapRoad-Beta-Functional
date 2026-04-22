@@ -61,6 +61,10 @@ export function navNativeSdkEnabled(): boolean {
  * during trips (single authority). Set `EXPO_PUBLIC_NAV_LOGIC_SDK=0` for JS-only Directions +
  * `useNavigationProgress` (e.g. Expo Go / experiments). Requires a **dev client** build with native
  * Mapbox Navigation, not Expo Go.
+ *
+ * Turn-by-turn **card** copy on the RN map: when `NavigationProgress.instructionSource === 'sdk'`,
+ * `MapScreen` uses **only** native banner / `sdkNativeFormattedDistance` / lane assets — not the
+ * JS `instructionSource === 'js'` path (cruise/confirm, REST merge, `formatTurnDistanceForCard`).
  */
 export function navLogicSdkEnabled(): boolean {
   return envBool('EXPO_PUBLIC_NAV_LOGIC_SDK', true);
