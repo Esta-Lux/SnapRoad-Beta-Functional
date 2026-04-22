@@ -92,7 +92,11 @@ export function navLogicDebugEnabled(): boolean {
   return envBool('EXPO_PUBLIC_NAV_LOGIC_DEBUG', false);
 }
 
-/** Lane UI + lane phrases in TTS — default off (set EXPO_PUBLIC_NAV_LANE_UI=1 to enable). */
+/**
+ * Full lane UI (REST/SVG + TTS lane phrases). When false, the turn card shows a lane
+ * row only if the native SDK supplies a full bitmap strip (`nativeLaneAssets`); otherwise
+ * the row is hidden for a clean HUD.
+ */
 export function navLaneGuidanceUiEnabled(): boolean {
   return envBool('EXPO_PUBLIC_NAV_LANE_UI', false);
 }

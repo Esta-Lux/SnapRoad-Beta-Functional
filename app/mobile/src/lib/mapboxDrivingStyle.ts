@@ -38,6 +38,18 @@ export function effectiveNavRouteColors(
   const dawnOrDay = mapLightPreset === 'dawn' || mapLightPreset === 'day';
   const dusk = mapLightPreset === 'dusk';
   const night = mapLightPreset === 'night';
+  const sportLowLight = drivingMode === 'sport' && (night || dusk || isSatellite);
+
+  if (drivingMode === 'sport' && sportLowLight) {
+    return {
+      /** Brighter core + light casing so the line reads on Mapbox Standard dusk / night and satellite. */
+      routeColor: isSatellite ? '#FFCAA3' : night ? '#FFB184' : '#FF8C52',
+      routeCasing: isSatellite ? '#0A1628' : 'rgba(255,255,255,0.88)',
+      passedColor: isSatellite ? 'rgba(148,163,184,0.7)' : 'rgba(203, 213, 225, 0.65)',
+      routeGlowColor: isSatellite ? '#FDE68A' : night ? '#FEF3C7' : '#FDE68A',
+      routeGlowOpacity: Math.max(routeGlowOpacity, isSatellite ? 0.48 : night ? 0.46 : 0.44),
+    };
+  }
 
   if (drivingMode === 'sport') {
     return passthroughRouteColors(modeConfig);

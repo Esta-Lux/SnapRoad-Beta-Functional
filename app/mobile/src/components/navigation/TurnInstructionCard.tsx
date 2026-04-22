@@ -19,6 +19,7 @@ import type { ManeuverKind, RoadSignal, LaneInfo, RoadShield } from '../../navig
 import type { NativeFormattedDistance, NativeLaneAsset } from '../../navigation/navSdkMirrorTypes';
 import { resolveDisplayDistance } from '../../navigation/navDisplayDistance';
 import { getBannerThenLine, getLaneData, lanesFromLegacyJson } from '../../navigation/bannerInstructions';
+import { navLaneGuidanceUiEnabled } from '../../navigation/navFeatureFlags';
 import {
   resolveStableText,
   type StableTextState,
@@ -294,10 +295,17 @@ export default React.memo(function TurnInstructionCard({
     signal.kind !== 'none' &&
     (state === 'active' || state === 'preview');
 
+  const nativeLaneStripReady =
+    !!effectiveLanes?.length &&
+    nativeLaneAssets != null &&
+    nativeLaneAssets.length === effectiveLanes.length &&
+    nativeLaneAssets.every((a) => typeof a?.imageBase64 === 'string' && a.imageBase64.length > 0);
+  /** Default: only the Navigation SDK bitmap strip (aligned with `LaneGuidance`). Set `EXPO_PUBLIC_NAV_LANE_UI=1` for full JS/REST lane row. */
   const showLanes =
     effectiveLanes &&
     effectiveLanes.length > 0 &&
-    (state === 'active' || state === 'preview');
+    (state === 'active' || state === 'preview') &&
+    (navLaneGuidanceUiEnabled() || nativeLaneStripReady);
 
   const showShields =
     shields &&
