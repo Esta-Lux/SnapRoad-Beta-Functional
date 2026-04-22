@@ -21,12 +21,8 @@ export default function AnalyticsTab({ theme }: AnalyticsTabProps) {
   const [offerAnalytics, setOfferAnalytics] = useState<AdminOfferAnalyticsRow[]>([])
   const [realtimeSummary, setRealtimeSummary] = useState<AdminRealtimeSummary | null>(null)
   const [realtimeFeed, setRealtimeFeed] = useState<AdminRealtimeFeedItem[]>([])
-  const [mapPoints, setMapPoints] = useState<any[]>([])
+  const [mapPoints, setMapPoints] = useState<Record<string, unknown>[]>([])
   const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    loadStats()
-  }, [])
 
   const loadStats = useCallback(async () => {
     setLoading(true)
@@ -49,6 +45,10 @@ export default function AnalyticsTab({ theme }: AnalyticsTabProps) {
       setLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    void loadStats()
+  }, [loadStats])
 
   useSupabaseRealtimeRefresh(
     'admin-analytics-realtime',

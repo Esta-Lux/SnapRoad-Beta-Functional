@@ -457,7 +457,8 @@ test('buildSdkWaitingNavigationProgress uses preview poly when native store poly
     [],
   );
   assert.ok(w);
-  assert.equal(w!.instructionSource, 'sdk_waiting');
-  assert.equal(w!.routePolyline.length, 2);
-  assert.equal(w!.puckCoord.lat, preview[0]!.lat);
+  assert.ok(w.routePolyline && w.puckCoord);
+  assert.equal(w.instructionSource, 'sdk_waiting');
+  assert.equal(w.routePolyline.length, 2);
+  assert.equal(w.puckCoord.lat, preview[0]!.lat);
 });

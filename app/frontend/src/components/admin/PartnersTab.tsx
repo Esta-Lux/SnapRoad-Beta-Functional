@@ -34,29 +34,29 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
     password_hash: 'temp_hash',
   })
 
-  useEffect(() => {
-    loadPartners()
-  }, [])
-
-  const showFeedback = (type: 'success' | 'error', message: string) => {
+  const showFeedback = useCallback((type: 'success' | 'error', message: string) => {
     setFeedback({ type, message })
     setTimeout(() => setFeedback(null), 3000)
-  }
+  }, [])
 
-  const loadPartners = async () => {
+  const loadPartners = useCallback(async () => {
     setLoading(true)
     try {
       const res = await adminApi.getPartners()
       if (res.success && res.data) {
         setPartners(res.data)
       }
-    } catch (error) {
-      console.error('Failed to load partners:', error)
-      showFeedback('error', adminApiErrorMessage(error, 'Failed to load partners'))
+    } catch (err) {
+      console.error('Failed to load partners:', err)
+      showFeedback('error', adminApiErrorMessage(err, 'Failed to load partners'))
     } finally {
       setLoading(false)
     }
-  }
+  }, [showFeedback])
+
+  useEffect(() => {
+    void loadPartners()
+  }, [loadPartners])
 
   const handleApprove = async (partnerId: string) => {
     try {
@@ -67,8 +67,8 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
       } else {
         showFeedback('error', 'Failed to approve partner')
       }
-    } catch (error) {
-      showFeedback('error', 'Network error while approving partner')
+    } catch (err) {
+      showFeedback('error', adminApiErrorMessage(err, 'Network error while approving partner'))
     }
   }
 
@@ -81,8 +81,8 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
       } else {
         showFeedback('error', 'Failed to suspend partner')
       }
-    } catch (error) {
-      showFeedback('error', 'Network error while suspending partner')
+    } catch (err) {
+      showFeedback('error', adminApiErrorMessage(err, 'Network error while suspending partner'))
     }
   }
 
@@ -96,8 +96,8 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
       } else {
         showFeedback('error', 'Failed to delete partner')
       }
-    } catch (error) {
-      showFeedback('error', 'Network error while deleting partner')
+    } catch (err) {
+      showFeedback('error', adminApiErrorMessage(err, 'Network error while deleting partner'))
     }
   }
 
@@ -193,8 +193,8 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
       } else {
         showFeedback('error', 'Failed to create partner')
       }
-    } catch (error) {
-      showFeedback('error', 'Network error while creating partner')
+    } catch (err) {
+      showFeedback('error', adminApiErrorMessage(err, 'Network error while creating partner'))
     }
   }
 
@@ -204,8 +204,8 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
       business_name: partner.business_name || '',
       email: partner.email || '',
       business_type: partner.business_type || '',
-      address: (partner as any).address || '',
-      phone: (partner as any).phone || '',
+      address: partner.address || '',
+      phone: partner.phone || '',
     })
     setShowEditModal(true)
   }
@@ -222,8 +222,8 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
       } else {
         showFeedback('error', 'Failed to update partner')
       }
-    } catch (error) {
-      showFeedback('error', 'Network error while updating partner')
+    } catch (err) {
+      showFeedback('error', adminApiErrorMessage(err, 'Network error while updating partner'))
     }
   }
 
@@ -419,7 +419,7 @@ export default function PartnersTab({ theme, onNavigate }: PartnersTabProps) {
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className={textSecondary}>Credits</span>
-                <span className={textPrimary}>{Number((partner as any).credits || 0).toFixed(2)}</span>
+                <span className={textPrimary}>{Number(partner.credits ?? 0).toFixed(2)}</span>
               </div>
             </div>
 

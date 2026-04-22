@@ -55,6 +55,7 @@ export default function AdminRedemptionsMonitorTab({ theme }: Props) {
 
   useEffect(() => {
     void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial fetch; filter changes use Refresh
   }, [])
 
   const card = isDark ? 'bg-slate-800/50 border-white/[0.08]' : 'bg-white border-[#E6ECF5]'

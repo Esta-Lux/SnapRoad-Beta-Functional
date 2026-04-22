@@ -33,6 +33,7 @@ test('minimal adapter uses native matched lat/lng for puck when location is pres
     location,
     routePolyline: polyline,
   });
+  assert.ok(r.puckCoord && r.displayCoord && r.snapped);
   assert.equal(r.puckCoord.lat, location.latitude);
   assert.equal(r.puckCoord.lng, location.longitude);
   assert.equal(r.displayCoord.lat, location.latitude);
@@ -50,6 +51,7 @@ test('minimal adapter falls back to on-polyline point when location is null', ()
     location: null,
     routePolyline: polyline,
   });
+  assert.ok(r.puckCoord && r.snapped);
   assert.equal(r.puckCoord.lat, polyline[0]!.lat);
   assert.equal(r.puckCoord.lng, polyline[0]!.lng);
   assert.equal(r.snapped.distanceMeters, 0);

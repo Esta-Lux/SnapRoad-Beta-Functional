@@ -37,10 +37,6 @@ export default function FinanceTab({ theme }: FinanceTabProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadFinanceData()
-  }, [])
-
   const loadFinanceData = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -64,6 +60,10 @@ export default function FinanceTab({ theme }: FinanceTabProps) {
       setLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    void loadFinanceData()
+  }, [loadFinanceData])
 
   useSupabaseRealtimeRefresh(
     'admin-finance-realtime',

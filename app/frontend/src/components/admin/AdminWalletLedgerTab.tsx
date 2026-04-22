@@ -69,6 +69,7 @@ export default function AdminWalletLedgerTab({ theme }: Props) {
 
   useEffect(() => {
     void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial fetch; user filters + Refresh re-run `load`
   }, [])
 
   const filtered = useMemo(() => rows, [rows])
