@@ -114,7 +114,6 @@ import {
   resolveManeuverFieldsForTurnCard,
   shouldShowRoadDisambiguation,
 } from '../navigation/turnCardModel';
-import { useSdkManeuverDistanceForTurnCard } from '../navigation/useSdkManeuverDistanceForTurnCard';
 import { sdkGuidanceStabilityKey } from '../navigation/sdkGuidanceUiKeys';
 import { useTurnConfirmationUntil } from '../hooks/useTurnConfirmationWindow';
 import { useMapWeather, weatherOverlayFactor } from '../hooks/useMapWeather';
@@ -405,6 +404,16 @@ export default function MapScreen() {
   useEffect(() => {
     storage.set('snaproad_nav_voice_muted', navVoiceMuted ? '1' : '0');
   }, [navVoiceMuted]);
+
+  /** Unmuting is always safe. Muting clears JS TTS only — on headless SDK, native owns audio; avoid Speech.stop + session restore fighting Mapbox voice. */
+  const handleNavVoiceToggle = useCallback(() => {
+    setNavVoiceMuted((m) => {
+      if (!m && !navLogicSdkEnabled()) {
+        stopSpeaking();
+      }
+      return !m;
+    });
+  }, []);
 
   const [friendLocations, setFriendLocations] = useState<FriendLocation[]>([]);
   const [friendFollowSession, setFriendFollowSession] = useState<{
@@ -960,12 +969,6 @@ export default function MapScreen() {
     nav.fusedNavState?.displayCoord?.speedMps,
     speed,
   ]);
-
-  const sdkManeuverDistParts = useSdkManeuverDistanceForTurnCard(
-    Boolean(nav.isNavigating && nav.navigationProgress?.instructionSource === 'sdk'),
-    nav.navigationProgress,
-    displaySpeedMph,
-  );
 
   /**
    * LocationPuck beam: with CustomLocationProvider we pass a single `heading` — native `course` mode
@@ -4120,12 +4123,7 @@ export default function MapScreen() {
                 maneuverForIcon="straight"
                 maneuverKind="straight"
                 isMuted={navVoiceMuted}
-                onMutePress={() => {
-                  setNavVoiceMuted((m) => {
-                    if (!m) stopSpeaking();
-                    return !m;
-                  });
-                }}
+                onMutePress={handleNavVoiceToggle}
                 lanesJson={undefined}
                 step={undefined}
                 roadDisambiguationLabel={null}
@@ -4137,21 +4135,13 @@ export default function MapScreen() {
         }
 
         /**
-         * Headless Navigation SDK: all maneuver copy, road names, shields, signal, and lane data
-         * from native `NavigationProgress` / `NavStep`. Imperial distance is **formatting** only
-         * from native meters (same as CarPlay) — not REST or bridge locale distance strings.
-         * `TurnInstructionCard`’s `navSdkDrivesContent` strips REST/JS fallbacks.
+         * Headless Navigation SDK: maneuver copy + distance are **native only** (banner + bridge store).
+         * No JS imperial formatting, smoothing, or REST/banner fallbacks — RN mirrors / themes only.
          */
         if (instructionSrc === 'sdk') {
           const b = prog.banner ?? null;
           const sdkNS = prog.nextStep;
-          const distParts = sdkManeuverDistParts;
-          const rawPrimary =
-            b?.primaryInstruction?.trim() ||
-            sdkNS?.displayInstruction?.trim() ||
-            sdkNS?.instruction?.trim() ||
-            '';
-          const primary = rawPrimary.replace(/\s+/g, ' ').trim();
+          const primary = (b?.primaryInstruction ?? '').replace(/\s+/g, ' ').trim();
           const secondary = b?.secondaryInstruction?.replace(/\s+/g, ' ').trim() || undefined;
           const maneuverIconKey =
             sdkNS?.kind === 'unknown' || sdkNS?.kind == null
@@ -4175,8 +4165,8 @@ export default function MapScreen() {
                 mode={drivingMode}
                 modeConfig={modeConfig}
                 state="active"
-                distanceValue={distParts.value}
-                distanceUnit={distParts.unit}
+                distanceValue="—"
+                distanceUnit=""
                 primaryInstruction={primary}
                 secondaryInstruction={secondary}
                 textStabilityKey={textStabKey}
@@ -4196,12 +4186,7 @@ export default function MapScreen() {
                 }
                 chainInstruction={null}
                 isMuted={navVoiceMuted}
-                onMutePress={() => {
-                  setNavVoiceMuted((m) => {
-                    if (!m) stopSpeaking();
-                    return !m;
-                  });
-                }}
+                onMutePress={handleNavVoiceToggle}
                 lanesJson={undefined}
                 step={undefined}
                 roadDisambiguationLabel={null}
@@ -4407,12 +4392,7 @@ export default function MapScreen() {
               roundaboutExitNumber={roundaboutExitResolved}
               chainInstruction={chainInstruction}
               isMuted={navVoiceMuted}
-              onMutePress={() => {
-                setNavVoiceMuted((m) => {
-                  if (!m) stopSpeaking();
-                  return !m;
-                });
-              }}
+              onMutePress={handleNavVoiceToggle}
               lanesJson={mergeLaneSources(
                 actionableGuidanceStep,
                 nextManeuverCoord,
@@ -4595,12 +4575,7 @@ export default function MapScreen() {
           bottomInset={insets.bottom}
           voiceMuted={navVoiceMuted}
           drivenMiles={nav.traveledDistanceMeters / 1609.34}
-          onVoiceToggle={() => {
-            setNavVoiceMuted((m) => {
-              if (!m) stopSpeaking();
-              return !m;
-            });
-          }}
+          onVoiceToggle={handleNavVoiceToggle}
           onVoiceRepeat={() => {
             void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             repeatLastTurnByTurn(drivingMode, navVoiceMuted);

@@ -193,9 +193,8 @@ export default React.memo(function TurnInstructionCard({
    *   2. Fallback to `step.bannerInstructions[0].primary.text` ONLY when the
    *      parent hasn't supplied anything yet (first `sdk_waiting` render).
    *
-   * Stability hold: `useStableText` prevents single-frame flips. Under
-   * `navSdkDrivesContent` the dwell is ~1s; otherwise 120ms. A step change
-   * (`stableTextKey`) still flushes immediately.
+   * Headless SDK: no dwell — parent sends native mirror strings; a JS hold
+   * delayed updates vs native TTS. JS-only nav keeps `useStableText` (120ms / step flush).
    */
   const primaryRaw = useMemo(() => {
     const fromParent = primaryInstruction?.trim();
@@ -215,7 +214,8 @@ export default React.memo(function TurnInstructionCard({
     ? (textStabilityKey?.trim() || _maneuverForIcon)
     : (step?.instruction ?? '');
   const textDwellMs = navSdkDrivesContent ? TURN_TEXT_STABLE_SDK_MS : TEXT_STABLE_MS;
-  const primaryDisplay = useStableText(primaryRaw, stableTextKey, textDwellMs);
+  const stablePrimary = useStableText(primaryRaw, stableTextKey, textDwellMs);
+  const primaryDisplay = navSdkDrivesContent ? primaryRaw : stablePrimary;
 
   const hasRawManeuver = !!(maneuverType?.trim() || maneuverModifier?.trim());
   const hasKindManeuver = maneuverKind != null && maneuverKind !== 'unknown';
@@ -309,7 +309,7 @@ export default React.memo(function TurnInstructionCard({
     return t.replace(/\s+/g, ' ').trim();
   }, [navSdkDrivesContent, secondaryInstruction, bannerThen, chainInstruction]);
   const thenStable = useStableText(thenRaw, stableTextKey, textDwellMs);
-  const thenText = thenStable || null;
+  const thenText = (navSdkDrivesContent ? thenRaw : thenStable) || null;
 
   const showThenRow =
     !!thenText && (state === 'preview' || state === 'confirm' || state === 'active');
