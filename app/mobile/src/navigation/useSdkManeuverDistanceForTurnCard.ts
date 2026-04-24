@@ -11,7 +11,7 @@ import {
  * Smoothed imperial distance for the headless-SDK turn card. Raw
  * `primaryDistanceMeters` can oscillate a few meters at 0–5 mph; the pure
  * {@link resolveStableManeuverDisplayMeters} pass runs before
- * {@link formatImperialManeuverDistance} (with speed-based “Now”).
+ * {@link formatImperialManeuverDistance} (no “Now” label — matches native TTS cadence).
  */
 export function useSdkManeuverDistanceForTurnCard(
   enabled: boolean,
@@ -52,6 +52,8 @@ export function useSdkManeuverDistanceForTurnCard(
     if (!Number.isFinite(rawM) || rawM <= 0) {
       return { value: '—', unit: '' };
     }
-    return formatImperialManeuverDistance(smoothed, { speedMphForNow: displaySpeedMph });
+    return formatImperialManeuverDistance(smoothed, {
+      omitNowLabel: true,
+    });
   }, [enabled, rawM, smoothed, displaySpeedMph]);
 }

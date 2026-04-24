@@ -159,7 +159,7 @@ import {
   ingestSdkRoutePolyline,
   ingestSdkVoiceSubtitle,
 } from '../navigation/navEngine';
-import type { NativeLaneAsset, SdkCameraPayload } from '../navigation/navSdkMirrorTypes';
+import type { NativeFormattedDistance, NativeLaneAsset, SdkCameraPayload } from '../navigation/navSdkMirrorTypes';
 import type { SdkLocationPayload, SdkProgressPayload } from '../navigation/navSdkStore';
 import { polylineFromSdkRoutes, type SdkRoutesNative } from '../navigation/navSdkGeometry';
 import {
@@ -898,6 +898,27 @@ export default function MapScreen() {
     nav.navigationProgress?.routePolyline,
     nav.navigationData?.polyline,
     stickyRoutePolyline,
+  ]);
+
+  /**
+   * `routeModelRefreshKey` bumps on many JS-only model updates; including it in
+   * `RouteOverlay`'s React `key` remounts the whole line every time → visible
+   * flicker. While navigating, key only by this trip's destination; preview
+   * still uses the refresh key so alternate routes re-mount correctly.
+   */
+  const routeOverlayLineKey = useMemo(() => {
+    if (nav.isNavigating && nav.navigationData?.destination) {
+      const d = nav.navigationData.destination;
+      if (Number.isFinite(d.lat) && Number.isFinite(d.lng)) {
+        return `line-${d.lat.toFixed(4)}-${d.lng.toFixed(4)}`;
+      }
+    }
+    return `line-rmk-${nav.routeModelRefreshKey}`;
+  }, [
+    nav.isNavigating,
+    nav.navigationData?.destination?.lat,
+    nav.navigationData?.destination?.lng,
+    nav.routeModelRefreshKey,
   ]);
 
   /**
@@ -3762,7 +3783,7 @@ export default function MapScreen() {
                 });
                 return (
                   <RouteOverlay
-                    key={`route-${nav.routeModelRefreshKey}-${polylineToRender.length}`}
+                    key={routeOverlayLineKey}
                     polyline={polylineToRender}
                     isNavigating={nav.isNavigating}
                     routeSplit={navigationRouteSplit}
@@ -4138,6 +4159,15 @@ export default function MapScreen() {
               : String(sdkNS.kind);
           const manKind = sdkNS?.kind ?? b?.maneuverKind ?? 'straight';
           const textStabKey = sdkGuidanceStabilityKey(sdkNS);
+          const bannerDistStr = b?.primaryDistanceFormatted?.trim();
+          const storeFmt = nav.sdkNativeFormattedDistance;
+          const nativeTurnDistance: NativeFormattedDistance | null =
+            bannerDistStr
+              ? { value: bannerDistStr, unit: '' }
+              : storeFmt?.value?.trim()
+                ? { value: storeFmt.value.trim(), unit: (storeFmt.unit ?? '').trim() }
+                : null;
+          const useNativeTurnDistance = !!nativeTurnDistance?.value;
 
           return (
             <View style={[s.turnWrap, { top: insets.top }]} key="turn-card-sdk-native">
@@ -4151,8 +4181,8 @@ export default function MapScreen() {
                 secondaryInstruction={secondary}
                 textStabilityKey={textStabKey}
                 navSdkDrivesContent
-                nativeFormattedDistance={undefined}
-                isNativeMirror={false}
+                nativeFormattedDistance={useNativeTurnDistance ? nativeTurnDistance : undefined}
+                isNativeMirror={useNativeTurnDistance}
                 nativeLaneAssets={nav.sdkNativeLaneAssets}
                 maneuverForIcon={maneuverIconKey}
                 maneuverKind={manKind}
@@ -4252,7 +4282,7 @@ export default function MapScreen() {
           nextManeuverCoord.maneuver !== 'depart';
         const distPartsBase = (() => {
           if (cardState === 'cruise' && !hasActionableMeters) return { value: '—', unit: '' };
-          return formatImperialManeuverDistance(liveDistMeters, { speedMphForNow: displaySpeedMph });
+          return formatImperialManeuverDistance(liveDistMeters, { omitNowLabel: true });
         })();
         const destinationName = nav.navigationData?.destination?.name ?? null;
 

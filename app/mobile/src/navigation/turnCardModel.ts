@@ -34,6 +34,11 @@ export type FormatManeuverDistanceOptions = {
   speedMphForNow?: number;
   /** When set, overrides everything including {@link speedMphForNow}. */
   nowMetersOverride?: number;
+  /**
+   * When true, never show the “Now” label — use ft/mi to the end (avoids JS disagreeing
+   * with Mapbox TTS; native-sourced distance should set the same expectation as voice).
+   */
+  omitNowLabel?: boolean;
 };
 
 /** Adaptive-mode default (~236 ft). Prefer {@link getTurnCardNavTuning} for mode-specific values. */
@@ -55,7 +60,8 @@ export { previewDistanceMaxMeters };
  *
  * - ≥0.1 mi: miles (tenths under 10 mi, whole miles for longer legs)
  * - Under 0.1 mi: feet in sensible 5/10/50 ft steps (no minimum “10 ft” when nearly there)
- * - Under a speed-scaled (or static 7m) “Now” threshold: “Now”
+ * - Unless {@link FormatManeuverDistanceOptions.omitNowLabel}: under a speed-scaled
+ *   (or static 7m) “Now” threshold: “Now”
  */
 export function formatImperialManeuverDistance(
   meters: number,
@@ -63,12 +69,14 @@ export function formatImperialManeuverDistance(
 ): { value: string; unit: string } {
   if (!Number.isFinite(meters) || meters < 0) return { value: '—', unit: '' };
   if (meters < DIST_DASH_MAX_M) return { value: '—', unit: '' };
-  const nowM =
-    options?.nowMetersOverride ??
-    (options?.speedMphForNow != null
-      ? maneuverNowThresholdMeters(options.speedMphForNow)
-      : NOW_MANEUVER_METERS);
-  if (meters < nowM) return { value: 'Now', unit: '' };
+  if (!options?.omitNowLabel) {
+    const nowM =
+      options?.nowMetersOverride ??
+      (options?.speedMphForNow != null
+        ? maneuverNowThresholdMeters(options.speedMphForNow)
+        : NOW_MANEUVER_METERS);
+    if (meters < nowM) return { value: 'Now', unit: '' };
+  }
 
   const mi = meters / M_PER_MI;
   if (mi >= 0.1) {
