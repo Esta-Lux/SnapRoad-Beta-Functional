@@ -88,6 +88,7 @@
   },
   "overrides": {
     "follow-redirects": "^1.15.12",
+    "@xmldom/xmldom": "0.8.13",
     "@react-native-voice/voice": {
       "@expo/config-plugins": "54.0.4"
     }
