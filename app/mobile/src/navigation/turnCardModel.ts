@@ -7,6 +7,34 @@ import { navManeuverFieldsFromDirectionsStep } from './navStepsFromDirections';
 export type TurnCardState = 'preview' | 'active' | 'confirm' | 'cruise';
 
 const FT_PER_M = 3.28084;
+const M_PER_MI = 1609.344;
+/**
+ * Sub-second / static fallback when no speed is passed. Prefer
+ * {@link maneuverNowThresholdMeters} for headless-SDK with live mph.
+ */
+const NOW_MANEUVER_METERS = 7;
+/** Below this, show a dash (no false “0 ft”). */
+const DIST_DASH_MAX_M = 0.5;
+
+/**
+ * “Now” replaces digits when within this *along-route* distance. Native voice
+ * triggers earlier at highway speeds; a wider band keeps the label from
+ * fighting Mapbox TTS.
+ */
+export function maneuverNowThresholdMeters(speedMph: number): number {
+  if (!Number.isFinite(speedMph) || speedMph < 0) {
+    return 10;
+  }
+  const mph = Math.min(speedMph, 88);
+  return Math.min(30, Math.max(9, 7.5 + 0.2 * mph));
+}
+
+export type FormatManeuverDistanceOptions = {
+  /** When set, drives speed-aware “Now” (see {@link maneuverNowThresholdMeters}). */
+  speedMphForNow?: number;
+  /** When set, overrides everything including {@link speedMphForNow}. */
+  nowMetersOverride?: number;
+};
 
 /** Adaptive-mode default (~236 ft). Prefer {@link getTurnCardNavTuning} for mode-specific values. */
 export const ACTIVE_MANEUVER_METERS = 72;
@@ -21,26 +49,53 @@ const CONGESTION_PREVIEW_BOOST = 1.25;
 export { previewDistanceMaxMeters };
 
 /**
- * Stable, legible distance: 1000+ ft → 0.2 mi steps; 300–999 ft → 50 ft; under 300 → tighter buckets.
+ * US-style distance to the **next** maneuver, from authoritative meters
+ * (banner / next-step) — not bridge locale strings, which can disagree with
+ * along-route length.
+ *
+ * - ≥0.1 mi: miles (tenths under 10 mi, whole miles for longer legs)
+ * - Under 0.1 mi: feet in sensible 5/10/50 ft steps (no minimum “10 ft” when nearly there)
+ * - Under a speed-scaled (or static 7m) “Now” threshold: “Now”
  */
-export function formatTurnDistanceForCard(meters: number): { value: string; unit: string } {
-  if (!Number.isFinite(meters) || meters < 0) return { value: '0', unit: 'FT' };
+export function formatImperialManeuverDistance(
+  meters: number,
+  options?: FormatManeuverDistanceOptions,
+): { value: string; unit: string } {
+  if (!Number.isFinite(meters) || meters < 0) return { value: '—', unit: '' };
+  if (meters < DIST_DASH_MAX_M) return { value: '—', unit: '' };
+  const nowM =
+    options?.nowMetersOverride ??
+    (options?.speedMphForNow != null
+      ? maneuverNowThresholdMeters(options.speedMphForNow)
+      : NOW_MANEUVER_METERS);
+  if (meters < nowM) return { value: 'Now', unit: '' };
+
+  const mi = meters / M_PER_MI;
+  if (mi >= 0.1) {
+    if (mi >= 10) {
+      return { value: String(Math.round(mi)), unit: 'MI' };
+    }
+    const v = Math.round(mi * 10) / 10;
+    const s = v % 1 === 0 ? String(v) : v.toFixed(1);
+    return { value: s, unit: 'MI' };
+  }
+
   const ft = meters * FT_PER_M;
-  if (ft >= 1000) {
-    const mi = meters / 1609.34;
-    const rounded = Math.max(0.2, Math.round(mi * 5) / 5);
-    return { value: rounded.toFixed(1), unit: 'MI' };
+  if (ft >= 500) {
+    return { value: String(Math.round(ft / 10) * 10), unit: 'FT' };
   }
-  if (ft >= 300) {
-    const bucket = Math.round(ft / 50) * 50;
-    return { value: String(Math.max(300, bucket)), unit: 'FT' };
+  if (ft >= 100) {
+    return { value: String(Math.round(ft / 5) * 5), unit: 'FT' };
   }
-  if (ft >= 150) {
-    const bucket = Math.round(ft / 25) * 25;
-    return { value: String(Math.max(25, bucket)), unit: 'FT' };
+  if (ft >= 50) {
+    return { value: String(Math.round(ft / 5) * 5), unit: 'FT' };
   }
-  const bucket = Math.round(ft / 10) * 10;
-  return { value: String(Math.max(10, bucket)), unit: 'FT' };
+  return { value: String(Math.max(25, Math.round(ft / 5) * 5)), unit: 'FT' };
+}
+
+/** @deprecated Prefer {@link formatImperialManeuverDistance} — same behavior. */
+export function formatTurnDistanceForCard(meters: number): { value: string; unit: string } {
+  return formatImperialManeuverDistance(meters);
 }
 
 function maneuverWords(maneuver: string): string {

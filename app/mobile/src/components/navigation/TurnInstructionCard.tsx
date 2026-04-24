@@ -22,6 +22,8 @@ import { getBannerThenLine, getLaneData, lanesFromLegacyJson } from '../../navig
 import { navLaneGuidanceUiEnabled } from '../../navigation/navFeatureFlags';
 import {
   resolveStableText,
+  TEXT_STABLE_MS,
+  TURN_TEXT_STABLE_SDK_MS,
   type StableTextState,
 } from '../../navigation/navDisplayHysteresis';
 import ManeuverIcon from './ManeuverIcon';
@@ -40,6 +42,7 @@ const LANE_DEBOUNCE_MS = 300;
 function useStableText(
   next: string | undefined,
   resetKey: string | number,
+  dwellMs: number = TEXT_STABLE_MS,
 ): string {
   const holdRef = useRef<StableTextState>({
     displayed: '',
@@ -49,10 +52,10 @@ function useStableText(
   });
 
   return useMemo(() => {
-    const nextState = resolveStableText(holdRef.current, next, resetKey, Date.now());
+    const nextState = resolveStableText(holdRef.current, next, resetKey, Date.now(), dwellMs);
     holdRef.current = nextState;
     return nextState.displayed;
-  }, [next, resetKey]);
+  }, [next, resetKey, dwellMs]);
 }
 
 const DENSITY: Record<
@@ -134,6 +137,11 @@ export type TurnInstructionCardProps = {
    * primary copy advances with native voice instead of a 120 ms hold on a stale key.
    */
   textStabilityKey?: string | null;
+  /**
+   * Headless Mapbox Navigation SDK: **only** parent props + native lane assets — no REST
+   * `DirectionsStep`, `getBannerThenLine`, `chainInstruction`, or `NAV_LANE_UI` full JS lane row.
+   */
+  navSdkDrivesContent?: boolean;
 };
 
 export default React.memo(function TurnInstructionCard({
@@ -164,6 +172,7 @@ export default React.memo(function TurnInstructionCard({
   isNativeMirror,
   nativeLaneAssets,
   textStabilityKey,
+  navSdkDrivesContent = false,
 }: TurnInstructionCardProps) {
   const tcGrad = modeConfig.turnCardGradient;
   const tcRadius = modeConfig.turnCardRadius;
@@ -184,20 +193,29 @@ export default React.memo(function TurnInstructionCard({
    *   2. Fallback to `step.bannerInstructions[0].primary.text` ONLY when the
    *      parent hasn't supplied anything yet (first `sdk_waiting` render).
    *
-   * Stability hold: `useStableText` prevents any single-frame flip between
-   * sources from blinking the card. The hold resets whenever the maneuver step
-   * actually changes (tracked via `step.instruction` / `maneuverForIcon`) so
-   * legitimate turn transitions feel instant.
+   * Stability hold: `useStableText` prevents single-frame flips. Under
+   * `navSdkDrivesContent` the dwell is ~1s; otherwise 120ms. A step change
+   * (`stableTextKey`) still flushes immediately.
    */
   const primaryRaw = useMemo(() => {
     const fromParent = primaryInstruction?.trim();
-    if (fromParent) return fromParent;
-    return step?.bannerInstructions?.[0]?.primary?.text?.trim() || '';
-  }, [step, primaryInstruction]);
+    if (navSdkDrivesContent) {
+      return (fromParent || '').replace(/\s+/g, ' ').trim();
+    }
+    const raw = fromParent
+      ? fromParent
+      : step?.bannerInstructions?.[0]?.primary?.text?.trim() || '';
+    return raw.replace(/\s+/g, ' ').trim();
+  }, [navSdkDrivesContent, step, primaryInstruction]);
   const stableTextKey =
     textStabilityKey?.trim() ||
     `${step?.instruction ?? ''}|${_maneuverForIcon}|${state}`;
-  const primaryDisplay = useStableText(primaryRaw, stableTextKey);
+  /** Lanes: native SDK step changes are keyed by the parent, not `DirectionsStep.instruction`. */
+  const contentStepKey = navSdkDrivesContent
+    ? (textStabilityKey?.trim() || _maneuverForIcon)
+    : (step?.instruction ?? '');
+  const textDwellMs = navSdkDrivesContent ? TURN_TEXT_STABLE_SDK_MS : TEXT_STABLE_MS;
+  const primaryDisplay = useStableText(primaryRaw, stableTextKey, textDwellMs);
 
   const hasRawManeuver = !!(maneuverType?.trim() || maneuverModifier?.trim());
   const hasKindManeuver = maneuverKind != null && maneuverKind !== 'unknown';
@@ -205,9 +223,12 @@ export default React.memo(function TurnInstructionCard({
 
   const rawLanes = useMemo((): LaneInfo[] | null => {
     if (lanes?.length) return lanes;
+    if (navSdkDrivesContent) {
+      return lanesFromLegacyJson(lanesJson ?? null);
+    }
     const json = getLaneData(step) ?? lanesJson;
     return lanesFromLegacyJson(json);
-  }, [lanes, step, lanesJson]);
+  }, [navSdkDrivesContent, lanes, step, lanesJson]);
 
   /**
    * Debounced lanes — two distinct stability rules:
@@ -228,20 +249,20 @@ export default React.memo(function TurnInstructionCard({
   const debouncedLanesRef = useRef<{
     data: LaneInfo[] | null;
     changedAt: number;
-    prevStepInstruction: string | undefined;
+    prevContentKey: string | undefined;
     stepChangedAt: number;
-  }>({ data: null, changedAt: 0, prevStepInstruction: undefined, stepChangedAt: 0 });
+  }>({ data: null, changedAt: 0, prevContentKey: undefined, stepChangedAt: 0 });
 
   const effectiveLanes = useMemo((): LaneInfo[] | null => {
     const now = Date.now();
     const prev = debouncedLanesRef.current;
-    const stepChanged = step?.instruction !== prev.prevStepInstruction;
+    const stepChanged = contentStepKey !== prev.prevContentKey;
 
     if (stepChanged) {
       debouncedLanesRef.current = {
         data: null,
         changedAt: now,
-        prevStepInstruction: step?.instruction,
+        prevContentKey: contentStepKey,
         stepChangedAt: now,
       };
       return null;
@@ -259,11 +280,11 @@ export default React.memo(function TurnInstructionCard({
     debouncedLanesRef.current = {
       data: rawLanes,
       changedAt: now,
-      prevStepInstruction: step?.instruction,
+      prevContentKey: contentStepKey,
       stepChangedAt: prev.stepChangedAt,
     };
     return rawLanes;
-  }, [rawLanes, step]);
+  }, [rawLanes, contentStepKey]);
 
   /**
    * "Then …" secondary line precedence:
@@ -277,14 +298,17 @@ export default React.memo(function TurnInstructionCard({
    *      native banner on highway merges (where native has no secondary but the
    *      synthesised "Then" misreads the upcoming maneuver kind).
    */
-  const bannerThen = getBannerThenLine(step);
+  const bannerThen = navSdkDrivesContent ? null : getBannerThenLine(step);
   const thenRaw = useMemo(() => {
-    if (secondaryInstruction?.trim()) return secondaryInstruction.trim();
-    if (bannerThen?.trim()) return bannerThen.trim();
-    if (chainInstruction?.trim()) return chainInstruction.trim();
-    return '';
-  }, [secondaryInstruction, bannerThen, chainInstruction]);
-  const thenStable = useStableText(thenRaw, stableTextKey);
+    let t = '';
+    if (secondaryInstruction?.trim()) t = secondaryInstruction.trim();
+    else if (!navSdkDrivesContent) {
+      if (bannerThen?.trim()) t = bannerThen.trim();
+      else if (chainInstruction?.trim()) t = chainInstruction.trim();
+    }
+    return t.replace(/\s+/g, ' ').trim();
+  }, [navSdkDrivesContent, secondaryInstruction, bannerThen, chainInstruction]);
+  const thenStable = useStableText(thenRaw, stableTextKey, textDwellMs);
   const thenText = thenStable || null;
 
   const showThenRow =
@@ -300,12 +324,17 @@ export default React.memo(function TurnInstructionCard({
     nativeLaneAssets != null &&
     nativeLaneAssets.length === effectiveLanes.length &&
     nativeLaneAssets.every((a) => typeof a?.imageBase64 === 'string' && a.imageBase64.length > 0);
-  /** Default: only the Navigation SDK bitmap strip (aligned with `LaneGuidance`). Set `EXPO_PUBLIC_NAV_LANE_UI=1` for full JS/REST lane row. */
+  /**
+   * JS pipeline: `NAV_LANE_UI` or native bitmap strip. **SDK headless:** only the nav-native
+   * strip — never a REST JSON lane row, even if `NAV_LANE_UI=1`.
+   */
   const showLanes =
     effectiveLanes &&
     effectiveLanes.length > 0 &&
     (state === 'active' || state === 'preview') &&
-    (navLaneGuidanceUiEnabled() || nativeLaneStripReady);
+    (navSdkDrivesContent
+      ? nativeLaneStripReady
+      : navLaneGuidanceUiEnabled() || nativeLaneStripReady);
 
   const showShields =
     shields &&
@@ -399,8 +428,9 @@ export default React.memo(function TurnInstructionCard({
             style={[
               styles.distCol,
               {
-                minWidth: state === 'cruise' ? 56 : 72,
-                marginRight: 6,
+                minWidth: state === 'cruise' ? 58 : 84,
+                maxWidth: 120,
+                marginRight: 8,
               },
               distAnimatedStyle,
             ]}
@@ -409,11 +439,13 @@ export default React.memo(function TurnInstructionCard({
               style={[styles.distVal, { color: tcTextColor, fontSize: distFont }]}
               numberOfLines={1}
               adjustsFontSizeToFit
-              minimumFontScale={0.75}
+              minimumFontScale={0.82}
             >
               {displayDistance.value}
             </Text>
-            <Text style={[styles.distUnit, { color: tcTextColor }]}>{displayDistance.unit}</Text>
+            {displayDistance.unit ? (
+              <Text style={[styles.distUnit, { color: tcTextColor }]}>{displayDistance.unit}</Text>
+            ) : null}
           </Animated.View>
 
           <View
@@ -464,7 +496,7 @@ export default React.memo(function TurnInstructionCard({
                   fontWeight: state === 'active' ? '800' : '700',
                 },
               ]}
-              numberOfLines={2}
+              numberOfLines={3}
             >
               {primaryDisplay}
             </Text>
@@ -483,16 +515,16 @@ export default React.memo(function TurnInstructionCard({
                   name="return-down-forward-outline"
                   size={12}
                   color={tcTextColor}
-                  style={{ opacity: d.thenOpacity }}
+                  style={{ opacity: d.thenOpacity, marginTop: 1 }}
                 />
                 <Text
                   style={[
                     styles.secondary,
                     { color: tcTextColor, opacity: d.thenOpacity },
                   ]}
-                  numberOfLines={1}
+                  numberOfLines={2}
                 >
-                  {' '}{thenText}
+                  {thenText}
                 </Text>
               </View>
             )}
@@ -549,7 +581,7 @@ const styles = StyleSheet.create({
   grad: { overflow: 'hidden' },
   row: { flexDirection: 'row', alignItems: 'center' },
   distCol: { alignItems: 'center', flexShrink: 0, marginRight: 4 },
-  distVal: { fontWeight: '900', letterSpacing: -1.8, lineHeight: 44 },
+  distVal: { fontWeight: '900', letterSpacing: -0.4, lineHeight: 44, textAlign: 'center' },
   distUnit: {
     fontSize: 14,
     fontWeight: '800',
@@ -560,14 +592,14 @@ const styles = StyleSheet.create({
   iconBoxOuter: {
     justifyContent: 'center',
     alignItems: 'center',
-    marginHorizontal: 14,
+    marginHorizontal: 10,
     flexShrink: 0,
   },
   textCol: { flex: 1, minWidth: 0 },
   shieldRow: { marginBottom: 3 },
-  primary: { fontSize: 22, letterSpacing: -0.3, lineHeight: 28 },
-  thenRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 2 },
-  secondary: { flex: 1, fontSize: 14, fontWeight: '700', lineHeight: 18 },
+  primary: { fontSize: 22, letterSpacing: -0.2, lineHeight: 30 },
+  thenRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 6, gap: 4, width: '100%' },
+  secondary: { flex: 1, minWidth: 0, fontSize: 14, fontWeight: '700', lineHeight: 20 },
   mute: { paddingLeft: 8, paddingTop: 2, flexShrink: 0 },
   disambig: {
     flexDirection: 'row',

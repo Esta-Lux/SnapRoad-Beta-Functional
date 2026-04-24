@@ -32,6 +32,7 @@ export function effectiveNavRouteColors(
   mapLightPreset: MapboxLightPreset,
   isSatellite: boolean,
   drivingMode?: DrivingMode,
+  options?: { speedMphForRoute?: number },
 ): EffectiveRouteColors {
   const { routeColor, routeCasing, passedColor, routeGlowColor, routeGlowOpacity } = modeConfig;
   const whiteCore = isNearWhiteRouteLine(routeColor);
@@ -39,15 +40,41 @@ export function effectiveNavRouteColors(
   const dusk = mapLightPreset === 'dusk';
   const night = mapLightPreset === 'night';
   const sportLowLight = drivingMode === 'sport' && (night || dusk || isSatellite);
+  const speedMph = options?.speedMphForRoute ?? 0;
+  const sportFast = drivingMode === 'sport' && speedMph > 70;
 
   if (drivingMode === 'sport' && sportLowLight) {
     return {
       /** Brighter core + light casing so the line reads on Mapbox Standard dusk / night and satellite. */
-      routeColor: isSatellite ? '#FFCAA3' : night ? '#FFB184' : '#FF8C52',
+      routeColor: sportFast
+        ? isSatellite
+          ? '#FF7A4D'
+          : night
+            ? '#FF5C33'
+            : '#FF6B3D'
+        : isSatellite
+          ? '#FFCAA3'
+          : night
+            ? '#FFB184'
+            : '#FF8C52',
       routeCasing: isSatellite ? '#0A1628' : 'rgba(255,255,255,0.88)',
       passedColor: isSatellite ? 'rgba(148,163,184,0.7)' : 'rgba(203, 213, 225, 0.65)',
       routeGlowColor: isSatellite ? '#FDE68A' : night ? '#FEF3C7' : '#FDE68A',
-      routeGlowOpacity: Math.max(routeGlowOpacity, isSatellite ? 0.48 : night ? 0.46 : 0.44),
+      routeGlowOpacity: Math.max(
+        routeGlowOpacity,
+        isSatellite ? 0.48 : night ? 0.46 : 0.44,
+        sportFast ? 0.06 : 0,
+      ),
+    };
+  }
+
+  if (drivingMode === 'sport' && sportFast) {
+    return {
+      routeColor: '#E63E16',
+      routeCasing: '#1C1917',
+      passedColor: '#94A3B8',
+      routeGlowColor: '#FB923C',
+      routeGlowOpacity: Math.max(routeGlowOpacity, 0.36),
     };
   }
 
@@ -134,8 +161,10 @@ export function effectiveAlternateRouteLineColor(
 export function getDrivingLightPreset(
   drivingMode: DrivingMode,
   isLightAppTheme: boolean,
+  options?: { sportBasemapAlwaysDark?: boolean },
 ): MapboxLightPreset {
   if (!isLightAppTheme) return 'night';
+  if (options?.sportBasemapAlwaysDark && drivingMode === 'sport') return 'night';
   return DRIVING_MODES[drivingMode].lightPreset;
 }
 

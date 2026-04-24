@@ -1,6 +1,5 @@
 import { useMemo, useRef } from 'react';
 import type { DrivingMode } from '../types';
-import { DRIVING_MODES } from '../constants/modes';
 import {
   getCameraPreset,
   getLiveNavigationCameraPreset,
@@ -129,27 +128,30 @@ export function cameraSettingsFromNativeSdkPayload(
   };
 }
 
-/** Same framing as headless `MapboxNavigationView` `followingZoom` / `followingPitch` props. */
+/** Same family as `getCameraPreset` so RN map matches speed-aware `useCameraController` when native payload is absent. */
 function mirrorFallbackNativeSdk(
   mode: DrivingMode,
   safeAreaTop: number,
   safeAreaBottom: number,
+  speedMps: number,
+  nextManeuverDistanceMeters: number,
 ): CameraSettings {
   const preset = getCameraPreset({
     mode,
-    speedMps: 0,
-    nextManeuverDistanceMeters: 400,
+    speedMps: Number.isFinite(speedMps) ? speedMps : 0,
+    nextManeuverDistanceMeters: Number.isFinite(nextManeuverDistanceMeters) ? nextManeuverDistanceMeters : 400,
     safeAreaTop,
     safeAreaBottom,
+    accelerationMps2: 0,
   });
-  const zoom = mode === 'calm' ? 16.5 : mode === 'sport' ? 17.5 : 17.0;
-  const pitch = Math.min(64, DRIVING_MODES[mode].navPitch + 2);
   return {
-    followZoomLevel: Math.round(zoom * 4) / 4,
-    followPitch: Math.round(pitch),
+    followZoomLevel: Math.round(preset.zoom * 4) / 4,
+    followPitch: Math.round(preset.pitch),
     followPadding: preset.padding,
-    animationDuration: preset.animationDuration,
-    bearingAnimationDuration: Math.round(Math.min(preset.animationDuration * 0.55, 400)),
+    animationDuration: Math.min(420, Math.max(180, Math.round(preset.animationDuration * 0.5))),
+    bearingAnimationDuration: Math.round(
+      Math.min(380, Math.max(160, preset.animationDuration * 0.4)),
+    ),
   };
 }
 
@@ -177,6 +179,7 @@ export function useCameraController({
   const stableRef = useRef<CameraSettings | null>(null);
   /** Temporal hysteresis: last time the camera settings actually changed. */
   const lastCameraChangeMs = useRef(0);
+  const accelSampleRef = useRef<{ mps: number; t: number } | null>(null);
   const computed = useMemo(() => {
     if (!isNavigating || !cameraLocked) return null;
 
@@ -184,7 +187,15 @@ export function useCameraController({
       if (isValidSdkCameraPayload(nativeCameraState)) {
         return cameraSettingsFromNativeSdkPayload(nativeCameraState!, drivingMode, safeAreaTop, safeAreaBottom);
       }
-      return mirrorFallbackNativeSdk(drivingMode, safeAreaTop, safeAreaBottom);
+      const fusedOkNav = fusedSpeedMps != null && Number.isFinite(fusedSpeedMps);
+      const mpsNav = Math.max(0, fusedOkNav ? (fusedSpeedMps as number) : speedMph * MPH_TO_MPS);
+      return mirrorFallbackNativeSdk(
+        drivingMode,
+        safeAreaTop,
+        safeAreaBottom,
+        mpsNav,
+        nextManeuverDistanceMeters,
+      );
     }
 
     const fusedOk = fusedSpeedMps != null && Number.isFinite(fusedSpeedMps);
@@ -194,12 +205,28 @@ export function useCameraController({
       : speedB;
     const speedMpsForPreset = Math.max(0, mphForPreset) * MPH_TO_MPS;
 
+    const now =
+      typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now();
+    let accelerationMps2 = 0;
+    const pr = accelSampleRef.current;
+    if (pr && now - pr.t < 2000) {
+      const dt = (now - pr.t) / 1000;
+      if (dt > 0.09 && dt < 1.4) {
+        accelerationMps2 = (speedMpsForPreset - pr.mps) / dt;
+      }
+    }
+    accelSampleRef.current = { mps: speedMpsForPreset, t: now };
+    accelerationMps2 = Math.max(-8, Math.min(8, accelerationMps2));
+
     const preset = getLiveNavigationCameraPreset({
       mode: drivingMode,
       speedMps: speedMpsForPreset,
       nextManeuverDistanceMeters: maneuverB,
       safeAreaTop,
       safeAreaBottom,
+      accelerationMps2,
     });
 
     return {
@@ -222,6 +249,7 @@ export function useCameraController({
     safeAreaBottom,
     isNativeMirror,
     nativeCameraState,
+    nextManeuverDistanceMeters,
   ]);
   const minCameraUpdateIntervalMs = useMemo(() => {
     if (!isNavigating || !cameraLocked) return 600;
