@@ -1808,9 +1808,6 @@ index 8f841df..0cd4c05 100644
 +        if let s = visual?.secondaryInstruction?.text {
 +            out["secondaryInstruction"] = s
 +        }
-+        if let d = stepProg.userDistanceToUpcomingIntersection {
-+            out["distanceToNextManeuverMeters"] = d
-+        }
 +        if let sl = leg.currentSpeedLimit {
 +            out["speedLimitMps"] = sl.converted(to: .metersPerSecond).value
 +        }
@@ -1832,9 +1829,12 @@ index 8f841df..0cd4c05 100644
 +            out["shield"] = shield
 +        }
 +
-+        let dMeters = stepProg.userDistanceToUpcomingIntersection ?? stepProg.distanceRemaining
-+        if dMeters.isFinite && dMeters > 0 {
-+            let parts = snaproadFormatDistanceMeters(dMeters)
++        let dToManeuver = stepProg.userDistanceToUpcomingIntersection ?? stepProg.distanceRemaining
++        if dToManeuver.isFinite && dToManeuver >= 0 {
++            out["distanceToNextManeuverMeters"] = dToManeuver
++        }
++        if dToManeuver.isFinite && dToManeuver > 0 {
++            let parts = snaproadFormatDistanceMeters(dToManeuver)
 +            out["primaryDistanceFormatted"] = parts["full"]
 +            out["formattedDistance"] = parts["value"]
 +            out["formattedDistanceUnit"] = parts["unit"]

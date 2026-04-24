@@ -1,5 +1,5 @@
 import {
-  nativeFormattedDistanceFromProgressPayload,
+  nativeMirrorFormattedDistanceOrNull,
   type SdkNavProgressEvent,
   type SdkNavProgressLane,
   type SdkNavProgressShield,
@@ -139,7 +139,7 @@ function pickNativeFormattedFromProgress(
   prev: NativeFormattedDistance | null,
   prevProgress: SdkProgressPayload | null,
 ): NativeFormattedDistance | null {
-  const fromP = nativeFormattedDistanceFromProgressPayload(p);
+  const fromP = nativeMirrorFormattedDistanceOrNull(p);
   if (fromP) return fromP;
   const si = p.stepIndex ?? 0;
   const sj = prevProgress?.stepIndex ?? -1;

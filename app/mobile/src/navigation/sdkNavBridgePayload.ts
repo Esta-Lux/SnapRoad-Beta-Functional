@@ -27,6 +27,31 @@ export function nativeFormattedDistanceFromProgressPayload(
   return null;
 }
 
+/**
+ * iOS (pre-fix) could emit `primaryDistanceFormatted` from `userDistanceToUpcomingIntersection
+ * ?? distanceRemaining` but only set `distanceToNextManeuverMeters` when
+ * `userDistanceToUpcomingIntersection` was non-nil — the UI showed a huge formatted distance
+ * while {@link distNext} stayed 0. Reject the mirror string unless the bridge also sent a numeric
+ * distance to the same maneuver. Android always sends the numeric, so it still passes.
+ */
+export function nativeMirrorFormattedDistanceOrNull(
+  p: Pick<
+    SdkNavProgressEvent,
+    | 'formattedDistance'
+    | 'formattedDistanceUnit'
+    | 'primaryDistanceFormatted'
+    | 'distanceToNextManeuverMeters'
+  >,
+): NativeFormattedDistance | null {
+  const fd = nativeFormattedDistanceFromProgressPayload(p);
+  if (!fd) return null;
+  const d = p.distanceToNextManeuverMeters;
+  if (typeof d !== 'number' || !Number.isFinite(d)) {
+    return null;
+  }
+  return fd;
+}
+
 export type SdkNavProgressLane = {
   indications: string[];
   active: boolean;

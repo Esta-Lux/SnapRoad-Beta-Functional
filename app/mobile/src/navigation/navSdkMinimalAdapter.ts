@@ -8,7 +8,7 @@
 
 import type { Coordinate } from '../types';
 import type { NavigationProgress, NavStep, RawLocation } from './navModel';
-import { nativeFormattedDistanceFromProgressPayload } from './sdkNavBridgePayload';
+import { nativeMirrorFormattedDistanceOrNull } from './sdkNavBridgePayload';
 import type { SdkLocationPayload, SdkProgressPayload } from './navSdkStore';
 import {
   mapSdkLanesToLaneInfo,
@@ -168,7 +168,7 @@ export function buildMinimalNavigationProgressFromSdk(
     nextManeuverDistanceMeters: null,
   };
 
-  const nativeFd = nativeFormattedDistanceFromProgressPayload(progress);
+  const nativeFd = nativeMirrorFormattedDistanceOrNull(progress);
   const nativeFormatted = nativeFd?.value ?? null;
   const nativeFormattedUnit = nativeFd?.unit != null && nativeFd.unit.length > 0 ? nativeFd.unit : null;
 

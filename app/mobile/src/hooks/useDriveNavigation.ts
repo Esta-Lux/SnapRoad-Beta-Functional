@@ -1347,6 +1347,7 @@ export function useDriveNavigation(params: {
     navSdkHeadless,
     navSdkSnapshot.progress?.stepIndex,
     navigationProgress?.nextStep?.index,
+    navigationProgress?.instructionSource,
   ]);
 
   // --- Arrival announcement ---
