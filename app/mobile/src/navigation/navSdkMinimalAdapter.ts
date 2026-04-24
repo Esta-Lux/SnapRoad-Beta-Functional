@@ -115,7 +115,14 @@ export function buildMinimalNavigationProgressFromSdk(
 
   const sdkPrimary = progress.primaryInstruction?.trim() || '';
   const sdkCurrent = progress.currentStepInstruction?.trim() || '';
-  const primaryText = sdkPrimary || sdkCurrent || 'Continue';
+  /**
+   * Use **only** the upcoming-maneuver line when the SDK provides it. Some ticks send
+   * both `primaryInstruction` and a different `currentStepInstruction` (“depart / drive
+   * east” vs “continue on …”); OR-ing them with `||` made which string won depend on
+   * which field was non-empty, which can alternate tick-to-tick and fight the turn card
+   * + TTS. Prefer primary; fall back to current when primary is empty.
+   */
+  const primaryText = sdkPrimary ? sdkPrimary : sdkCurrent || 'Continue';
   const sdkSecondary = progress.secondaryInstruction?.trim() || '';
   const sdkThen = progress.thenInstruction?.trim() || '';
   const secondaryText = sdkSecondary || sdkThen || undefined;
@@ -142,8 +149,8 @@ export function buildMinimalNavigationProgressFromSdk(
     displayInstruction: primaryText,
     secondaryInstruction: secondaryText ?? null,
     subInstruction: null,
-    instruction:
-      progress.currentStepInstruction?.trim() || progress.primaryInstruction?.trim() || '',
+    /** Same source order as `primaryText` (primary beats current) — was current∥primary, which could disagree with the banner. */
+    instruction: primaryText,
     streetName: progress.currentRoadName?.trim() || null,
     destinationRoad: progress.upcomingIntersectionName?.trim() || null,
     shields: shieldsForStep,

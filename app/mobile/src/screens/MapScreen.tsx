@@ -115,6 +115,7 @@ import {
   shouldShowRoadDisambiguation,
 } from '../navigation/turnCardModel';
 import { useSdkManeuverDistanceForTurnCard } from '../navigation/useSdkManeuverDistanceForTurnCard';
+import { sdkGuidanceStabilityKey } from '../navigation/sdkGuidanceUiKeys';
 import { useTurnConfirmationUntil } from '../hooks/useTurnConfirmationWindow';
 import { useMapWeather, weatherOverlayFactor } from '../hooks/useMapWeather';
 import MapWeatherOverlay from '../components/map/MapWeatherOverlay';
@@ -4136,7 +4137,7 @@ export default function MapScreen() {
               ? 'straight'
               : String(sdkNS.kind);
           const manKind = sdkNS?.kind ?? b?.maneuverKind ?? 'straight';
-          const textStabKey = `${sdkNS?.index ?? 0}|${(b?.primaryInstruction ?? primary).trim()}`;
+          const textStabKey = sdkGuidanceStabilityKey(sdkNS);
 
           return (
             <View style={[s.turnWrap, { top: insets.top }]} key="turn-card-sdk-native">

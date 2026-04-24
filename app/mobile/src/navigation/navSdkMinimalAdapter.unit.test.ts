@@ -56,3 +56,22 @@ test('minimal adapter falls back to on-polyline point when location is null', ()
   assert.equal(r.puckCoord.lng, polyline[0]!.lng);
   assert.equal(r.snapped.distanceMeters, 0);
 });
+
+test('minimal adapter: primaryInstruction wins over a different currentStepInstruction', () => {
+  const polyline = [
+    { lat: 40.0, lng: -74.0 },
+    { lat: 40.1, lng: -74.1 },
+  ];
+  const r = buildMinimalNavigationProgressFromSdk({
+    progress: {
+      ...baseProgress,
+      primaryInstruction: 'Drive east on Main St',
+      currentStepInstruction: 'Head east for one mile',
+    },
+    location: null,
+    routePolyline: polyline,
+  });
+  assert.equal(r.banner?.primaryInstruction, 'Drive east on Main St');
+  assert.equal(r.nextStep?.displayInstruction, 'Drive east on Main St');
+  assert.equal(r.nextStep?.instruction, 'Drive east on Main St');
+});

@@ -1,6 +1,7 @@
 import { useMemo, useRef } from 'react';
 import type { NavigationProgress } from './navModel';
 import { formatImperialManeuverDistance } from './turnCardModel';
+import { sdkGuidanceStabilityKey } from './sdkGuidanceUiKeys';
 import {
   resolveStableManeuverDisplayMeters,
   type ManeuverDisplayMetersState,
@@ -27,14 +28,8 @@ export function useSdkManeuverDistanceForTurnCard(
 
   const textStabKey = useMemo(() => {
     if (!enabled) return '__sdk_maneuver_dist_off__';
-    const rawPrimary =
-      b?.primaryInstruction?.trim() ||
-      sdkNS?.displayInstruction?.trim() ||
-      sdkNS?.instruction?.trim() ||
-      '';
-    const primary = rawPrimary.replace(/\s+/g, ' ').trim();
-    return `${sdkNS?.index ?? 0}|${(b?.primaryInstruction ?? primary).trim()}`;
-  }, [enabled, b?.primaryInstruction, sdkNS?.index, sdkNS?.displayInstruction, sdkNS?.instruction]);
+    return sdkGuidanceStabilityKey(sdkNS);
+  }, [enabled, sdkNS]);
 
   const distRef = useRef<ManeuverDisplayMetersState | null>(null);
   const smoothed = useMemo(() => {
