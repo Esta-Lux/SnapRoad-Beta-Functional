@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   nativeFormattedDistanceFromProgressPayload,
   nativeMirrorFormattedDistanceOrNull,
+  sdkManeuverDisplayDistanceFromProgress,
 } from './sdkNavBridgePayload';
 
 test('nativeFormatted: formattedDistance + unit wins over primaryDistanceFormatted', () => {
@@ -56,4 +57,12 @@ test('nativeMirror: keeps formatted when numeric distance is present', () => {
     distanceToNextManeuverMeters: 240,
   });
   assert.deepEqual(r, { value: '800 ft', unit: '' });
+});
+
+test('sdkManeuverDisplay: uses imperial fallback when string missing but meters present', () => {
+  const r = sdkManeuverDisplayDistanceFromProgress({
+    distanceToNextManeuverMeters: 400,
+  } as { distanceToNextManeuverMeters: number });
+  assert.match(r?.value ?? '', /^\d/);
+  assert.match((r?.unit ?? '').toUpperCase(), /MI|FT/);
 });

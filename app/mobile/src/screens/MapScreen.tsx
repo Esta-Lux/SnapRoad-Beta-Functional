@@ -20,6 +20,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useLocation } from '../hooks/useLocation';
 import { useDriveNavigation } from '../hooks/useDriveNavigation';
+import { useSdkStepGapDisplay } from '../hooks/useSdkStepGapDisplay';
 import { usePassiveDriveGems } from '../hooks/usePassiveDriveGems';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -503,6 +504,7 @@ export default function MapScreen() {
     enabled: !navVoiceMuted && nav.isNavigating && !navLogicSdkEnabled(),
     drivingMode,
   });
+  const sdkStepGap = useSdkStepGapDisplay(nav.isNavigating, nav.navigationProgress);
 
   const navLogicRef = useRef<MapboxNavigationViewRef | null>(null);
   const [navLogicCoords, setNavLogicCoords] = useState<Array<{ latitude: number; longitude: number }>>([]);
@@ -1162,32 +1164,73 @@ export default function MapScreen() {
   const camCtrlRef = useRef(camCtrlForNav);
   camCtrlRef.current = camCtrlForNav;
 
+  const nativeCameraMirror =
+    isNativeSdkPassThrough &&
+    camCtrlForNav?.useNativeCenter &&
+    camCtrlForNav?.centerCoordinate != null;
   /**
-   * While navigating, `followUserLocation` uses Mapbox's internal GPS — not
-   * `CustomLocationProvider` — which fights the snapped puck (camera feels offset).
-   * With follow off, drive zoom/pitch/padding from `camCtrlForNav` (native mirror or
-   * {@link useCameraController}).
+   * Native `SdkCameraPayload` mirror: one driver — re-run `setCamera` only when the native
+   * payload changes, not on every `navDisplayCoord` / heading tick (avoids double authority).
    */
   useEffect(() => {
     if (!nav.isNavigating || !cameraLocked || !camCtrlForNav) return;
+    if (!nativeCameraMirror) return;
     const cam = cameraRef.current;
     if (!cam?.setCamera) return;
-    const useNative = camCtrlForNav.useNativeCenter && camCtrlForNav.centerCoordinate;
-    const anchor = useNative
-      ? camCtrlForNav.centerCoordinate!
-      : cameraLeadCoord ?? navDisplayCoord;
-    if (!Number.isFinite(anchor.lat) || !Number.isFinite(anchor.lng)) return;
+    const c = camCtrlForNav;
+    if (!c.centerCoordinate) return;
     const h =
-      useNative && camCtrlForNav.headingDeg != null && Number.isFinite(camCtrlForNav.headingDeg)
-        ? camCtrlForNav.headingDeg
-        : Number.isFinite(navPuckHeading)
-          ? navPuckHeading
-          : heading;
-    const pad = camCtrlForNav.followPadding;
+      c.headingDeg != null && Number.isFinite(c.headingDeg) ? c.headingDeg : undefined;
+    const pad = c.followPadding;
+    cam.setCamera({
+      centerCoordinate: [c.centerCoordinate.lng, c.centerCoordinate.lat],
+      zoomLevel: c.followZoomLevel,
+      pitch: c.followPitch,
+      heading: h,
+      padding: {
+        paddingTop: pad.paddingTop,
+        paddingBottom: pad.paddingBottom,
+        paddingLeft: pad.paddingLeft,
+        paddingRight: pad.paddingRight,
+      },
+      animationMode: 'easeTo',
+      animationDuration: c.animationDuration,
+    });
+  }, [
+    nav.isNavigating,
+    cameraLocked,
+    nativeCameraMirror,
+    camCtrlForNav?.followZoomLevel,
+    camCtrlForNav?.followPitch,
+    camCtrlForNav?.followPadding?.paddingTop,
+    camCtrlForNav?.followPadding?.paddingBottom,
+    camCtrlForNav?.followPadding?.paddingLeft,
+    camCtrlForNav?.followPadding?.paddingRight,
+    camCtrlForNav?.animationDuration,
+    camCtrlForNav?.centerCoordinate?.lat,
+    camCtrlForNav?.centerCoordinate?.lng,
+    camCtrlForNav?.headingDeg,
+  ]);
+  /**
+   * While navigating, `followUserLocation` uses Mapbox's internal GPS — not
+   * `CustomLocationProvider` — which fights the snapped puck (camera feels offset).
+   * With follow off, drive zoom/pitch/padding from `camCtrlForNav` (headless fallbacks
+   * or JS `useCameraController` when not mirroring a native `SdkCameraPayload`).
+   */
+  useEffect(() => {
+    if (!nav.isNavigating || !cameraLocked || !camCtrlForNav) return;
+    if (nativeCameraMirror) return;
+    const cam = cameraRef.current;
+    if (!cam?.setCamera) return;
+    const c = camCtrlForNav;
+    const anchor = cameraLeadCoord ?? navDisplayCoord;
+    if (!Number.isFinite(anchor.lat) || !Number.isFinite(anchor.lng)) return;
+    const h = Number.isFinite(navPuckHeading) ? navPuckHeading : heading;
+    const pad = c.followPadding;
     cam.setCamera({
       centerCoordinate: [anchor.lng, anchor.lat],
-      zoomLevel: camCtrlForNav.followZoomLevel,
-      pitch: camCtrlForNav.followPitch,
+      zoomLevel: c.followZoomLevel,
+      pitch: c.followPitch,
       heading: Number.isFinite(h) ? h : undefined,
       padding: {
         paddingTop: pad.paddingTop,
@@ -1196,11 +1239,12 @@ export default function MapScreen() {
         paddingRight: pad.paddingRight,
       },
       animationMode: 'easeTo',
-      animationDuration: camCtrlForNav.animationDuration,
+      animationDuration: c.animationDuration,
     });
   }, [
     nav.isNavigating,
     cameraLocked,
+    nativeCameraMirror,
     camCtrlForNav?.followZoomLevel,
     camCtrlForNav?.followPitch,
     camCtrlForNav?.followPadding?.paddingTop,
@@ -1208,10 +1252,6 @@ export default function MapScreen() {
     camCtrlForNav?.followPadding?.paddingLeft,
     camCtrlForNav?.followPadding?.paddingRight,
     camCtrlForNav?.animationDuration,
-    camCtrlForNav?.useNativeCenter,
-    camCtrlForNav?.centerCoordinate?.lat,
-    camCtrlForNav?.centerCoordinate?.lng,
-    camCtrlForNav?.headingDeg,
     navDisplayCoord.lat,
     navDisplayCoord.lng,
     navPuckHeading,
@@ -4136,25 +4176,47 @@ export default function MapScreen() {
 
         /**
          * Headless Navigation SDK: maneuver copy + distance are **native only** (banner + bridge store).
-         * No JS imperial formatting, smoothing, or REST/banner fallbacks — RN mirrors / themes only.
+         * `navigationProgress` stays live for fraction / polyline; `navigationProgressGuidance` + gap
+         * hold reduce turn-card refights; distance strings prefer the live banner when the bridge ticked
+         * a new formatted value before guidance updates.
          */
         if (instructionSrc === 'sdk') {
-          const b = prog.banner ?? null;
-          const sdkNS = prog.nextStep;
-          const primary = (b?.primaryInstruction ?? '').replace(/\s+/g, ' ').trim();
-          const secondary = b?.secondaryInstruction?.replace(/\s+/g, ' ').trim() || undefined;
-          const maneuverIconKey =
-            sdkNS?.kind === 'unknown' || sdkNS?.kind == null
+          const live = prog;
+          const g = sdkStepGap;
+          const cardProg = nav.navigationProgressGuidance ?? live;
+          const b = cardProg.banner ?? null;
+          const liveB = live.banner;
+          const primary = (g?.holdPrimary ?? (b?.primaryInstruction ?? '')).replace(/\s+/g, ' ').trim();
+          const secondary =
+            g?.holdSecondary ?? b?.secondaryInstruction?.replace(/\s+/g, ' ').trim() || undefined;
+          const liveNs = live.nextStep;
+          const maneuverIconKey = g
+            ? g.holdManeuverIcon
+            : liveNs?.kind === 'unknown' || liveNs?.kind == null
               ? 'straight'
-              : String(sdkNS.kind);
-          const manKind = sdkNS?.kind ?? b?.maneuverKind ?? 'straight';
-          const textStabKey = sdkGuidanceStabilityKey(sdkNS, prog.nativeStepIdentity?.legIndex);
-          const fd = b?.primaryDistanceFormatted?.trim();
-          const funit = (b?.primaryDistanceFormattedUnit ?? '').trim();
-          const nativeTurnDistance: NativeFormattedDistance | null = fd
-            ? { value: fd, unit: funit }
-            : null;
+              : String(liveNs.kind);
+          const manKind = g ? g.holdManKind : (liveNs?.kind ?? b?.maneuverKind ?? 'straight');
+          const textStabKey = sdkGuidanceStabilityKey(liveNs, live.nativeStepIdentity?.legIndex);
+          const distBanner = liveB?.primaryDistanceFormatted?.trim() ? liveB : b;
+          const nativeTurnDistance: NativeFormattedDistance | null = (() => {
+            if (g?.holdNative?.value?.trim()) return g.holdNative;
+            if (g?.holdPrimary === 'Continuing…') {
+              const fd0 = liveB?.primaryDistanceFormatted?.trim();
+              if (fd0) {
+                return { value: fd0, unit: (liveB?.primaryDistanceFormattedUnit ?? '').trim() };
+              }
+            }
+            const fd1 = distBanner?.primaryDistanceFormatted?.trim();
+            if (fd1) {
+              return {
+                value: fd1,
+                unit: (distBanner?.primaryDistanceFormattedUnit ?? '').trim(),
+              };
+            }
+            return null;
+          })();
           const useNativeTurnDistance = !!nativeTurnDistance?.value;
+          const sdkNS = liveNs;
 
           return (
             <View style={[s.turnWrap, { top: insets.top }]} key="turn-card-sdk-native">
@@ -4173,13 +4235,13 @@ export default function MapScreen() {
                 nativeLaneAssets={nav.sdkNativeLaneAssets}
                 maneuverForIcon={maneuverIconKey}
                 maneuverKind={manKind}
-                maneuverType={sdkNS?.rawType ?? ''}
-                maneuverModifier={sdkNS?.rawModifier ?? ''}
+                maneuverType={g ? g.holdRawType : sdkNS?.rawType ?? ''}
+                maneuverModifier={g ? g.holdRawMod : sdkNS?.rawModifier ?? ''}
                 signal={sdkNS?.signal}
-                lanes={sdkNS?.lanes?.length ? sdkNS.lanes : prog.nextStep?.lanes ?? []}
-                shields={sdkNS?.shields?.length ? sdkNS.shields : prog.nextStep?.shields ?? []}
+                lanes={sdkNS?.lanes?.length ? sdkNS.lanes : live.nextStep?.lanes ?? []}
+                shields={sdkNS?.shields?.length ? sdkNS.shields : live.nextStep?.shields ?? []}
                 roundaboutExitNumber={
-                  sdkNS?.roundaboutExitNumber ?? prog.nextStep?.roundaboutExitNumber ?? null
+                  sdkNS?.roundaboutExitNumber ?? live.nextStep?.roundaboutExitNumber ?? null
                 }
                 chainInstruction={null}
                 isMuted={navVoiceMuted}

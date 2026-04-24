@@ -60,6 +60,7 @@ import {
 import { setNavLogicSdkTripActive } from '../navigation/navVoiceGate';
 import { logNavLogicSnapshot } from '../navigation/navLogicDebug';
 import { routeSummaryFromMapboxMetersSeconds } from '../utils/routeDisplay';
+import { sdkGuidanceUiSignature } from '../navigation/sdkGuidanceUiKeys';
 import {
   directionsStepsFromSdkRoutes,
   type SdkRoutesNative,
@@ -355,6 +356,30 @@ export function useDriveNavigation(params: {
   const navigationProgress: NavigationProgress | null = sdkActive
     ? sdkBuiltNavigationProgress
     : jsNavigationProgress;
+
+  const guidanceUiStableRef = useRef<{ sig: string; p: NavigationProgress } | null>(null);
+  /**
+   * Headless-SDK: same as {@link navigationProgress} for route/ETA, but reuses a stable
+   * `NavigationProgress` ref when only fraction / along-route state tick so the turn card
+   * is not re-mounted every `onRouteProgressChanged` sample.
+   */
+  const navigationProgressGuidance = useMemo((): NavigationProgress | null => {
+    if (!sdkActive) return jsNavigationProgress;
+    if (!sdkBuiltNavigationProgress) return null;
+    if (sdkBuiltNavigationProgress.instructionSource === 'sdk_waiting') {
+      return sdkBuiltNavigationProgress;
+    }
+    if (sdkBuiltNavigationProgress.instructionSource !== 'sdk') {
+      return sdkBuiltNavigationProgress;
+    }
+    const sig = sdkGuidanceUiSignature(sdkBuiltNavigationProgress);
+    const cur = guidanceUiStableRef.current;
+    if (cur && cur.sig === sig) {
+      return cur.p;
+    }
+    guidanceUiStableRef.current = { sig, p: sdkBuiltNavigationProgress };
+    return sdkBuiltNavigationProgress;
+  }, [sdkActive, sdkBuiltNavigationProgress, jsNavigationProgress]);
 
   const navigationProgressCoord: Coordinate = useMemo(() => {
     if (sdkActive) {
@@ -1760,6 +1785,11 @@ export function useDriveNavigation(params: {
     navigationSteps: navStepsBuilt,
     /** Single navigation core: puck, split, ETA, turn — null when not navigating. */
     navigationProgress,
+    /**
+     * Turn UI / step dwell: stable object on headless-SDK when guidance copy + bucket
+     * unchanged; use {@link navigationProgress} for live fraction / line trim.
+     */
+    navigationProgressGuidance,
     /** Same as {@link navigationProgress} — kept for callers expecting `fusedNavState`. */
     fusedNavState: navigationProgress,
     /** Raw GPS while navigating (matches native puck / route progress). */

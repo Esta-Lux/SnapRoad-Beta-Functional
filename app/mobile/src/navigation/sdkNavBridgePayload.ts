@@ -3,6 +3,7 @@
  * Keep in sync with Swift `navProgressPayload` / Kotlin `navProgressPayload`.
  */
 
+import { formatImperialManeuverDistance } from './turnCardModel';
 import type { NativeLaneAsset, NativeFormattedDistance, SdkCameraPayload } from './navSdkMirrorTypes';
 
 export type { NativeLaneAsset, NativeFormattedDistance, SdkCameraPayload, SdkCameraPadding } from './navSdkMirrorTypes';
@@ -50,6 +51,30 @@ export function nativeMirrorFormattedDistanceOrNull(
     return null;
   }
   return fd;
+}
+
+/**
+ * Turn-card distance: prefer verified native mirror strings; if the bridge omits
+ * `primaryDistanceFormatted` for one tick, format **only** from
+ * `distanceToNextManeuverMeters` in one place to avoid clashing with a parallel JS
+ * formatter elsewhere.
+ */
+export function sdkManeuverDisplayDistanceFromProgress(
+  p: Pick<
+    SdkNavProgressEvent,
+    | 'formattedDistance'
+    | 'formattedDistanceUnit'
+    | 'primaryDistanceFormatted'
+    | 'distanceToNextManeuverMeters'
+  >,
+): NativeFormattedDistance | null {
+  const m = nativeMirrorFormattedDistanceOrNull(p);
+  if (m) return m;
+  const d = p.distanceToNextManeuverMeters;
+  if (typeof d !== 'number' || !Number.isFinite(d)) {
+    return null;
+  }
+  return formatImperialManeuverDistance(d, { omitNowLabel: true });
 }
 
 export type SdkNavProgressLane = {
