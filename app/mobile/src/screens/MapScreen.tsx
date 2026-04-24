@@ -4188,7 +4188,7 @@ export default function MapScreen() {
           const liveB = live.banner;
           const primary = (g?.holdPrimary ?? (b?.primaryInstruction ?? '')).replace(/\s+/g, ' ').trim();
           const secondary =
-            g?.holdSecondary ?? b?.secondaryInstruction?.replace(/\s+/g, ' ').trim() || undefined;
+            (g?.holdSecondary ?? b?.secondaryInstruction?.replace(/\s+/g, ' ').trim()) || undefined;
           const liveNs = live.nextStep;
           const maneuverIconKey = g
             ? g.holdManeuverIcon
