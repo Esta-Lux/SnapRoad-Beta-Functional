@@ -57,6 +57,25 @@ test('minimal adapter falls back to on-polyline point when location is null', ()
   assert.equal(r.snapped.distanceMeters, 0);
 });
 
+test('minimal adapter: banner uses formattedDistance + unit when primaryDistanceFormatted absent', () => {
+  const polyline = [
+    { lat: 40.0, lng: -74.0 },
+    { lat: 40.1, lng: -74.1 },
+  ];
+  const r = buildMinimalNavigationProgressFromSdk({
+    progress: {
+      ...baseProgress,
+      primaryDistanceFormatted: undefined,
+      formattedDistance: '800',
+      formattedDistanceUnit: 'ft',
+    },
+    location: null,
+    routePolyline: polyline,
+  });
+  assert.equal(r.banner?.primaryDistanceFormatted, '800');
+  assert.equal(r.banner?.primaryDistanceFormattedUnit, 'ft');
+});
+
 test('minimal adapter: primaryInstruction wins over a different currentStepInstruction', () => {
   const polyline = [
     { lat: 40.0, lng: -74.0 },

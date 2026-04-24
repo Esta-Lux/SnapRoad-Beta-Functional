@@ -8,6 +8,7 @@
 
 import type { Coordinate } from '../types';
 import type { NavigationProgress, NavStep, RawLocation } from './navModel';
+import { nativeFormattedDistanceFromProgressPayload } from './sdkNavBridgePayload';
 import type { SdkLocationPayload, SdkProgressPayload } from './navSdkStore';
 import {
   mapSdkLanesToLaneInfo,
@@ -167,12 +168,15 @@ export function buildMinimalNavigationProgressFromSdk(
     nextManeuverDistanceMeters: null,
   };
 
-  const nativeFormatted = progress.primaryDistanceFormatted?.trim() || null;
+  const nativeFd = nativeFormattedDistanceFromProgressPayload(progress);
+  const nativeFormatted = nativeFd?.value ?? null;
+  const nativeFormattedUnit = nativeFd?.unit != null && nativeFd.unit.length > 0 ? nativeFd.unit : null;
 
   const banner = {
     primaryInstruction: primaryText,
     primaryDistanceMeters: distNext,
     primaryDistanceFormatted: nativeFormatted,
+    primaryDistanceFormattedUnit: nativeFormattedUnit,
     primaryStreet: progress.currentRoadName ?? progress.upcomingIntersectionName ?? null,
     secondaryInstruction: secondaryText ?? null,
     signal: signalForStep,
@@ -184,6 +188,8 @@ export function buildMinimalNavigationProgressFromSdk(
 
   const durRem = Math.max(0, Math.round(progress.durationRemaining ?? 0));
   const distRem = Math.max(0, progress.distanceRemaining ?? 0);
+
+  const legIdx = progress.legIndex ?? 0;
 
   return {
     displayCoord,
@@ -213,5 +219,6 @@ export function buildMinimalNavigationProgressFromSdk(
     routePolyline: polyline,
     displayCumulativeMeters: cumulativeMeters,
     nativeFractionTraveled,
+    nativeStepIdentity: { legIndex: legIdx, stepIndex: stepIdxRaw },
   };
 }

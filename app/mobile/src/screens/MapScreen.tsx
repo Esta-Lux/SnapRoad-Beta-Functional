@@ -4148,15 +4148,12 @@ export default function MapScreen() {
               ? 'straight'
               : String(sdkNS.kind);
           const manKind = sdkNS?.kind ?? b?.maneuverKind ?? 'straight';
-          const textStabKey = sdkGuidanceStabilityKey(sdkNS);
-          const bannerDistStr = b?.primaryDistanceFormatted?.trim();
-          const storeFmt = nav.sdkNativeFormattedDistance;
-          const nativeTurnDistance: NativeFormattedDistance | null =
-            bannerDistStr
-              ? { value: bannerDistStr, unit: '' }
-              : storeFmt?.value?.trim()
-                ? { value: storeFmt.value.trim(), unit: (storeFmt.unit ?? '').trim() }
-                : null;
+          const textStabKey = sdkGuidanceStabilityKey(sdkNS, prog.nativeStepIdentity?.legIndex);
+          const fd = b?.primaryDistanceFormatted?.trim();
+          const funit = (b?.primaryDistanceFormattedUnit ?? '').trim();
+          const nativeTurnDistance: NativeFormattedDistance | null = fd
+            ? { value: fd, unit: funit }
+            : null;
           const useNativeTurnDistance = !!nativeTurnDistance?.value;
 
           return (

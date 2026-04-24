@@ -27,6 +27,7 @@ import {
 } from './navStepsFromDirections';
 import { logNavVerify } from './navLogicDebug';
 import { parseLaneIndication } from './laneIndication';
+import { nativeFormattedDistanceFromProgressPayload } from './sdkNavBridgePayload';
 
 export function roadSignalFromSdkPayload(progress: SdkProgressPayload, fallback: RoadSignal | undefined): RoadSignal {
   const n = progress.upcomingIntersectionName?.trim();
@@ -548,10 +549,12 @@ export function buildNavigationProgressFromSdk(args: {
    */
   const bannerManeuverKind =
     preferRouteStepFields && nextBaseStep?.kind ? nextBaseStep.kind : kind;
+  const nativeFd = nativeFormattedDistanceFromProgressPayload(progress);
   const banner: NavBannerModel = {
     primaryInstruction: primaryText,
     primaryDistanceMeters: distNext,
-    primaryDistanceFormatted: progress.primaryDistanceFormatted?.trim() || null,
+    primaryDistanceFormatted: nativeFd?.value ?? null,
+    primaryDistanceFormattedUnit: nativeFd?.unit && nativeFd.unit.length > 0 ? nativeFd.unit : null,
     primaryStreet: nextBaseStep?.streetName ?? ds?.name ?? null,
     secondaryInstruction: secondaryText ?? null,
     signal: signalForStep,

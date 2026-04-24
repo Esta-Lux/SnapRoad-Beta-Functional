@@ -157,6 +157,8 @@ export type NavBannerModel = {
   primaryDistanceMeters: number;
   /** When native bridge sends a pre-formatted distance string, UI should show it verbatim. */
   primaryDistanceFormatted?: string | null;
+  /** Split-form companion when native uses `formattedDistance` + `formattedDistanceUnit` (value-only in {@link primaryDistanceFormatted} on some bridges). */
+  primaryDistanceFormattedUnit?: string | null;
   primaryStreet?: string | null;
   secondaryInstruction?: string | null;
   subInstruction?: string | null;
@@ -210,4 +212,6 @@ export type NavigationProgress = {
    * not re-smooth or re-derive fraction from projected cumulative meters.
    */
   nativeFractionTraveled?: number;
+  /** Headless SDK: bridge `legIndex` + `stepIndex` for UI keys (multi-leg). */
+  nativeStepIdentity?: { legIndex: number; stepIndex: number };
 };

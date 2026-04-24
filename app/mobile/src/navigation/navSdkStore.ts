@@ -1,4 +1,9 @@
-import type { SdkNavProgressEvent, SdkNavProgressLane, SdkNavProgressShield } from './sdkNavBridgePayload';
+import {
+  nativeFormattedDistanceFromProgressPayload,
+  type SdkNavProgressEvent,
+  type SdkNavProgressLane,
+  type SdkNavProgressShield,
+} from './sdkNavBridgePayload';
 import type { NativeFormattedDistance, NativeLaneAsset, SdkCameraPayload } from './navSdkMirrorTypes';
 import { isValidSdkCameraPayload } from './navSdkMirrorTypes';
 import type { Coordinate } from '../types';
@@ -125,19 +130,23 @@ export function resetNavSdkState() {
   emit();
 }
 
+/**
+ * Never carry `prev` across a leg/step change — that kept the last maneuver’s distance on the
+ * card after the SDK advanced, and alternated with fresh `banner` strings (jitter).
+ */
 function pickNativeFormattedFromProgress(
   p: SdkProgressPayload,
   prev: NativeFormattedDistance | null,
+  prevProgress: SdkProgressPayload | null,
 ): NativeFormattedDistance | null {
-  const split = p.formattedDistance?.trim();
-  if (split) {
-    return {
-      value: split,
-      unit: (p.formattedDistanceUnit ?? '').trim(),
-    };
-  }
-  const primary = p.primaryDistanceFormatted?.trim();
-  if (primary) return { value: primary, unit: '' };
+  const fromP = nativeFormattedDistanceFromProgressPayload(p);
+  if (fromP) return fromP;
+  const si = p.stepIndex ?? 0;
+  const sj = prevProgress?.stepIndex ?? -1;
+  const li = p.legIndex ?? 0;
+  const lj = prevProgress?.legIndex ?? 0;
+  const sameStep = si === sj && li === lj;
+  if (!sameStep) return null;
   return prev;
 }
 
@@ -175,13 +184,14 @@ export function enterSdkGuidanceWaiting() {
 /** Native reroute / route refresh (`onRouteChanged`). */
 export function ingestSdkRouteChangedEvent() {
   const tel = { ...state.telemetry, routeChangedEvents: state.telemetry.routeChangedEvents + 1 };
-  state = { ...state, telemetry: tel };
+  state = { ...state, telemetry: tel, nativeFormattedDistance: null };
   emit();
 }
 
 export function ingestSdkProgress(p: SdkProgressPayload) {
   const tel = { ...state.telemetry, progressEvents: state.telemetry.progressEvents + 1 };
   const prevFmt = state.nativeFormattedDistance;
+  const prevProgress = state.progress;
   state = {
     ...state,
     progress: p,
@@ -189,7 +199,7 @@ export function ingestSdkProgress(p: SdkProgressPayload) {
     sdkGuidancePhase: 'active',
     telemetry: tel,
     nativeCameraState: p.cameraState ?? state.nativeCameraState,
-    nativeFormattedDistance: pickNativeFormattedFromProgress(p, prevFmt),
+    nativeFormattedDistance: pickNativeFormattedFromProgress(p, prevFmt, prevProgress),
     nativeLaneAssets: p.laneAssets ?? state.nativeLaneAssets,
   };
   emit();

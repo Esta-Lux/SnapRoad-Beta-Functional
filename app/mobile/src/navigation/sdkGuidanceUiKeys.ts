@@ -1,17 +1,19 @@
 import type { NavStep } from './navModel';
 
 /**
- * Stable key for `useStableText` + maneuver-distance hold on headless-SDK sessions.
+ * Stable key for `useStableText` + turn-card step identity on headless-SDK sessions.
  *
  * **Do not** fold in `banner.primaryInstruction` or any native display string. The bridge
  * can re-emit the same step with small wording, whitespace, or field-source changes
- * every progress tick. Including those strings in the key resets the 960ms text dwell
- * and distance smoother on every frame → turn card + strip flicker, repeated “depart”
- * phrasing, and fighting native TTS.
+ * every progress tick. Including those strings in the key resets dwell logic every frame.
  *
- * The route step `index` advancing (or a true maneuver identity change) is the right
- * moment to reset; that is a new guidance moment.
+ * Include **leg** + **step** so a new leg (step index can restart at 0) does not look like
+ * the same maneuver; that mismatch caused “late” card updates vs native.
  */
-export function sdkGuidanceStabilityKey(next: NavStep | null | undefined): string {
-  return `sdk|${next?.index ?? 0}`;
+export function sdkGuidanceStabilityKey(
+  next: NavStep | null | undefined,
+  legIndex?: number | null,
+): string {
+  const leg = legIndex ?? 0;
+  return `sdk|leg:${leg}|step:${next?.index ?? 0}`;
 }

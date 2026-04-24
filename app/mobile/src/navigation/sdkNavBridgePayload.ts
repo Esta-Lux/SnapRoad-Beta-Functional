@@ -3,9 +3,29 @@
  * Keep in sync with Swift `navProgressPayload` / Kotlin `navProgressPayload`.
  */
 
-import type { NativeLaneAsset, SdkCameraPayload } from './navSdkMirrorTypes';
+import type { NativeLaneAsset, NativeFormattedDistance, SdkCameraPayload } from './navSdkMirrorTypes';
 
 export type { NativeLaneAsset, NativeFormattedDistance, SdkCameraPayload, SdkCameraPadding } from './navSdkMirrorTypes';
+
+/**
+ * One parser for turn-card distance: matches native iOS/Kotlin `navProgressPayload` priority
+ * (`formattedDistance`+unit, then `primaryDistanceFormatted`) so the minimal adapter, store,
+ * and UI never disagree on which field to show.
+ */
+export function nativeFormattedDistanceFromProgressPayload(
+  p: Pick<
+    SdkNavProgressEvent,
+    'formattedDistance' | 'formattedDistanceUnit' | 'primaryDistanceFormatted'
+  >,
+): NativeFormattedDistance | null {
+  const split = p.formattedDistance?.trim();
+  if (split) {
+    return { value: split, unit: (p.formattedDistanceUnit ?? '').trim() };
+  }
+  const primary = p.primaryDistanceFormatted?.trim();
+  if (primary) return { value: primary, unit: '' };
+  return null;
+}
 
 export type SdkNavProgressLane = {
   indications: string[];
