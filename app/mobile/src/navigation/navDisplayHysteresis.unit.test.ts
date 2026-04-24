@@ -13,8 +13,10 @@ import {
   SPEED_MPH_DELTA,
   TEXT_STABLE_MS,
   resolveStableArrival,
+  resolveStableManeuverDisplayMeters,
   resolveStableSpeedMph,
   resolveStableText,
+  type ManeuverDisplayMetersState,
   type StableTextState,
 } from './navDisplayHysteresis';
 
@@ -194,4 +196,54 @@ test('text: rapid flip A→B→A within TEXT_STABLE_MS stays on A', () => {
   s = resolveStableText(s, 'B', 'k0', 1060); // pending B again
   s = resolveStableText(s, 'A', 'k0', 1100); // back to A
   assert.equal(s.displayed, 'A', 'flicker must not cross the 120 ms gate');
+});
+
+test('text: custom dwellMs delays commit longer than default', () => {
+  const custom = 500;
+  const prev: StableTextState = {
+    displayed: 'Turn left',
+    pending: 'Keep left',
+    pendingSince: 1000,
+    resetKey: 'k0',
+  };
+  const at150 = resolveStableText(prev, 'Keep left', 'k0', 1000 + 150, custom);
+  assert.equal(at150.displayed, 'Turn left', '150ms is not enough for 500ms dwell');
+  const at600 = resolveStableText(prev, 'Keep left', 'k0', 1000 + 600, custom);
+  assert.equal(at600.displayed, 'Keep left');
+  assert.equal(at600.pending, null);
+});
+
+// ─── Native maneuver distance (crawl) ───────────────────────────────────────
+
+test('maneuver dist: key change seeds raw', () => {
+  const a = resolveStableManeuverDisplayMeters(null, 37, 0, '0|L', 3.2);
+  assert.equal(a.displayed, 37);
+});
+
+test('maneuver dist: crawl 37↔40 buckets to 6m grid with hold', () => {
+  let s: ManeuverDisplayMetersState | null = null;
+  s = resolveStableManeuverDisplayMeters(s, 37, 0, '0|L', 3.2);
+  assert.equal(s.displayed, 37);
+  const t1 = resolveStableManeuverDisplayMeters(s, 40, 100, '0|L', 3.2);
+  assert.equal(t1.displayed, 37, 'within hold window, ignore bounce');
+  const t2 = resolveStableManeuverDisplayMeters(s, 40, 900, '0|L', 3.2);
+  assert.equal(t2.displayed, 42);
+});
+
+test('maneuver dist: monotonic approach commits without full hold', () => {
+  let s: ManeuverDisplayMetersState | null = null;
+  s = resolveStableManeuverDisplayMeters(s, 30, 0, '0|L', 2);
+  const down = resolveStableManeuverDisplayMeters(s, 19, 300, '0|L', 2);
+  assert.equal(down.displayed, 18);
+});
+
+test('maneuver dist: crawl 45/47/48 share one 6m bucket', () => {
+  const mph = 2.1;
+  let s: ManeuverDisplayMetersState | null = null;
+  s = resolveStableManeuverDisplayMeters(s, 45, 0, '0|L', mph);
+  assert.equal(s.displayed, 45);
+  s = resolveStableManeuverDisplayMeters(s, 47, 0, '0|L', mph);
+  assert.equal(s.displayed, 45);
+  s = resolveStableManeuverDisplayMeters(s, 48, 800, '0|L', mph);
+  assert.equal(s.displayed, 48);
 });

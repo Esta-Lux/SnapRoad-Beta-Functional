@@ -48,7 +48,7 @@ type Props = {
 const PREDICTIVE_MS = 0;
 const STOPPED_THRESHOLD_MPS = 0.5;
 const ACCURACY_RING_THRESHOLD_M = 15;
-const ROTATION_EASE_MS = 220;
+const ROTATION_EASE_MS = 300;
 
 function shortestAngleDelta(from: number, to: number): number {
   const diff = ((to - from + 540) % 360) - 180;
@@ -193,7 +193,8 @@ function NavSdkPuckImpl({
   );
 
   const positionEaseEnabled = !mirrorNativePosition;
-  const smoothCoord = useSmoothCoordinate(lat, lng, moving ? 320 : 400, positionEaseEnabled);
+  /** Slightly longer τ than a raw 6–7 Hz matcher so the puck glides between fixes without lagging far behind. */
+  const smoothCoord = useSmoothCoordinate(lat, lng, moving ? 480 : 560, positionEaseEnabled);
   const { lat: puckLat, lng: puckLng } = React.useMemo(() => {
     const baseLat = mirrorNativePosition ? lat : smoothCoord.lat;
     const baseLng = mirrorNativePosition ? lng : smoothCoord.lng;

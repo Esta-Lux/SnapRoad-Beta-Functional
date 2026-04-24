@@ -63,8 +63,9 @@ export function navNativeSdkEnabled(): boolean {
  * Mapbox Navigation, not Expo Go.
  *
  * Turn-by-turn **card** copy on the RN map: when `NavigationProgress.instructionSource === 'sdk'`,
- * `MapScreen` uses **only** native banner / `sdkNativeFormattedDistance` / lane assets — not the
- * JS `instructionSource === 'js'` path (cruise/confirm, REST merge, `formatTurnDistanceForCard`).
+ * `MapScreen` + `TurnInstructionCard` with `navSdkDrivesContent`: native banner, NavStep, lanes,
+ * shields, distance meters → imperial formatting only; no REST / merged DirectionsStep or
+ * `NAV_LANE_UI` full JS lane row on SDK trips. JS pipeline remains `instructionSource === 'js'`.
  */
 export function navLogicSdkEnabled(): boolean {
   return envBool('EXPO_PUBLIC_NAV_LOGIC_SDK', true);

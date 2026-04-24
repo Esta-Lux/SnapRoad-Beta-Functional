@@ -102,7 +102,7 @@ import { getPrimaryBannerText, isActionableGuidanceStep, mergeLaneSources, pickG
 import { isLiveShareFresh } from '../lib/friendPresence';
 import type { Coordinate, MapFocusFriendParams, NavigateToFriendParams } from '../types';
 import {
-  formatTurnDistanceForCard,
+  formatImperialManeuverDistance,
   resolveTurnCardState,
   buildActivePrimary,
   buildPreviewPrimarySecondary,
@@ -114,6 +114,7 @@ import {
   resolveManeuverFieldsForTurnCard,
   shouldShowRoadDisambiguation,
 } from '../navigation/turnCardModel';
+import { useSdkManeuverDistanceForTurnCard } from '../navigation/useSdkManeuverDistanceForTurnCard';
 import { useTurnConfirmationUntil } from '../hooks/useTurnConfirmationWindow';
 import { useMapWeather, weatherOverlayFactor } from '../hooks/useMapWeather';
 import MapWeatherOverlay from '../components/map/MapWeatherOverlay';
@@ -495,8 +496,6 @@ export default function MapScreen() {
 
   const navLogicRef = useRef<MapboxNavigationViewRef | null>(null);
   const [navLogicCoords, setNavLogicCoords] = useState<Array<{ latitude: number; longitude: number }>>([]);
-  const navLogicFollowingZoom = useMemo(() => getNativeHeadlessFollowingZoom(drivingMode), [drivingMode]);
-  const navLogicFollowingPitch = useMemo(() => getNativeHeadlessFollowingPitch(drivingMode), [drivingMode]);
 
   /**
    * `navLogicCoords` is the `coordinates` prop on the hidden
@@ -940,6 +939,12 @@ export default function MapScreen() {
     speed,
   ]);
 
+  const sdkManeuverDistParts = useSdkManeuverDistanceForTurnCard(
+    Boolean(nav.isNavigating && nav.navigationProgress?.instructionSource === 'sdk'),
+    nav.navigationProgress,
+    displaySpeedMph,
+  );
+
   /**
    * LocationPuck beam: with CustomLocationProvider we pass a single `heading` — native `course` mode
    * reads GPS COG and fights that value. Use `heading` whenever custom coords are injected.
@@ -1043,6 +1048,24 @@ export default function MapScreen() {
     navDisplayCoord.lat,
     navDisplayCoord.lng,
   ]);
+
+  const headlessNavSpeedMps = useMemo(
+    () =>
+      nav.isNavigating && fusedSpeedMpsNav != null && Number.isFinite(fusedSpeedMpsNav)
+        ? fusedSpeedMpsNav
+        : Math.max(0, speed * 0.44704),
+    [nav.isNavigating, fusedSpeedMpsNav, speed],
+  );
+  const navLogicFollowingZoom = useMemo(
+    () =>
+      getNativeHeadlessFollowingZoom(drivingMode, headlessNavSpeedMps, nextManeuverDistanceMeters),
+    [drivingMode, headlessNavSpeedMps, nextManeuverDistanceMeters],
+  );
+  const navLogicFollowingPitch = useMemo(
+    () =>
+      getNativeHeadlessFollowingPitch(drivingMode, headlessNavSpeedMps, nextManeuverDistanceMeters),
+    [drivingMode, headlessNavSpeedMps, nextManeuverDistanceMeters],
+  );
 
   /**
    * Follow-camera anchor: slightly ahead of the puck along course (CustomLocationProvider only).
@@ -1376,15 +1399,15 @@ export default function MapScreen() {
   const activeStyleURL = MAP_STYLES[mapStyleIndex]?.url ?? MAP_STYLES[0].url;
   const mapStylePickerHighlightIndex = mapStyleIndex;
 
-  /** Calm→dawn, Adaptive→day, Sport→dusk; app dark theme → night (Mapbox Standard basemap). */
+  /** Calm/Adaptive: time-of-day preset; Sport: always `night` on Standard in light app theme; dark app → night. */
   const mapLightPreset = useMemo(
-    () => getDrivingLightPreset(drivingMode, isLight),
+    () => getDrivingLightPreset(drivingMode, isLight, { sportBasemapAlwaysDark: true }),
     [drivingMode, isLight],
   );
   const isSatelliteStyle = activeStyleURL.includes('standard-satellite');
   const navRouteColors = useMemo(
-    () => effectiveNavRouteColors(modeConfig, mapLightPreset, isSatelliteStyle, drivingMode),
-    [modeConfig, mapLightPreset, isSatelliteStyle, drivingMode],
+    () => effectiveNavRouteColors(modeConfig, mapLightPreset, isSatelliteStyle, drivingMode, { speedMphForRoute: displaySpeedMph }),
+    [modeConfig, mapLightPreset, isSatelliteStyle, drivingMode, displaySpeedMph],
   );
   const standardStyleImportsEnabled = usesStandardStyleConfiguration(activeStyleURL);
 
@@ -4070,6 +4093,8 @@ export default function MapScreen() {
                 distanceUnit=""
                 primaryInstruction={prog.banner?.primaryInstruction ?? 'Acquiring route…'}
                 secondaryInstruction={undefined}
+                navSdkDrivesContent
+                textStabilityKey="sdk-waiting"
                 maneuverForIcon="straight"
                 maneuverKind="straight"
                 isMuted={navVoiceMuted}
@@ -4090,23 +4115,22 @@ export default function MapScreen() {
         }
 
         /**
-         * Mapbox Navigation SDK (headless) progress: turn card is **only** from native
-         * banner / NavStep and `sdkNativeFormattedDistance` / `sdkNativeLaneAssets` — no JS
-         * `formatTurnDistanceForCard`, no REST `DirectionsStep`, disambig, or chain line merge.
+         * Headless Navigation SDK: all maneuver copy, road names, shields, signal, and lane data
+         * from native `NavigationProgress` / `NavStep`. Imperial distance is **formatting** only
+         * from native meters (same as CarPlay) — not REST or bridge locale distance strings.
+         * `TurnInstructionCard`’s `navSdkDrivesContent` strips REST/JS fallbacks.
          */
         if (instructionSrc === 'sdk') {
           const b = prog.banner ?? null;
           const sdkNS = prog.nextStep;
-          const nat = nav.sdkNativeFormattedDistance;
-          const hasNativeDist =
-            nat != null && typeof nat.value === 'string' && String(nat.value).trim() !== '';
-          const distParts = hasNativeDist ? { value: '', unit: '' } : { value: '—', unit: '' };
-          const primary =
+          const distParts = sdkManeuverDistParts;
+          const rawPrimary =
             b?.primaryInstruction?.trim() ||
             sdkNS?.displayInstruction?.trim() ||
             sdkNS?.instruction?.trim() ||
             '';
-          const secondary = b?.secondaryInstruction?.trim() || undefined;
+          const primary = rawPrimary.replace(/\s+/g, ' ').trim();
+          const secondary = b?.secondaryInstruction?.replace(/\s+/g, ' ').trim() || undefined;
           const maneuverIconKey =
             sdkNS?.kind === 'unknown' || sdkNS?.kind == null
               ? 'straight'
@@ -4125,8 +4149,9 @@ export default function MapScreen() {
                 primaryInstruction={primary}
                 secondaryInstruction={secondary}
                 textStabilityKey={textStabKey}
-                nativeFormattedDistance={nav.sdkNativeFormattedDistance}
-                isNativeMirror={hasNativeDist}
+                navSdkDrivesContent
+                nativeFormattedDistance={undefined}
+                isNativeMirror={false}
                 nativeLaneAssets={nav.sdkNativeLaneAssets}
                 maneuverForIcon={maneuverIconKey}
                 maneuverKind={manKind}
@@ -4216,17 +4241,8 @@ export default function MapScreen() {
         /**
          * Turn-card distance presentation.
          *
-         * `formatTurnDistanceForCard` buckets sub-300 ft values in 10 ft
-         * increments with a floor of 10 — so when `liveDistMeters` is 0 (no
-         * actual maneuver pending, e.g. mid-cruise on a long road segment)
-         * the card used to render "10 FT" paired with a straight-arrow icon,
-         * giving drivers the impression of a false imminent turn.
-         *
-         * At cruise state with no actionable upcoming maneuver (or when the
-         * distance is non-finite / nonsensical), fall through to the same
-         * "—" placeholder the waiting card uses. `preview` / `active` /
-         * `confirm` keep the real bucketed distance because that's when
-         * drivers genuinely need the countdown.
+         * @see formatImperialManeuverDistance — at cruise with no real maneuver, use "—" so
+         * we never show a false countdown; otherwise meters → mi/ft/Now.
          */
         const hasActionableMeters =
           Number.isFinite(liveDistMeters) &&
@@ -4235,7 +4251,7 @@ export default function MapScreen() {
           nextManeuverCoord.maneuver !== 'depart';
         const distPartsBase = (() => {
           if (cardState === 'cruise' && !hasActionableMeters) return { value: '—', unit: '' };
-          return formatTurnDistanceForCard(liveDistMeters);
+          return formatImperialManeuverDistance(liveDistMeters, { speedMphForNow: displaySpeedMph });
         })();
         const destinationName = nav.navigationData?.destination?.name ?? null;
 

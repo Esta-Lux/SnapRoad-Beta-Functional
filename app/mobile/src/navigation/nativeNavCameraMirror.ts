@@ -7,26 +7,45 @@
  */
 
 import type { DrivingMode } from '../types';
-import { DRIVING_MODES } from '../constants/modes';
 import type { CameraSettings } from '../hooks/useCameraController';
 import { getCameraPreset } from './cameraPresets';
 
-/** Same values passed to `MapboxNavigationView` `followingZoom` on MapScreen. */
-export function getNativeHeadlessFollowingZoom(mode: DrivingMode): number {
-  switch (mode) {
-    case 'calm':
-      return 16.5;
-    case 'sport':
-      return 17.5;
-    default:
-      return 17.0;
-  }
+/**
+ * Hidden `MapboxNavigationView` following zoom — aligned with
+ * {@link getCameraPreset} (speed + next maneuver) so native logic session
+ * matches RN `setCamera` framing.
+ */
+export function getNativeHeadlessFollowingZoom(
+  mode: DrivingMode,
+  speedMps: number = 0,
+  nextManeuverDistanceMeters: number = 400,
+): number {
+  const z = getCameraPreset({
+    mode,
+    speedMps,
+    nextManeuverDistanceMeters,
+    safeAreaTop: 0,
+    safeAreaBottom: 0,
+    accelerationMps2: 0,
+  }).zoom;
+  return Math.round(z * 4) / 4;
 }
 
-/** Same formula as full-screen {@link NativeNavigationScreen} (`navPitch + 6`, cap 76). */
-export function getNativeHeadlessFollowingPitch(mode: DrivingMode): number {
-  const navPitch = DRIVING_MODES[mode].navPitch;
-  return Math.min(76, navPitch + 6);
+export function getNativeHeadlessFollowingPitch(
+  mode: DrivingMode,
+  speedMps: number = 0,
+  nextManeuverDistanceMeters: number = 400,
+): number {
+  return Math.round(
+    getCameraPreset({
+      mode,
+      speedMps,
+      nextManeuverDistanceMeters,
+      safeAreaTop: 0,
+      safeAreaBottom: 0,
+      accelerationMps2: 0,
+    }).pitch,
+  );
 }
 
 /**
@@ -45,8 +64,8 @@ export function buildNativeSdkMirrorCameraSettings(
     safeAreaTop,
     safeAreaBottom,
   });
-  const zoom = getNativeHeadlessFollowingZoom(mode);
-  const pitch = getNativeHeadlessFollowingPitch(mode);
+  const zoom = getNativeHeadlessFollowingZoom(mode, 0, 400);
+  const pitch = getNativeHeadlessFollowingPitch(mode, 0, 400);
   return {
     followZoomLevel: Math.round(zoom * 4) / 4,
     followPitch: Math.round(pitch),

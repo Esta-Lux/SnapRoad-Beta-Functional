@@ -86,6 +86,14 @@ export function resolveStableSpeedMph(
 /** Minimum dwell for the turn card primary / secondary text to commit. */
 export const TEXT_STABLE_MS = 120;
 
+/**
+ * When `useStableText` runs under headless `navSdkDrivesContent`, the native SDK
+ * can emit tiny single-frame diffs. A longer hold (~1s) matches bumper-to-bumper
+ * driving better than the default 120ms without feeling mushy on real step
+ * changes (those reset the key and flush immediately).
+ */
+export const TURN_TEXT_STABLE_SDK_MS = 960;
+
 export type StableTextState = {
   displayed: string;
   pending: string | null;
@@ -103,7 +111,7 @@ export type StableTextState = {
  *   - Same `incoming` as displayed → cancel pending.
  *   - Different non-empty `incoming` with no prior displayed → commit.
  *   - New candidate → start or refresh a pending window; commit after
- *     {@link TEXT_STABLE_MS} of dwell.
+ *     {@code dwellMs} of dwell.
  *
  * Mirrors the behaviour of `useStableText` in `TurnInstructionCard` so the
  * hook is a thin wrapper over this pure core.
@@ -113,6 +121,7 @@ export function resolveStableText(
   incomingRaw: string | null | undefined,
   resetKey: string | number,
   nowMs: number,
+  dwellMs: number = TEXT_STABLE_MS,
 ): StableTextState {
   const incoming = (incomingRaw ?? '').trim();
 
@@ -137,7 +146,7 @@ export function resolveStableText(
     return { displayed: incoming, pending: null, pendingSince: 0, resetKey };
   }
   if (prev.pending === incoming) {
-    if (nowMs - prev.pendingSince >= TEXT_STABLE_MS) {
+    if (nowMs - prev.pendingSince >= dwellMs) {
       return { displayed: incoming, pending: null, pendingSince: 0, resetKey };
     }
     return prev;
@@ -148,4 +157,72 @@ export function resolveStableText(
     pendingSince: nowMs,
     resetKey,
   };
+}
+
+// ── Turn card: native SDK distance smoothing (0–5 mph bounce) ──────────────
+
+const MANEUVER_DIST_LOW_SPD_MPH = 5.5;
+/** Last ~100 ft: 3 m steps; then 6 m; then 10 m (stops 45↔52 m GPS bounce in a jam). */
+function crawlDisplayBucketMeters(rawM: number): number {
+  if (rawM < 20) {
+    return Math.round(rawM / 3) * 3;
+  }
+  if (rawM < 55) {
+    return Math.round(rawM / 6) * 6;
+  }
+  return Math.round(rawM / 10) * 10;
+}
+const MANEUVER_DIST_CRAWL_HOLD_MS = 750;
+const MANEUVER_DIST_CRAWL_INSTANT_M = 28;
+const MANEUVER_DIST_CRUISE_EMA = 0.4;
+const MANEUVER_DIST_CRUISE_EPS_M = 1.0;
+
+export type ManeuverDisplayMetersState = {
+  displayed: number;
+  lastCommitAt: number;
+  stepKey: string;
+};
+
+/**
+ * Dampen {@code primaryDistanceMeters} noise before {@link formatImperialManeuverDistance}:
+ * at crawl, bucket in 5m steps and time-gate; at speed, a light EMA + epsilon gate.
+ * Large jumps (reroute) commit immediately. Step key change resets the snapshot.
+ */
+export function resolveStableManeuverDisplayMeters(
+  prev: ManeuverDisplayMetersState | null,
+  rawM: number,
+  nowMs: number,
+  stepKey: string,
+  speedMph: number,
+): ManeuverDisplayMetersState {
+  if (!Number.isFinite(rawM) || rawM < 0) {
+    return prev ?? { displayed: 0, lastCommitAt: nowMs, stepKey };
+  }
+  if (!prev || stepKey !== prev.stepKey) {
+    return { displayed: rawM, lastCommitAt: nowMs, stepKey };
+  }
+  if (Math.abs(rawM - prev.displayed) > MANEUVER_DIST_CRAWL_INSTANT_M) {
+    return { displayed: rawM, lastCommitAt: nowMs, stepKey };
+  }
+
+  if (speedMph < MANEUVER_DIST_LOW_SPD_MPH) {
+    const b = crawlDisplayBucketMeters(rawM);
+    if (Math.abs(b - prev.displayed) < 0.1) {
+      return prev;
+    }
+    // Monotonic close-in: do not add a 750ms lag while actually approaching the maneuver.
+    if (b < prev.displayed - 0.1 && nowMs - prev.lastCommitAt >= 220) {
+      return { displayed: b, lastCommitAt: nowMs, stepKey };
+    }
+    if (nowMs - prev.lastCommitAt < MANEUVER_DIST_CRAWL_HOLD_MS) {
+      return prev;
+    }
+    return { displayed: b, lastCommitAt: nowMs, stepKey };
+  }
+
+  const blended = prev.displayed * (1 - MANEUVER_DIST_CRUISE_EMA) + rawM * MANEUVER_DIST_CRUISE_EMA;
+  if (Math.abs(blended - prev.displayed) < MANEUVER_DIST_CRUISE_EPS_M) {
+    return prev;
+  }
+  return { displayed: blended, lastCommitAt: nowMs, stepKey };
 }
