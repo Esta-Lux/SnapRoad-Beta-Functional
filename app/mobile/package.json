@@ -90,6 +90,7 @@
     "follow-redirects": "^1.15.12",
     "@xmldom/xmldom": "0.8.13",
     "uuid": "^14.0.0",
+    "postcss": "^8.5.10",
     "@react-native-voice/voice": {
       "@expo/config-plugins": "54.0.4"
     }

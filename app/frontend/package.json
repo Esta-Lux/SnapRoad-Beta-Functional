@@ -76,7 +76,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "globals": "^17.3.0",
     "jsdom": "^26.0.0",
-    "postcss": "^8.4.33",
+    "postcss": "^8.5.10",
     "rollup-plugin-visualizer": "^7.0.1",
     "tailwindcss": "^3.4.1",
     "typescript-eslint": "^8.56.0",
@@ -86,6 +86,7 @@
   "overrides": {
     "follow-redirects": "^1.15.12",
     "@xmldom/xmldom": "0.8.13",
+    "postcss": "^8.5.10",
     "protocol-buffers-schema": "^3.6.1"
   }
 }
