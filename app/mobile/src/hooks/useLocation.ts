@@ -181,6 +181,8 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
   });
 
   const watchRef = useRef<Location.LocationSubscription | null>(null);
+  /** First `watchPositionAsync` sample — skip applying slower "quick seed" if watch already fired. */
+  const watchDeliveredRef = useRef(false);
   const headingSubRef = useRef<Location.LocationSubscription | null>(null);
   const smoothedRef = useRef(0);
   const hasHeadingRef = useRef(false);
@@ -233,15 +235,16 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
       } catch { /* foreground-only nav */ }
     }
 
-    try {
-      const coarse = await Location.getCurrentPositionAsync({
-        /* Highest = faster meaningful fix on cold open; Balanced can linger on stale cells cache. */
-        accuracy: isNavigating
-          ? Location.Accuracy.BestForNavigation
-          : Location.Accuracy.Highest,
-      });
-      const lat = coarse.coords.latitude;
-      const lng = coarse.coords.longitude;
+    watchDeliveredRef.current = false;
+
+    const applyQuickSeed = (
+      lat: number,
+      lng: number,
+      acc: number | null | undefined,
+      speedMph: number,
+    ) => {
+      if (watchDeliveredRef.current) return;
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
       persistCachedLocation(lat, lng);
       const initCoord = { lat, lng };
       positionBlendRef.current = initCoord;
@@ -250,11 +253,34 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
       setState((prev) => ({
         ...prev,
         location: initCoord,
-        speed: Math.max(0, (coarse.coords.speed ?? 0) * 2.237),
-        accuracy: coarse.coords.accuracy ?? null,
+        speed: speedMph,
+        accuracy: acc ?? null,
         isLocating: false,
       }));
-    } catch {}
+    };
+
+    /**
+     * Cold open: do **not** block `watchPositionAsync` on `Highest` — that often waits several
+     * seconds while the map shows 0,0 or stale cache. Balanced usually returns within ~1s; the
+     * watch stream then refines with BestForNavigation/Highest.
+     */
+    void (async () => {
+      try {
+        const fix = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        const lat = fix.coords.latitude;
+        const lng = fix.coords.longitude;
+        applyQuickSeed(
+          lat,
+          lng,
+          fix.coords.accuracy,
+          Math.max(0, (fix.coords.speed ?? 0) * 2.237),
+        );
+      } catch {
+        /* seed optional */
+      }
+    })();
 
     const accuracy = isNavigating
       ? Location.Accuracy.BestForNavigation
@@ -272,6 +298,7 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
         }),
       },
       (loc) => {
+        watchDeliveredRef.current = true;
         const lat = loc.coords.latitude;
         const lng = loc.coords.longitude;
         const acc = loc.coords.accuracy;

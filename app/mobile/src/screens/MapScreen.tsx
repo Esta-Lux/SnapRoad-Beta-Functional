@@ -1103,11 +1103,10 @@ export default function MapScreen() {
   );
 
   /**
-   * Follow-camera anchor: slightly ahead of the puck along course (CustomLocationProvider only).
-   * Disabled for native pass-through — JS must not offset the camera from the matched fix.
+   * Follow-camera anchor: slightly ahead of the puck along course (`CustomLocationProvider`).
+   * RN `Camera` is always JS-led; native Navigation SDK still owns reroute + matcher + voice.
    */
   const cameraLeadCoord = useMemo(() => {
-    if (isNativeSdkPassThrough) return null;
     if (!nav.isNavigating || !Number.isFinite(navDisplayCoord.lat) || !Number.isFinite(navDisplayCoord.lng)) {
       return null;
     }
@@ -1127,7 +1126,6 @@ export default function MapScreen() {
     navDisplayCoord.lng,
     navPuckHeading,
     heading,
-    isNativeSdkPassThrough,
   ]);
 
   const camCtrlForNav = useCameraController({
@@ -1139,8 +1137,9 @@ export default function MapScreen() {
     nextManeuverDistanceMeters,
     safeAreaTop: insets.top,
     safeAreaBottom: insets.bottom,
-    nativeCameraState: nav.sdkNativeCameraState,
-    isNativeMirror: isNativeSdkPassThrough,
+    /** Native camera mirror fights JS `setCamera` follow; keep matcher/reroute native, framing RN-only. */
+    nativeCameraState: null,
+    isNativeMirror: false,
   });
 
   const userInteracting = useRef(false);
@@ -1171,70 +1170,14 @@ export default function MapScreen() {
 
   const camCtrlRef = useRef(camCtrlForNav);
   camCtrlRef.current = camCtrlForNav;
-  /** Headless + no native mirror payload: avoid setCamera on every matched-location tick (still 1×/frame via store coalesce). */
-  const lastHeadlessJsFollowCamAtRef = useRef(0);
-
-  const nativeCameraMirror =
-    isNativeSdkPassThrough &&
-    camCtrlForNav?.useNativeCenter &&
-    camCtrlForNav?.centerCoordinate != null;
-  /**
-   * Native `SdkCameraPayload` mirror: one driver — re-run `setCamera` only when the native
-   * payload changes, not on every `navDisplayCoord` / heading tick (avoids double authority).
-   */
-  useEffect(() => {
-    if (!nav.isNavigating || !cameraLocked || !camCtrlForNav) return;
-    if (!nativeCameraMirror) return;
-    const cam = cameraRef.current;
-    if (!cam?.setCamera) return;
-    const c = camCtrlForNav;
-    if (!c.centerCoordinate) return;
-    const h =
-      c.headingDeg != null && Number.isFinite(c.headingDeg) ? c.headingDeg : undefined;
-    const pad = c.followPadding;
-    cam.setCamera({
-      centerCoordinate: [c.centerCoordinate.lng, c.centerCoordinate.lat],
-      zoomLevel: c.followZoomLevel,
-      pitch: c.followPitch,
-      heading: h,
-      padding: {
-        paddingTop: pad.paddingTop,
-        paddingBottom: pad.paddingBottom,
-        paddingLeft: pad.paddingLeft,
-        paddingRight: pad.paddingRight,
-      },
-      animationMode: 'easeTo',
-      animationDuration: c.animationDuration,
-    });
-  }, [
-    nav.isNavigating,
-    cameraLocked,
-    nativeCameraMirror,
-    camCtrlForNav?.followZoomLevel,
-    camCtrlForNav?.followPitch,
-    camCtrlForNav?.followPadding?.paddingTop,
-    camCtrlForNav?.followPadding?.paddingBottom,
-    camCtrlForNav?.followPadding?.paddingLeft,
-    camCtrlForNav?.followPadding?.paddingRight,
-    camCtrlForNav?.animationDuration,
-    camCtrlForNav?.centerCoordinate?.lat,
-    camCtrlForNav?.centerCoordinate?.lng,
-    camCtrlForNav?.headingDeg,
-  ]);
   /**
    * While navigating, `followUserLocation` uses Mapbox's internal GPS — not
    * `CustomLocationProvider` — which fights the snapped puck (camera feels offset).
-   * With follow off, drive zoom/pitch/padding from `camCtrlForNav` (headless fallbacks
-   * or JS `useCameraController` when not mirroring a native `SdkCameraPayload`).
+   * JS `useCameraController` + puck/lookahead anchor drive `setCamera`; native SDK keeps
+   * reroute, matcher, and voice.
    */
   useEffect(() => {
     if (!nav.isNavigating || !cameraLocked || !camCtrlForNav) return;
-    if (nativeCameraMirror) return;
-    if (isNativeSdkPassThrough) {
-      const now = Date.now();
-      if (now - lastHeadlessJsFollowCamAtRef.current < 90) return;
-      lastHeadlessJsFollowCamAtRef.current = now;
-    }
     const cam = cameraRef.current;
     if (!cam?.setCamera) return;
     const c = camCtrlForNav;
@@ -1259,7 +1202,6 @@ export default function MapScreen() {
   }, [
     nav.isNavigating,
     cameraLocked,
-    nativeCameraMirror,
     camCtrlForNav?.followZoomLevel,
     camCtrlForNav?.followPitch,
     camCtrlForNav?.followPadding?.paddingTop,
@@ -1273,7 +1215,6 @@ export default function MapScreen() {
     heading,
     cameraLeadCoord?.lat,
     cameraLeadCoord?.lng,
-    isNativeSdkPassThrough,
   ]);
 
   // ── Reports ──
@@ -4166,11 +4107,11 @@ export default function MapScreen() {
 
         if (instructionSrc === 'sdk_waiting') {
           return (
-            <View style={[s.turnWrap, { top: insets.top }]} key="nav-sdk-waiting">
+            <View style={[s.turnWrap, { top: insets.top }]} key="nav-turn-hybrid">
               <TurnInstructionCard
                 mode={drivingMode}
                 modeConfig={modeConfig}
-                state="preview"
+                state="active"
                 distanceValue="—"
                 distanceUnit=""
                 primaryInstruction={prog.banner?.primaryInstruction ?? 'Acquiring route…'}
@@ -4253,7 +4194,7 @@ export default function MapScreen() {
           })();
 
           return (
-            <View style={[s.turnWrap, { top: insets.top }]} key="turn-card-sdk-native">
+            <View style={[s.turnWrap, { top: insets.top }]} key="nav-turn-hybrid">
               <TurnInstructionCard
                 mode={drivingMode}
                 modeConfig={modeConfig}
