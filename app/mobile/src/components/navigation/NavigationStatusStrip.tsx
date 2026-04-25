@@ -292,6 +292,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     paddingHorizontal: 4,
   },
+  /** Detached from map at bottom: top edge and upward shadow (negative Y) “face” the map; content reads toward the driver. */
   strip: {
     borderTopWidth: StyleSheet.hairlineWidth * 2,
     borderTopLeftRadius: 14,

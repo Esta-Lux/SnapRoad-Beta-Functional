@@ -15,6 +15,8 @@ import Svg, { Path, G } from 'react-native-svg';
 import type { LaneInfo, LaneIndication } from '../../navigation/navModel';
 import type { NativeLaneAsset } from '../../navigation/navSdkMirrorTypes';
 import { primaryLaneGlyph } from '../../navigation/laneIndication';
+import { LANE_SVG_STRAIGHT } from '../../navigation/laneSvgPaths';
+import { NATIVE_LANE_BITMAP_ROTATE } from '../../navigation/laneHudOrientation';
 
 interface Props {
   lanes: LaneInfo[];
@@ -28,22 +30,14 @@ const VB = 14;
 const VB_CENTER = VB / 2;
 
 /**
- * If lane glyphs render upside-down on a device, set to `180` (rotate around viewBox center).
- * Default `0`: straight path tip is at the top of the viewBox (“ahead” = up on the card).
+ * SVG rotation (viewBox). Default `0`: straight path tip is at the top (“ahead” = up toward the
+ * top-stacked turn card). Native bitmap rotation: `laneHudOrientation` (iOS / Android can differ).
  */
 const LANE_GLYPH_ROTATION_FIX_DEG = 0;
 
-/**
- * Native lane PNGs from the Navigation SDK are authored for map / viewport coordinates; on the
- * turn card “ahead” is toward the **top** of the screen (same as the route view). A 180° fix
- * aligns bitmap lanes with SVG lanes and driving intuition.
- */
-const NATIVE_LANE_BITMAP_ROTATE_DEG = '180deg';
-
 /** Filled arrow paths (Mapbox-style lane indications), 0–14 space. */
 const ARROW_PATHS: Record<LaneIndication, string> = {
-  straight:
-    'M6 2v8l-2.5-2.5L2 9l5 5 5-5-1.5-1.5L8 10V2H6z',
+  straight: LANE_SVG_STRAIGHT,
   left: 'M2 7l5-5v3h5v4H7v3L2 7z',
   slight_left: 'M3 4l4-2v2.5l4 3v4l-4-3V11L3 4z',
   right: 'M12 7l-5-5v3H2v4h5v3l5-5z',
@@ -116,7 +110,7 @@ function LaneNativeBitmap({
           width: w,
           height: h,
           opacity,
-          transform: [{ rotate: NATIVE_LANE_BITMAP_ROTATE_DEG }],
+          transform: [{ rotate: NATIVE_LANE_BITMAP_ROTATE }],
         }}
         resizeMode="contain"
       />

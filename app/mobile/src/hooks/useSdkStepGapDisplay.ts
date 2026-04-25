@@ -1,5 +1,11 @@
 import { useMemo, useRef } from 'react';
-import type { ManeuverKind, NavigationProgress } from '../navigation/navModel';
+import type {
+  LaneInfo,
+  ManeuverKind,
+  NavigationProgress,
+  RoadShield,
+  RoadSignal,
+} from '../navigation/navModel';
 
 const GAP_MAX_DIST_M = 130;
 const FRAC_CUE = 0.78;
@@ -14,6 +20,9 @@ function holdFromNonEmpty(live: NavigationProgress) {
   const ns = live.nextStep;
   const mKey = ns?.kind === 'unknown' || ns?.kind == null ? 'straight' : String(ns.kind);
   const mk = (ns?.kind ?? b?.maneuverKind ?? 'straight') as ManeuverKind;
+  const sig = ns?.signal;
+  const holdSignal: RoadSignal | undefined =
+    sig && sig.kind !== 'none' && (sig.label?.trim() ?? '') !== '' ? sig : undefined;
   return {
     holdPrimary: (b?.primaryInstruction ?? '').replace(/\s+/g, ' ').trim(),
     holdSecondary: b?.secondaryInstruction?.replace(/\s+/g, ' ').trim() || undefined,
@@ -21,6 +30,10 @@ function holdFromNonEmpty(live: NavigationProgress) {
     holdManKind: mk,
     holdRawType: ns?.rawType ?? '',
     holdRawMod: ns?.rawModifier ?? '',
+    holdSignal,
+    holdLanes: ns?.lanes && ns.lanes.length ? ns.lanes : [],
+    holdShields: ns?.shields && ns.shields.length ? ns.shields : [],
+    holdRoundaboutExit: ns?.roundaboutExitNumber ?? null,
   };
 }
 
@@ -31,6 +44,10 @@ export type SdkStepGapDisplay = {
   holdManKind: ManeuverKind;
   holdRawType: string;
   holdRawMod: string;
+  holdSignal?: RoadSignal;
+  holdLanes: LaneInfo[];
+  holdShields: RoadShield[];
+  holdRoundaboutExit: number | null;
 } | null;
 
 const continuing: NonNullable<SdkStepGapDisplay> = {
@@ -40,6 +57,10 @@ const continuing: NonNullable<SdkStepGapDisplay> = {
   holdManKind: 'straight',
   holdRawType: '',
   holdRawMod: '',
+  holdSignal: undefined,
+  holdLanes: [],
+  holdShields: [],
+  holdRoundaboutExit: null,
 };
 
 /**

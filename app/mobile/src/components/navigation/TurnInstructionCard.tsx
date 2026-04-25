@@ -33,6 +33,8 @@ import HighwayShieldBadge from './HighwayShieldBadge';
 
 /** Hold previous lane data for this duration (ms) to prevent flicker during source transitions. */
 const LANE_DEBOUNCE_MS = 300;
+/** Headless native updates each tick; only damp rapid JSON wobble, not step advances. */
+const LANE_FLICKER_SDK_MS = 90;
 
 /**
  * React wrapper over `resolveStableText` — prevents single-frame flips when
@@ -259,6 +261,15 @@ export default React.memo(function TurnInstructionCard({
     const stepChanged = contentStepKey !== prev.prevContentKey;
 
     if (stepChanged) {
+      if (navSdkDrivesContent) {
+        debouncedLanesRef.current = {
+          data: rawLanes,
+          changedAt: now,
+          prevContentKey: contentStepKey,
+          stepChangedAt: 0,
+        };
+        return rawLanes;
+      }
       debouncedLanesRef.current = {
         data: null,
         changedAt: now,
@@ -268,13 +279,16 @@ export default React.memo(function TurnInstructionCard({
       return null;
     }
 
-    const inBlackout = now - prev.stepChangedAt < LANE_DEBOUNCE_MS;
-    if (inBlackout) return null;
+    if (!navSdkDrivesContent) {
+      const inBlackout = now - prev.stepChangedAt < LANE_DEBOUNCE_MS;
+      if (inBlackout) return null;
+    }
 
     const lanesChanged = JSON.stringify(rawLanes) !== JSON.stringify(prev.data);
     if (!lanesChanged) return prev.data;
 
-    if (now - prev.changedAt < LANE_DEBOUNCE_MS) {
+    const flickerMs = navSdkDrivesContent ? LANE_FLICKER_SDK_MS : LANE_DEBOUNCE_MS;
+    if (now - prev.changedAt < flickerMs) {
       return prev.data;
     }
     debouncedLanesRef.current = {
@@ -284,7 +298,7 @@ export default React.memo(function TurnInstructionCard({
       stepChangedAt: prev.stepChangedAt,
     };
     return rawLanes;
-  }, [rawLanes, contentStepKey]);
+  }, [rawLanes, contentStepKey, navSdkDrivesContent]);
 
   /**
    * "Then …" secondary line precedence:
@@ -501,31 +515,40 @@ export default React.memo(function TurnInstructionCard({
               {primaryDisplay}
             </Text>
 
-            {showSignal && (
-              <RoadSignalBadge
-                kind={signal!.kind}
-                label={signal!.label}
-                textColor={tcTextColor}
-              />
-            )}
-
-            {showThenRow && (
-              <View style={styles.thenRow}>
-                <Ionicons
-                  name="return-down-forward-outline"
-                  size={12}
-                  color={tcTextColor}
-                  style={{ opacity: d.thenOpacity, marginTop: 1 }}
-                />
-                <Text
-                  style={[
-                    styles.secondary,
-                    { color: tcTextColor, opacity: d.thenOpacity },
-                  ]}
-                  numberOfLines={2}
-                >
-                  {thenText}
-                </Text>
+            {(showSignal || showThenRow) && (
+              <View style={styles.belowPrimaryMeta}>
+                {showSignal && (
+                  <RoadSignalBadge
+                    kind={signal!.kind}
+                    label={signal!.label}
+                    textColor={tcTextColor}
+                    variant="hud"
+                  />
+                )}
+                {showThenRow && (
+                  <View
+                    style={[
+                      styles.thenRow,
+                      showSignal && styles.thenRowTightToSignal,
+                    ]}
+                  >
+                    <Ionicons
+                      name="return-down-forward-outline"
+                      size={11}
+                      color={tcTextColor}
+                      style={{ opacity: d.thenOpacity, marginTop: 0.5 }}
+                    />
+                    <Text
+                      style={[
+                        styles.secondary,
+                        { color: tcTextColor, opacity: d.thenOpacity },
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {thenText}
+                    </Text>
+                  </View>
+                )}
               </View>
             )}
           </Animated.View>
@@ -598,8 +621,10 @@ const styles = StyleSheet.create({
   textCol: { flex: 1, minWidth: 0 },
   shieldRow: { marginBottom: 3 },
   primary: { fontSize: 22, letterSpacing: -0.2, lineHeight: 30 },
-  thenRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 6, gap: 4, width: '100%' },
-  secondary: { flex: 1, minWidth: 0, fontSize: 14, fontWeight: '700', lineHeight: 20 },
+  belowPrimaryMeta: { marginTop: 4, width: '100%', gap: 3 },
+  thenRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 4, width: '100%', flex: 1, minWidth: 0 },
+  thenRowTightToSignal: { marginTop: 0 },
+  secondary: { flex: 1, minWidth: 0, fontSize: 13, fontWeight: '600', lineHeight: 18, letterSpacing: 0.1 },
   mute: { paddingLeft: 8, paddingTop: 2, flexShrink: 0 },
   disambig: {
     flexDirection: 'row',

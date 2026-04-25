@@ -4226,6 +4226,31 @@ export default function MapScreen() {
               })();
           const useNativeTurnDistance = !!nativeTurnDistance?.value;
           const sdkNS = liveNs;
+          const gapContinuing = g?.holdPrimary === 'Continuing…';
+          const sdkTurnSignal = (() => {
+            if (!g) return sdkNS?.signal;
+            if (gapContinuing) return undefined;
+            if (g.holdSignal) return g.holdSignal;
+            return sdkNS?.signal;
+          })();
+          const sdkTurnLanes = (() => {
+            if (!g) return sdkNS?.lanes?.length ? sdkNS.lanes : live.nextStep?.lanes ?? [];
+            if (gapContinuing) return [];
+            if (g.holdLanes.length) return g.holdLanes;
+            return sdkNS?.lanes?.length ? sdkNS.lanes : live.nextStep?.lanes ?? [];
+          })();
+          const sdkTurnShields = (() => {
+            if (!g) return sdkNS?.shields?.length ? sdkNS.shields : live.nextStep?.shields ?? [];
+            if (gapContinuing) return [];
+            if (g.holdShields.length) return g.holdShields;
+            return sdkNS?.shields?.length ? sdkNS.shields : live.nextStep?.shields ?? [];
+          })();
+          const sdkTurnRbExit = (() => {
+            if (!g) return sdkNS?.roundaboutExitNumber ?? live.nextStep?.roundaboutExitNumber ?? null;
+            if (gapContinuing) return null;
+            if (g.holdRoundaboutExit != null) return g.holdRoundaboutExit;
+            return sdkNS?.roundaboutExitNumber ?? live.nextStep?.roundaboutExitNumber ?? null;
+          })();
 
           return (
             <View style={[s.turnWrap, { top: insets.top }]} key="turn-card-sdk-native">
@@ -4246,12 +4271,10 @@ export default function MapScreen() {
                 maneuverKind={manKind}
                 maneuverType={g ? g.holdRawType : sdkNS?.rawType ?? ''}
                 maneuverModifier={g ? g.holdRawMod : sdkNS?.rawModifier ?? ''}
-                signal={sdkNS?.signal}
-                lanes={sdkNS?.lanes?.length ? sdkNS.lanes : live.nextStep?.lanes ?? []}
-                shields={sdkNS?.shields?.length ? sdkNS.shields : live.nextStep?.shields ?? []}
-                roundaboutExitNumber={
-                  sdkNS?.roundaboutExitNumber ?? live.nextStep?.roundaboutExitNumber ?? null
-                }
+                signal={sdkTurnSignal}
+                lanes={sdkTurnLanes}
+                shields={sdkTurnShields}
+                roundaboutExitNumber={sdkTurnRbExit}
                 chainInstruction={null}
                 isMuted={navVoiceMuted}
                 onMutePress={handleNavVoiceToggle}
