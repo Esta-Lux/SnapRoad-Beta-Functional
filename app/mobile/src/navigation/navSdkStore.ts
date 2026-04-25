@@ -92,6 +92,41 @@ function emit() {
   listeners.forEach((l) => l());
 }
 
+/**
+ * Native can fire `onRouteProgressChanged` + `onNavigationLocationUpdate` in quick succession
+ * (often 5–20× / s each). Synchronous `emit()` after every `ingest` forces `useSyncExternalStore`
+ * → full `useDriveNavigation` + `MapScreen` re-renders, which makes turn cards, ETA, and
+ * `setCamera` feel like a rapid reroute. Coalesce to **one** React notify per animation frame
+ * (Node tests: `setTimeout(0)`).
+ */
+let scheduledEmitHandle: number | ReturnType<typeof setTimeout> | null = null;
+
+function runScheduledEmit() {
+  scheduledEmitHandle = null;
+  emit();
+}
+
+function scheduleStoreEmit() {
+  if (scheduledEmitHandle != null) return;
+  if (typeof requestAnimationFrame === 'function') {
+    scheduledEmitHandle = requestAnimationFrame(runScheduledEmit);
+  } else {
+    scheduledEmitHandle = setTimeout(runScheduledEmit, 0);
+  }
+}
+
+function emitStoreImmediate() {
+  if (scheduledEmitHandle != null) {
+    if (typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(scheduledEmitHandle as number);
+    } else {
+      clearTimeout(scheduledEmitHandle as ReturnType<typeof setTimeout>);
+    }
+    scheduledEmitHandle = null;
+  }
+  emit();
+}
+
 export function getNavSdkState(): NavSdkState {
   return state;
 }
@@ -127,7 +162,7 @@ export function resetNavSdkState() {
   // Module-level EWMA in the adapter must reset across trips so the first
   // heading tick of a new trip isn't pulled toward the last trip's bearing.
   resetHeadingSmoothing();
-  emit();
+  emitStoreImmediate();
 }
 
 /**
@@ -178,14 +213,14 @@ export function enterSdkGuidanceWaiting() {
     },
     lastNavVoiceSource: 'none',
   };
-  emit();
+  emitStoreImmediate();
 }
 
 /** Native reroute / route refresh (`onRouteChanged`). */
 export function ingestSdkRouteChangedEvent() {
   const tel = { ...state.telemetry, routeChangedEvents: state.telemetry.routeChangedEvents + 1 };
   state = { ...state, telemetry: tel, nativeFormattedDistance: null };
-  emit();
+  emitStoreImmediate();
 }
 
 export function ingestSdkProgress(p: SdkProgressPayload) {
@@ -202,19 +237,19 @@ export function ingestSdkProgress(p: SdkProgressPayload) {
     nativeFormattedDistance: pickNativeFormattedFromProgress(p, prevFmt, prevProgress),
     nativeLaneAssets: p.laneAssets ?? state.nativeLaneAssets,
   };
-  emit();
+  scheduleStoreEmit();
 }
 
 /** Standalone native event (or call from a thin `onCameraStateChanged` bridge handler). */
 export function ingestSdkCameraState(payload: SdkCameraPayload | null | undefined) {
   if (payload === null) {
     state = { ...state, nativeCameraState: null };
-    emit();
+    scheduleStoreEmit();
     return;
   }
   if (!payload || !isValidSdkCameraPayload(payload)) return;
   state = { ...state, nativeCameraState: payload };
-  emit();
+  scheduleStoreEmit();
 }
 
 export function ingestSdkFormattedDistance(value: string | undefined, unit?: string) {
@@ -224,22 +259,22 @@ export function ingestSdkFormattedDistance(value: string | undefined, unit?: str
     ...state,
     nativeFormattedDistance: { value: v, unit: (unit ?? '').trim() },
   };
-  emit();
+  scheduleStoreEmit();
 }
 
 export function ingestSdkLaneAssets(assets: NativeLaneAsset[] | null | undefined) {
   if (assets === null) {
     state = { ...state, nativeLaneAssets: null };
-    emit();
+    scheduleStoreEmit();
     return;
   }
   if (!assets?.length) {
     state = { ...state, nativeLaneAssets: null };
-    emit();
+    scheduleStoreEmit();
     return;
   }
   state = { ...state, nativeLaneAssets: assets };
-  emit();
+  scheduleStoreEmit();
 }
 
 export function ingestSdkVoiceSubtitle(text: string | undefined) {
@@ -252,7 +287,7 @@ export function ingestSdkVoiceSubtitle(text: string | undefined) {
     lastNavVoiceSource: 'sdk',
     telemetry: tel,
   };
-  emit();
+  scheduleStoreEmit();
 }
 
 /** Milliseconds since the native SDK last spoke a voice instruction, or `Infinity` if never. */
@@ -264,18 +299,18 @@ export function msSinceLastSdkVoice(): number {
 /** expo-speech navigation line (turn prompts, trip messages) — not SDK TTS. */
 export function markNavVoiceFromJs() {
   state = { ...state, lastNavVoiceSource: 'js' };
-  emit();
+  scheduleStoreEmit();
 }
 
 export function ingestSdkLocation(l: SdkLocationPayload) {
   const tel = { ...state.telemetry, locationEvents: state.telemetry.locationEvents + 1 };
   state = { ...state, location: l, telemetry: tel };
-  emit();
+  scheduleStoreEmit();
 }
 
 export function ingestSdkRoutePolyline(poly: Coordinate[]) {
   state = { ...state, routePolyline: poly };
-  emit();
+  emitStoreImmediate();
 }
 
 /**

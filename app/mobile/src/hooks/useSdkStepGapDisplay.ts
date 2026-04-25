@@ -1,6 +1,5 @@
 import { useMemo, useRef } from 'react';
 import type { ManeuverKind, NavigationProgress } from '../navigation/navModel';
-import type { NativeFormattedDistance } from '../navigation/navSdkMirrorTypes';
 
 const GAP_MAX_DIST_M = 130;
 const FRAC_CUE = 0.78;
@@ -13,15 +12,11 @@ function stepKey(np: NavigationProgress): string {
 function holdFromNonEmpty(live: NavigationProgress) {
   const b = live.banner;
   const ns = live.nextStep;
-  const fd = b?.primaryDistanceFormatted?.trim();
-  const funit = (b?.primaryDistanceFormattedUnit ?? '').trim();
-  const nat: NativeFormattedDistance | null = fd ? { value: fd, unit: funit } : null;
   const mKey = ns?.kind === 'unknown' || ns?.kind == null ? 'straight' : String(ns.kind);
   const mk = (ns?.kind ?? b?.maneuverKind ?? 'straight') as ManeuverKind;
   return {
     holdPrimary: (b?.primaryInstruction ?? '').replace(/\s+/g, ' ').trim(),
     holdSecondary: b?.secondaryInstruction?.replace(/\s+/g, ' ').trim() || undefined,
-    holdNative: nat,
     holdManeuverIcon: mKey,
     holdManKind: mk,
     holdRawType: ns?.rawType ?? '',
@@ -32,7 +27,6 @@ function holdFromNonEmpty(live: NavigationProgress) {
 export type SdkStepGapDisplay = {
   holdPrimary: string;
   holdSecondary: string | undefined;
-  holdNative: NativeFormattedDistance | null;
   holdManeuverIcon: string;
   holdManKind: ManeuverKind;
   holdRawType: string;
@@ -42,7 +36,6 @@ export type SdkStepGapDisplay = {
 const continuing: NonNullable<SdkStepGapDisplay> = {
   holdPrimary: 'Continuing…',
   holdSecondary: undefined,
-  holdNative: null,
   holdManeuverIcon: 'straight',
   holdManKind: 'straight',
   holdRawType: '',
@@ -53,6 +46,8 @@ const continuing: NonNullable<SdkStepGapDisplay> = {
  * Mapbox can emit 0.5–2s gaps at step boundaries (empty `primaryInstruction` while still
  * navigating). In that window, re-show the last good native snapshot for the same leg/step
  * or a neutral "Continuing…" when the step id has already advanced.
+ * Distance to the next maneuver is **not** part of this hold — MapScreen drives it from the
+ * latest `sdkNavProgress` + `sdkManeuverDisplayDistanceFromProgress` so it matches native.
  */
 export function useSdkStepGapDisplay(
   isNavigating: boolean,

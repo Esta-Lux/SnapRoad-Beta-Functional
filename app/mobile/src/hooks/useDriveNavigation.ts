@@ -480,11 +480,16 @@ export function useDriveNavigation(params: {
 
   const liveEta = useMemo((): { distanceMiles: number; etaMinutes: number } | null => {
     if (!isNavigating) return null;
+    /** Strip display: coarse steps so ETA/distance rows do not flutter every progress tick. */
+    const pack = (distanceMiles: number, etaMinutes: number) => ({
+      distanceMiles: Math.round(Math.max(0, distanceMiles) * 20) / 20,
+      etaMinutes: Math.round(Math.max(0, etaMinutes) * 4) / 4,
+    });
     if (navigationProgress) {
-      return {
-        distanceMiles: Math.max(0, navigationProgress.distanceRemainingMeters / 1609.34),
-        etaMinutes: Math.max(0, navigationProgress.durationRemainingSeconds / 60),
-      };
+      return pack(
+        navigationProgress.distanceRemainingMeters / 1609.34,
+        navigationProgress.durationRemainingSeconds / 60,
+      );
     }
     if (sdkActive) {
       const pr = navSdkSnapshot.progress;
@@ -495,10 +500,7 @@ export function useDriveNavigation(params: {
         typeof pr.durationRemaining === 'number' &&
         Number.isFinite(pr.durationRemaining)
       ) {
-        return {
-          distanceMiles: Math.max(0, pr.distanceRemaining / 1609.34),
-          etaMinutes: Math.max(0, pr.durationRemaining / 60),
-        };
+        return pack(pr.distanceRemaining / 1609.34, pr.durationRemaining / 60);
       }
       return null;
     }
@@ -1831,6 +1833,12 @@ export function useDriveNavigation(params: {
     sdkNativeCameraState: navSdkHeadless ? navSdkSnapshot.nativeCameraState : null,
     /** Native mirror bridge — locale-formatted turn distance (from progress or standalone event). */
     sdkNativeFormattedDistance: navSdkHeadless ? navSdkSnapshot.nativeFormattedDistance : null,
+    /**
+     * Latest raw `onRouteProgressChanged` payload (headless SDK). Use with
+     * `sdkManeuverDisplayDistanceFromProgress` for turn distance so the card never reads
+     * stale `banner` text from `navigationProgressGuidance` (see MapScreen).
+     */
+    sdkNavProgress: navSdkHeadless ? navSdkSnapshot.progress : null,
     /** Native mirror bridge — per-lane PNGs (aligned with `lanes.length` when lengths match). */
     sdkNativeLaneAssets: navSdkHeadless ? navSdkSnapshot.nativeLaneAssets : null,
     /** Native route polyline from `ingestSdkRoutePolyline` — use for map visuals during logic SDK trips (no REST line). */

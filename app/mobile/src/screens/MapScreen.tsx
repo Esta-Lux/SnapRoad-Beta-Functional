@@ -116,6 +116,7 @@ import {
   shouldShowRoadDisambiguation,
 } from '../navigation/turnCardModel';
 import { sdkGuidanceStabilityKey } from '../navigation/sdkGuidanceUiKeys';
+import { sdkManeuverDisplayDistanceFromProgress } from '../navigation/sdkNavBridgePayload';
 import { useTurnConfirmationUntil } from '../hooks/useTurnConfirmationWindow';
 import { useMapWeather, weatherOverlayFactor } from '../hooks/useMapWeather';
 import MapWeatherOverlay from '../components/map/MapWeatherOverlay';
@@ -167,6 +168,7 @@ import {
   isSdkPuckAuthoritative,
   isSdkRouteAuthoritative,
 } from '../navigation/navSdkAuthority';
+import { bucketSpeedMpsTo5Mph, maneuverDistanceBucketMeters } from '../navigation/cameraPresets';
 import { getNativeHeadlessFollowingPitch, getNativeHeadlessFollowingZoom } from '../navigation/nativeNavCameraMirror';
 import NavSdkPuck from '../components/map/NavSdkPuck';
 import { MapboxNavigationView, type MapboxNavigationViewRef } from '@badatgil/expo-mapbox-navigation';
@@ -846,9 +848,9 @@ export default function MapScreen() {
    * SDK owns during a hybrid trip: puck, route polyline, and turn banner. They flip on
    * only after the corresponding native payload has landed (matched location, route
    * geometry, banner text) so the UI never shows a half-native / half-JS frame during
-   * the first ~150 ms of a trip. Re-subscribing is free — `useDriveNavigation` already
-   * calls `useSyncExternalStore(subscribeNavSdk, …)`, so every store emit re-renders
-   * MapScreen with fresh values.
+   * the first ~150 ms of a trip. `useDriveNavigation` uses `useSyncExternalStore(subscribeNavSdk, …)`;
+   * high-frequency progress/location ingests are coalesced in `navSdkStore` to one React update
+   * per frame so the map shell is not thrashed on every native tick.
    */
   const sdkPuckOwns = nav.isNavigating && isSdkPuckAuthoritative();
   const sdkRouteOwns = nav.isNavigating && isSdkRouteAuthoritative();
@@ -1083,15 +1085,20 @@ export default function MapScreen() {
         : Math.max(0, speed * 0.44704),
     [nav.isNavigating, fusedSpeedMpsNav, speed],
   );
+  const headlessNativeFollowFraming = useMemo(
+    () => ({
+      sp: bucketSpeedMpsTo5Mph(headlessNavSpeedMps),
+      d: maneuverDistanceBucketMeters(nextManeuverDistanceMeters),
+    }),
+    [headlessNavSpeedMps, nextManeuverDistanceMeters],
+  );
   const navLogicFollowingZoom = useMemo(
-    () =>
-      getNativeHeadlessFollowingZoom(drivingMode, headlessNavSpeedMps, nextManeuverDistanceMeters),
-    [drivingMode, headlessNavSpeedMps, nextManeuverDistanceMeters],
+    () => getNativeHeadlessFollowingZoom(drivingMode, headlessNativeFollowFraming.sp, headlessNativeFollowFraming.d),
+    [drivingMode, headlessNativeFollowFraming.sp, headlessNativeFollowFraming.d],
   );
   const navLogicFollowingPitch = useMemo(
-    () =>
-      getNativeHeadlessFollowingPitch(drivingMode, headlessNavSpeedMps, nextManeuverDistanceMeters),
-    [drivingMode, headlessNavSpeedMps, nextManeuverDistanceMeters],
+    () => getNativeHeadlessFollowingPitch(drivingMode, headlessNativeFollowFraming.sp, headlessNativeFollowFraming.d),
+    [drivingMode, headlessNativeFollowFraming.sp, headlessNativeFollowFraming.d],
   );
 
   /**
@@ -1163,6 +1170,8 @@ export default function MapScreen() {
 
   const camCtrlRef = useRef(camCtrlForNav);
   camCtrlRef.current = camCtrlForNav;
+  /** Headless + no native mirror payload: avoid setCamera on every matched-location tick (still 1×/frame via store coalesce). */
+  const lastHeadlessJsFollowCamAtRef = useRef(0);
 
   const nativeCameraMirror =
     isNativeSdkPassThrough &&
@@ -1220,6 +1229,11 @@ export default function MapScreen() {
   useEffect(() => {
     if (!nav.isNavigating || !cameraLocked || !camCtrlForNav) return;
     if (nativeCameraMirror) return;
+    if (isNativeSdkPassThrough) {
+      const now = Date.now();
+      if (now - lastHeadlessJsFollowCamAtRef.current < 90) return;
+      lastHeadlessJsFollowCamAtRef.current = now;
+    }
     const cam = cameraRef.current;
     if (!cam?.setCamera) return;
     const c = camCtrlForNav;
@@ -1258,6 +1272,7 @@ export default function MapScreen() {
     heading,
     cameraLeadCoord?.lat,
     cameraLeadCoord?.lng,
+    isNativeSdkPassThrough,
   ]);
 
   // ── Reports ──
@@ -4175,17 +4190,17 @@ export default function MapScreen() {
         }
 
         /**
-         * Headless Navigation SDK: maneuver copy + distance are **native only** (banner + bridge store).
-         * `navigationProgress` stays live for fraction / polyline; `navigationProgressGuidance` + gap
-         * hold reduce turn-card refights; distance strings prefer the live banner when the bridge ticked
-         * a new formatted value before guidance updates.
+         * Headless Navigation SDK: maneuver copy from native banner + step (with gap hold for
+         * empty-tick glitches). **Distance always** from the latest `onRouteProgressChanged`
+         * payload via `sdkManeuverDisplayDistanceFromProgress` (same as `navSdkStore` + minimal
+         * adapter) — do not use `navigationProgressGuidance.banner` or gap snapshots here; that
+         * object is intentionally stable for text identity and can lag by a bucket or a frame.
          */
         if (instructionSrc === 'sdk') {
           const live = prog;
           const g = sdkStepGap;
           const cardProg = nav.navigationProgressGuidance ?? live;
           const b = cardProg.banner ?? null;
-          const liveB = live.banner;
           const primary = (g?.holdPrimary ?? (b?.primaryInstruction ?? '')).replace(/\s+/g, ' ').trim();
           const secondary =
             (g?.holdSecondary ?? b?.secondaryInstruction?.replace(/\s+/g, ' ').trim()) || undefined;
@@ -4197,24 +4212,16 @@ export default function MapScreen() {
               : String(liveNs.kind);
           const manKind = g ? g.holdManKind : (liveNs?.kind ?? b?.maneuverKind ?? 'straight');
           const textStabKey = sdkGuidanceStabilityKey(liveNs, live.nativeStepIdentity?.legIndex);
-          const distBanner = liveB?.primaryDistanceFormatted?.trim() ? liveB : b;
-          const nativeTurnDistance: NativeFormattedDistance | null = (() => {
-            if (g?.holdNative?.value?.trim()) return g.holdNative;
-            if (g?.holdPrimary === 'Continuing…') {
-              const fd0 = liveB?.primaryDistanceFormatted?.trim();
-              if (fd0) {
-                return { value: fd0, unit: (liveB?.primaryDistanceFormattedUnit ?? '').trim() };
-              }
-            }
-            const fd1 = distBanner?.primaryDistanceFormatted?.trim();
-            if (fd1) {
-              return {
-                value: fd1,
-                unit: (distBanner?.primaryDistanceFormattedUnit ?? '').trim(),
-              };
-            }
-            return null;
-          })();
+          const p = nav.sdkNavProgress;
+          const nativeTurnDistance: NativeFormattedDistance | null = p
+            ? sdkManeuverDisplayDistanceFromProgress(p)
+            : (() => {
+                const m = live.nextStepDistanceMeters;
+                if (typeof m === 'number' && Number.isFinite(m) && m >= 0) {
+                  return formatImperialManeuverDistance(m, { omitNowLabel: true });
+                }
+                return null;
+              })();
           const useNativeTurnDistance = !!nativeTurnDistance?.value;
           const sdkNS = liveNs;
 

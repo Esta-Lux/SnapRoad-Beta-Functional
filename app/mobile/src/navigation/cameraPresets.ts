@@ -107,6 +107,27 @@ function clamp(value: number, min: number, max: number) {
 }
 
 /**
+ * Same grid as {@link useCameraController} maneuver distance — keeps follow zoom/pitch from
+ * thrashing on every 1 m change from the native progress stream.
+ */
+export function maneuverDistanceBucketMeters(meters: number): number {
+  if (!Number.isFinite(meters) || meters <= 0) return 400;
+  const m = Math.min(2000, meters);
+  if (m < 48) return Math.round(m / 8) * 8;
+  if (m < 120) return Math.round(m / 14) * 14;
+  if (m < 220) return Math.round(m / 24) * 24;
+  if (m < 700) return Math.round(m / 60) * 60;
+  return Math.round(m / 120) * 120;
+}
+
+/** ~5 mph bands in m/s — matches {@link useCameraController} `speedMphBucket`. */
+export function bucketSpeedMpsTo5Mph(speedMps: number): number {
+  const mph = Math.max(0, speedMps * 2.236936);
+  const b = Math.round(mph / 5) * 5;
+  return b * 0.44704;
+}
+
+/**
  * Follow-camera: speed-based zoom/pitch curves, turn anticipation, Sport accel / tuck.
  */
 export function getCameraPreset({

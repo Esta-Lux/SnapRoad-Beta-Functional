@@ -4,6 +4,7 @@ import {
   getCameraPreset,
   getLiveNavigationCameraPreset,
   getNavigationFollowPaddingFallback,
+  maneuverDistanceBucketMeters,
 } from '../navigation/cameraPresets';
 import type { SdkCameraPayload } from '../navigation/navSdkMirrorTypes';
 import { isValidSdkCameraPayload } from '../navigation/navSdkMirrorTypes';
@@ -34,15 +35,7 @@ function speedMphBucket(mph: number): number {
   return Math.round(m / 5) * 5;
 }
 
-function maneuverDistanceBucket(meters: number): number {
-  if (!Number.isFinite(meters) || meters <= 0) return 400;
-  const m = Math.min(2000, meters);
-  if (m < 48) return Math.round(m / 8) * 8;
-  if (m < 120) return Math.round(m / 14) * 14;
-  if (m < 220) return Math.round(m / 24) * 24;
-  if (m < 700) return Math.round(m / 60) * 60;
-  return Math.round(m / 120) * 120;
-}
+const maneuverDistanceBucket = maneuverDistanceBucketMeters;
 
 export interface CameraSettings {
   followZoomLevel: number;

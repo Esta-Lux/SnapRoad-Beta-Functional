@@ -8,7 +8,11 @@
 
 import type { DrivingMode } from '../types';
 import type { CameraSettings } from '../hooks/useCameraController';
-import { getCameraPreset } from './cameraPresets';
+import {
+  bucketSpeedMpsTo5Mph,
+  getCameraPreset,
+  maneuverDistanceBucketMeters,
+} from './cameraPresets';
 
 /**
  * Hidden `MapboxNavigationView` following zoom — aligned with
@@ -22,8 +26,8 @@ export function getNativeHeadlessFollowingZoom(
 ): number {
   const z = getCameraPreset({
     mode,
-    speedMps,
-    nextManeuverDistanceMeters,
+    speedMps: bucketSpeedMpsTo5Mph(speedMps),
+    nextManeuverDistanceMeters: maneuverDistanceBucketMeters(nextManeuverDistanceMeters),
     safeAreaTop: 0,
     safeAreaBottom: 0,
     accelerationMps2: 0,
@@ -39,8 +43,8 @@ export function getNativeHeadlessFollowingPitch(
   return Math.round(
     getCameraPreset({
       mode,
-      speedMps,
-      nextManeuverDistanceMeters,
+      speedMps: bucketSpeedMpsTo5Mph(speedMps),
+      nextManeuverDistanceMeters: maneuverDistanceBucketMeters(nextManeuverDistanceMeters),
       safeAreaTop: 0,
       safeAreaBottom: 0,
       accelerationMps2: 0,
