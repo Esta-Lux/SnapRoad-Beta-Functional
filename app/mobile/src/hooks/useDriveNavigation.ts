@@ -1192,19 +1192,8 @@ export function useDriveNavigation(params: {
     }
 
     if (!qualifiesTrip) {
-      setTimeout(
-        () =>
-          navSpeak(
-            'Trip summary saved. Drive at least about two tenths of a mile for forty seconds to earn gems next time.',
-            'normal',
-            drivingMode,
-          ),
-        400,
-      );
       return;
     }
-
-    setTimeout(() => navSpeak(`Trip ended. You drove ${roundedDist} miles.`, 'normal', drivingMode), 500);
 
     const startedAt = tripStartMs
       ? new Date(tripStartMs).toISOString()
@@ -1253,7 +1242,7 @@ export function useDriveNavigation(params: {
       await refreshUserFromServerRef.current();
       bumpStatsVersionRef.current();
     }).catch(() => { /* offline — summary already shown */ });
-  }, [navigationData, drivingMode, navigationProgressCoord, user?.isPremium, navSpeak]);
+  }, [navigationData, navigationProgressCoord, user?.isPremium]);
 
   const dismissTripSummary = useCallback(() => setTripSummary(null), []);
 

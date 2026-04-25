@@ -2,7 +2,7 @@ import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useMe
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList,
   Platform, Keyboard, Alert, Switch, Pressable, Image, Dimensions,
-  AppState, InteractionManager,
+  AppState,
 } from 'react-native';
 import Animated, {
   FadeIn, FadeOut, SlideInDown, SlideOutDown,
@@ -1161,20 +1161,15 @@ export default function MapScreen() {
     wasNavigatingForOdomRef.current = nav.isNavigating;
   }, [nav.isNavigating, navDisplayCoord.lat, navDisplayCoord.lng, navPuckHeading]);
 
-  const navDisplayCoordRef = useRef(navDisplayCoord);
-  const navDisplayHeadingRef = useRef(navDisplayHeading);
-  useEffect(() => {
-    navDisplayCoordRef.current = navDisplayCoord;
-    navDisplayHeadingRef.current = navPuckHeading;
-  }, [navDisplayCoord.lat, navDisplayCoord.lng, navPuckHeading]);
-
   const camCtrlRef = useRef(camCtrlForNav);
   camCtrlRef.current = camCtrlForNav;
+  /** One instant snap per `navCameraSessionKey` — avoids ease fighting the remounted Camera + duplicate flyTo. */
+  const lastNavCamSessionBootstrappedRef = useRef(-1);
   /**
    * While navigating, `followUserLocation` uses Mapbox's internal GPS — not
    * `CustomLocationProvider` — which fights the snapped puck (camera feels offset).
-   * JS `useCameraController` + puck/lookahead anchor drive `setCamera`; native SDK keeps
-   * reroute, matcher, and voice.
+   * JS `useCameraController` + lookahead drives **camera center only** (`setCamera`); the
+   * provider + `NavSdkPuck` stay on `navDisplayCoord`. Native SDK keeps reroute, matcher, voice.
    */
   useEffect(() => {
     if (!nav.isNavigating || !cameraLocked || !camCtrlForNav) return;
@@ -1185,6 +1180,8 @@ export default function MapScreen() {
     if (!Number.isFinite(anchor.lat) || !Number.isFinite(anchor.lng)) return;
     const h = Number.isFinite(navPuckHeading) ? navPuckHeading : heading;
     const pad = c.followPadding;
+    const isNewNavSession = lastNavCamSessionBootstrappedRef.current !== navCameraSessionKey;
+    if (isNewNavSession) lastNavCamSessionBootstrappedRef.current = navCameraSessionKey;
     cam.setCamera({
       centerCoordinate: [anchor.lng, anchor.lat],
       zoomLevel: c.followZoomLevel,
@@ -1197,11 +1194,12 @@ export default function MapScreen() {
         paddingRight: pad.paddingRight,
       },
       animationMode: 'easeTo',
-      animationDuration: c.animationDuration,
+      animationDuration: isNewNavSession ? 0 : c.animationDuration,
     });
   }, [
     nav.isNavigating,
     cameraLocked,
+    navCameraSessionKey,
     camCtrlForNav?.followZoomLevel,
     camCtrlForNav?.followPitch,
     camCtrlForNav?.followPadding?.paddingTop,
@@ -2144,41 +2142,6 @@ export default function MapScreen() {
     userInteracting.current = false;
     setFollowMode('follow');
   }, [nav.isNavigating]);
-
-  useEffect(() => {
-    if (!nav.isNavigating) return;
-
-    let cancelled = false;
-
-    const runSnap = () => {
-      if (cancelled) return;
-      const pad = camCtrlRef.current?.followPadding ?? navFallbackFollowPadding(modeConfig, insets.bottom);
-      const zoom = camCtrlRef.current?.followZoomLevel ?? modeConfig.navZoom;
-      const pitch = camCtrlRef.current?.followPitch ?? modeConfig.navPitch;
-      const c = navDisplayCoordRef.current;
-      const h = navDisplayHeadingRef.current;
-      cameraRef.current?.setCamera({
-        centerCoordinate: [c.lng, c.lat],
-        heading: h,
-        zoomLevel: zoom,
-        pitch,
-        padding: pad,
-        animationMode: 'flyTo',
-        animationDuration: 700,
-      });
-    };
-
-    InteractionManager.runAfterInteractions(() => {
-      if (cancelled) return;
-      requestAnimationFrame(() => {
-        requestAnimationFrame(runSnap);
-      });
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [nav.isNavigating, navCameraSessionKey]);
 
   // Trip end: show summary card directly (no gem bounce animation)
   useEffect(() => {
@@ -3561,10 +3524,7 @@ export default function MapScreen() {
           Number.isFinite(navDisplayCoord.lng) ? (
             <>
               <MapboxGL.CustomLocationProvider
-                coordinate={[
-                  (cameraLeadCoord ?? navDisplayCoord).lng,
-                  (cameraLeadCoord ?? navDisplayCoord).lat,
-                ]}
+                coordinate={[navDisplayCoord.lng, navDisplayCoord.lat]}
                 heading={
                   navLogicSdkEnabled() && nav.isNavigating && (!Number.isFinite(navPuckHeading) || navPuckHeading < 0)
                     ? 0
