@@ -82,10 +82,10 @@ export function navServerEtaEnabled(): boolean {
   return envBool('EXPO_PUBLIC_NAV_SERVER_ETA', false);
 }
 
-/** When on, "Start Navigation" launches the native Mapbox Navigation SDK UI
- *  instead of the custom RN turn-by-turn flow. Requires an EAS dev client build. */
+/** When on, native Mapbox Navigation SDK paths are available for internal experiments.
+ *  Launch default is off so JS/RNMapbox owns navigation unless explicitly enabled. */
 export function navNativeSdkEnabled(): boolean {
-  return envBool('EXPO_PUBLIC_NAV_NATIVE_SDK', nativeNavigationSupportedBuild());
+  return envBool('EXPO_PUBLIC_NAV_NATIVE_SDK', false) && nativeNavigationSupportedBuild();
 }
 
 /**

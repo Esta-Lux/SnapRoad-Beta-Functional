@@ -19,7 +19,7 @@ Set **`EXPO_PUBLIC_NAV_LOGIC_SDK=1`** (e.g. in `.env`, EAS env, or Expo dashboar
 
 The **`production`** profile in [`eas.json`](eas.json) sets **`EXPO_PUBLIC_NAV_LOGIC_SDK": "0"`** so TestFlight / store builds use the JS launch path unless you override.
 
-**`EXPO_PUBLIC_NAV_NATIVE_SDK`**: when `"1"`, native SDK code is available for internal experiments, but it does not control the launch HUD unless `EXPO_PUBLIC_NAV_LOGIC_SDK=1` or full-screen native navigation is explicitly enabled. Coordinate with `navFeatureFlags.ts` when experimenting.
+**`EXPO_PUBLIC_NAV_NATIVE_SDK`**: production sets this to `"0"` for launch. Set it to `"1"` only for internal native SDK experiments; it should not control the launch HUD unless `EXPO_PUBLIC_NAV_LOGIC_SDK=1` or full-screen native navigation is explicitly enabled. Coordinate with `navFeatureFlags.ts` when experimenting.
 
 Do **not** commit **`MAPBOX_DOWNLOADS_TOKEN`** or Mapbox **secret** tokens. Use EAS project env or local `.env` (gitignored).
 
@@ -62,7 +62,7 @@ For **App Store upload in one step**:
 npm run eas:ios:production:submit
 ```
 
-Use the **`production`** profile: it applies **`EXPO_PUBLIC_NAV_NATIVE_SDK=1`** with **`EXPO_PUBLIC_NAV_LOGIC_SDK=0`** so TestFlight / App Store builds use **JS/RNMapbox** navigation on the in-app map. Set **`EXPO_PUBLIC_NAV_LOGIC_SDK=1`** only for internal headless SDK experiments.
+Use the **`production`** profile: it applies **`EXPO_PUBLIC_NAV_NATIVE_SDK=0`** with **`EXPO_PUBLIC_NAV_LOGIC_SDK=0`** so TestFlight / App Store builds use **JS/RNMapbox** navigation on the in-app map. Set **`EXPO_PUBLIC_NAV_NATIVE_SDK=1`** and **`EXPO_PUBLIC_NAV_LOGIC_SDK=1`** only for internal headless SDK experiments.
 
 ### Logic-SDK diagnostics HUD (EAS / release)
 
