@@ -157,12 +157,16 @@ export async function stopFriendLiveShareBackgroundUpdates(): Promise<void> {
   }
 }
 
-/** Align background GPS delivery with Dashboard / Map toggles (no dependency on Map mount). */
+/**
+ * Start/stop OS background location for live share. `canPublish` must match MapScreen
+ * `canPublishFriendLocation` (Premium + public config + not admin-paused) so the task
+ * is not left running when the server rejects updates.
+ */
 export async function syncFriendLiveShareBackgroundFromPolicy(opts: {
   sharingEnabled: boolean;
   canPublish: boolean;
 }): Promise<void> {
-  if (!opts.canPublish || !opts.sharingEnabled) {
+  if (!opts.sharingEnabled || !opts.canPublish) {
     await stopFriendLiveShareBackgroundUpdates();
     return;
   }

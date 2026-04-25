@@ -67,6 +67,7 @@ import {
   FRIEND_LIVE_LAST_NAV_KEY,
   FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS,
 } from '../location/friendLiveShareConfig';
+import { nudgeBackgroundLocationAfterEnablingShare } from '../location/friendLocationPermissionUx';
 import OfferMarkers from '../components/map/OfferMarkers';
 import ReportMarkers from '../components/map/ReportMarkers';
 import FriendMarkers from '../components/map/FriendMarkers';
@@ -1343,6 +1344,7 @@ export default function MapScreen() {
       Alert.alert('Location sharing', updateErr);
       return;
     }
+    nudgeBackgroundLocationAfterEnablingShare();
   }, [setShareLocEpoch]);
   const [ephemeralTurnHint, setEphemeralTurnHint] = useState<string | null>(null);
   const ephemeralHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);

@@ -45,8 +45,12 @@ export function normalizeFriendFromApi(row: Record<string, unknown>): Friend {
   };
 }
 
-/** Locations older than this while still "sharing" are treated as stale (no LIVE). */
-export const FRIEND_LOC_STALE_MS = 105_000;
+/**
+ * Max age of `last_updated` (ms) for a still-sharing friend to count as "fresh" for LIVE UI.
+ * 5m matches iOS background delivery gaps (Always location) and batched network without
+ * marking everyone stale after ~1.5m of quiet GPS.
+ */
+export const FRIEND_LOC_STALE_MS = 300_000;
 
 /** Speed above this (mph) counts as driving / moving for UI. */
 export const FRIEND_SPEED_DRIVING_MPH = 3;

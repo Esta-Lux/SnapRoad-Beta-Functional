@@ -46,7 +46,9 @@ import {
 } from '../features/social/friendsApi';
 import { extractLocationSharingValue, getApiErrorMessage } from '../features/social/locationSharing';
 import { syncFriendLiveShareBackgroundFromPolicy } from '../location/friendLiveShareBackgroundTask';
+import { nudgeBackgroundLocationAfterEnablingShare } from '../location/friendLocationPermissionUx';
 import { FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS } from '../location/friendLiveShareConfig';
+import { usePublicAppConfig } from '../hooks/usePublicAppConfig';
 import type { MapFocusFriendParams } from '../types';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -175,6 +177,9 @@ export default function DashboardScreen() {
   // timestamp re-tick — short-circuits for free users who still briefly mount this screen
   // (the premium paywall renders via the early-return below).
   const friendsTabActive = section === 'friends' && isFocused && !!user?.isPremium;
+  const { friendTrackingEnabled, liveLocationPublishingEnabled } = usePublicAppConfig(
+    !!user?.isPremium && isFocused,
+  );
   const { location, heading, speed } = useLocation(false, { paused: !friendsTabActive });
   const dashboardLivePublishRef = useRef(0);
   /** User enabled sharing before GPS was ready — push coords + full update once `myCoord` exists. */
@@ -561,6 +566,26 @@ export default function DashboardScreen() {
       setPublishStatus('ok');
     }
   }, [isSharingLocation, publishStatus]);
+
+  /** Match MapScreen: background task only when sharing + config allow + server not paused. */
+  useEffect(() => {
+    if (!isSharingLocation) {
+      void syncFriendLiveShareBackgroundFromPolicy({ sharingEnabled: false, canPublish: true });
+      return;
+    }
+    const can =
+      Boolean(user?.isPremium) &&
+      friendTrackingEnabled &&
+      liveLocationPublishingEnabled &&
+      publishStatus !== 'paused_by_admin';
+    void syncFriendLiveShareBackgroundFromPolicy({ sharingEnabled: true, canPublish: can });
+  }, [
+    isSharingLocation,
+    user?.isPremium,
+    friendTrackingEnabled,
+    liveLocationPublishingEnabled,
+    publishStatus,
+  ]);
 
   const friendListData = useMemo(
     () =>
@@ -1201,6 +1226,12 @@ export default function DashboardScreen() {
                     ? `Visible to ${friends.length} friend${friends.length !== 1 ? 's' : ''}`
                     : 'Friends cannot see where you are'}
                 </Text>
+                {isSharingLocation && Platform.OS === 'ios' ? (
+                  <Text style={{ fontSize: 11, lineHeight: 15, color: colors.textTertiary, marginTop: 4 }}>
+                    Background sharing uses Always location. Set it in Settings if friends see an old
+                    position.
+                  </Text>
+                ) : null}
               </View>
               <Switch
                 value={isSharingLocation}
@@ -1221,11 +1252,8 @@ export default function DashboardScreen() {
                     storage.set(SHARE_LOC_STORAGE_KEY, prev ? '1' : '0');
                     shareLocationNeedsCoordsSyncRef.current = prev && !myCoord;
                     Alert.alert('Location sharing', err);
-                  } else {
-                    void syncFriendLiveShareBackgroundFromPolicy({
-                      sharingEnabled: v,
-                      canPublish: Boolean(user?.isPremium),
-                    });
+                  } else if (v) {
+                    nudgeBackgroundLocationAfterEnablingShare();
                   }
                 }}
                 trackColor={{ false: colors.border, true: '#34C759' }}
