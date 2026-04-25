@@ -383,12 +383,23 @@ export function useDriveNavigation(params: {
 
   const navigationProgressCoord: Coordinate = useMemo(() => {
     if (sdkActive) {
+      const matched = getSdkMatchedCoordinate();
+      if (matched) return matched;
+      /**
+       * No `onNavigationLocationUpdate` yet: use **live device GPS**, not `puckCoord` from
+       * {@link buildSdkWaitingNavigationProgress} (poly[0]) or the minimal adapter’s on-polyline
+       * point at f≈0. Those track the **route origin** / arc start, which often differs from where
+       * the driver is for several seconds — then the dot “jumps” when the matcher arrives and
+       * repeats as preview/native polylines swap. GPS is continuous with pre-start and only
+       * cedes to `matched` above once the native fix lands.
+       */
+      if (Number.isFinite(userLocation.lat) && Number.isFinite(userLocation.lng)) {
+        return { lat: userLocation.lat, lng: userLocation.lng };
+      }
       const pc = navigationProgress?.puckCoord ?? navigationProgress?.displayCoord;
       if (pc && Number.isFinite(pc.lat) && Number.isFinite(pc.lng)) {
         return { lat: pc.lat, lng: pc.lng };
       }
-      const c = getSdkMatchedCoordinate();
-      if (c) return c;
       const split = navigationProgress?.routeSplitSnap?.point;
       if (split && Number.isFinite(split.lat) && Number.isFinite(split.lng)) {
         return { lat: split.lat, lng: split.lng };
@@ -399,10 +410,6 @@ export function useDriveNavigation(params: {
         if (Number.isFinite(o.lat) && Number.isFinite(o.lng)) {
           return { lat: o.lat, lng: o.lng };
         }
-      }
-      /* Brief gap after `resetNavSdkState` + before waiting progress or matcher: stay on device GPS. */
-      if (Number.isFinite(userLocation.lat) && Number.isFinite(userLocation.lng)) {
-        return { lat: userLocation.lat, lng: userLocation.lng };
       }
       return { lat: Number.NaN, lng: Number.NaN };
     }
