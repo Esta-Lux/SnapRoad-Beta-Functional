@@ -54,24 +54,20 @@ export function nativeMirrorFormattedDistanceOrNull(
 }
 
 /**
- * Turn-card distance: prefer verified native mirror strings; if the bridge omits
- * `primaryDistanceFormatted` for one tick, format **only** from
- * `distanceToNextManeuverMeters` in one place to avoid clashing with a parallel JS
- * formatter elsewhere.
+ * Turn-card distance for the HUD: **always** format from `distanceToNextManeuverMeters` when it is
+ * valid. Native `formattedDistance` / `primaryDistanceFormatted` are not used for display — they
+ * can be locale-mangled (`0,25 mi`, odd padding) or split oddly; {@link formatImperialManeuverDistance}
+ * gives consistent US-style `123` + `FT` / `0.2` + `MI` to match the rest of the app.
+ *
+ * (Bridge strings remain available via {@link nativeFormattedDistanceFromProgressPayload} for
+ * diagnostics; {@link nativeMirrorFormattedDistanceOrNull} still encodes the iOS “reject mirror
+ * without numeric” safety for other call sites.)
  */
 export function sdkManeuverDisplayDistanceFromProgress(
-  p: Pick<
-    SdkNavProgressEvent,
-    | 'formattedDistance'
-    | 'formattedDistanceUnit'
-    | 'primaryDistanceFormatted'
-    | 'distanceToNextManeuverMeters'
-  >,
+  p: Pick<SdkNavProgressEvent, 'distanceToNextManeuverMeters'>,
 ): NativeFormattedDistance | null {
-  const m = nativeMirrorFormattedDistanceOrNull(p);
-  if (m) return m;
   const d = p.distanceToNextManeuverMeters;
-  if (typeof d !== 'number' || !Number.isFinite(d)) {
+  if (typeof d !== 'number' || !Number.isFinite(d) || d < 0) {
     return null;
   }
   return formatImperialManeuverDistance(d, { omitNowLabel: true });
@@ -109,8 +105,9 @@ export type SdkNavProgressEvent = {
   lanes?: SdkNavProgressLane[];
   shield?: SdkNavProgressShield | null;
   /**
-   * Optional: locale-aware distance string from native (e.g. "500 ft", "0.2 mi").
-   * When set, turn UI should display it verbatim instead of formatting meters in JS.
+   * Optional: native may send locale-specific strings. The headless HUD turn card does **not**
+   * use these for display; it uses `distanceToNextManeuverMeters` →
+   * {@link sdkManeuverDisplayDistanceFromProgress}.
    */
   primaryDistanceFormatted?: string;
   /** Split form (same intent as {@link primaryDistanceFormatted}). */

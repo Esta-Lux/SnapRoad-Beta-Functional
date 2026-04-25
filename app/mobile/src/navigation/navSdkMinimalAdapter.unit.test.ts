@@ -57,7 +57,7 @@ test('minimal adapter falls back to on-polyline point when location is null', ()
   assert.equal(r.snapped.distanceMeters, 0);
 });
 
-test('minimal adapter: banner uses formattedDistance + unit when primaryDistanceFormatted absent', () => {
+test('minimal adapter: banner distance is US imperial from distanceToNextManeuverMeters (ignores native strings)', () => {
   const polyline = [
     { lat: 40.0, lng: -74.0 },
     { lat: 40.1, lng: -74.1 },
@@ -72,8 +72,8 @@ test('minimal adapter: banner uses formattedDistance + unit when primaryDistance
     location: null,
     routePolyline: polyline,
   });
-  assert.equal(r.banner?.primaryDistanceFormatted, '800');
-  assert.equal(r.banner?.primaryDistanceFormattedUnit, 'ft');
+  assert.equal(r.banner?.primaryDistanceFormatted, '260');
+  assert.equal(r.banner?.primaryDistanceFormattedUnit, 'FT');
 });
 
 test('minimal adapter: primaryInstruction wins over a different currentStepInstruction', () => {

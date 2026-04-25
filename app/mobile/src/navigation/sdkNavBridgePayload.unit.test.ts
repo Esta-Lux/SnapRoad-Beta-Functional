@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  type SdkNavProgressEvent,
   nativeFormattedDistanceFromProgressPayload,
   nativeMirrorFormattedDistanceOrNull,
   sdkManeuverDisplayDistanceFromProgress,
@@ -59,10 +60,21 @@ test('nativeMirror: keeps formatted when numeric distance is present', () => {
   assert.deepEqual(r, { value: '800 ft', unit: '' });
 });
 
-test('sdkManeuverDisplay: uses imperial fallback when string missing but meters present', () => {
+test('sdkManeuverDisplay: always formats from meters (US), ignores native locale strings', () => {
   const r = sdkManeuverDisplayDistanceFromProgress({
     distanceToNextManeuverMeters: 400,
-  } as { distanceToNextManeuverMeters: number });
-  assert.match(r?.value ?? '', /^\d/);
-  assert.match((r?.unit ?? '').toUpperCase(), /MI|FT/);
+    formattedDistance: '0,25',
+    formattedDistanceUnit: 'MI',
+    primaryDistanceFormatted: '000,25 miles',
+  } as SdkNavProgressEvent);
+  assert.deepEqual(r, { value: '0.2', unit: 'MI' });
+});
+
+test('sdkManeuverDisplay: feet for short leg', () => {
+  const r = sdkManeuverDisplayDistanceFromProgress({ distanceToNextManeuverMeters: 75 });
+  assert.deepEqual(r, { value: '245', unit: 'FT' });
+});
+
+test('sdkManeuverDisplay: null when distance missing', () => {
+  assert.equal(sdkManeuverDisplayDistanceFromProgress({}), null);
 });

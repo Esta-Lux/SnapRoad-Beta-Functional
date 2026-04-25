@@ -1,7 +1,8 @@
 import type { NativeFormattedDistance } from './navSdkMirrorTypes';
 
 /**
- * Turn card distance: when mirroring native, prefer locale-formatted strings from the SDK bridge.
+ * Turn card distance: for headless SDK, `nativeFormattedDistance` is already US imperial from
+ * {@link import('./sdkNavBridgePayload').sdkManeuverDisplayDistanceFromProgress} (meters → value + unit).
  */
 export function resolveDisplayDistance(
   isNativeMirror: boolean | undefined,
