@@ -215,10 +215,12 @@ export function speak(
 
   void (async () => {
     await configureAudioSessionForSpeechOutput();
+    const voiceId = await getPreferredTtsVoiceIdentifier();
     Speech.speak(phrase, {
       rate,
       pitch,
       language: 'en-US',
+      ...(voiceId ? { voice: voiceId } : {}),
       onDone: onUtteranceFinished,
       onStopped: onUtteranceFinished,
       onError: onUtteranceFinished,

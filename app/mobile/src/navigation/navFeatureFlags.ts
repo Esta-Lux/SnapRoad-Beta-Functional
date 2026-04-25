@@ -1,14 +1,50 @@
 /**
- * EXPO_PUBLIC_* vars are inlined at bundle time. Most flags default off; logic SDK defaults on
- * (see {@link navLogicSdkEnabled}).
+ * EXPO_PUBLIC_* vars are inlined at bundle time. Most flags default off. The launch-default
+ * navigation engine is the JS/RNMapbox pipeline; native/headless SDK modes are opt-in.
  *
  * Do **not** statically import `expo-constants`: it resolves to a path that pulls `react-native`
  * into the module graph, which breaks Node/tsx unit tests (`esbuild` cannot transform RN).
  * Lazy-require inside {@link nativeNavigationSupportedBuild} only; callers of other exports
  * never load Expo in the test runner.
  */
-function envBool(key: string, defaultVal: boolean): boolean {
-  const v = process.env[key];
+type NavEnvKey =
+  | 'EXPO_PUBLIC_NAV_REFRESH_V2'
+  | 'EXPO_PUBLIC_NAV_EDGE_ETA'
+  | 'EXPO_PUBLIC_NAV_ETA_BLEND'
+  | 'EXPO_PUBLIC_NAV_SERVER_ETA'
+  | 'EXPO_PUBLIC_NAV_NATIVE_SDK'
+  | 'EXPO_PUBLIC_NAV_LOGIC_SDK'
+  | 'EXPO_PUBLIC_NAV_FULLSCREEN_NATIVE'
+  | 'EXPO_PUBLIC_NAV_LOGIC_DEBUG'
+  | 'EXPO_PUBLIC_NAV_LANE_UI';
+
+function envValue(key: NavEnvKey): string | undefined {
+  switch (key) {
+    case 'EXPO_PUBLIC_NAV_REFRESH_V2':
+      return process.env.EXPO_PUBLIC_NAV_REFRESH_V2;
+    case 'EXPO_PUBLIC_NAV_EDGE_ETA':
+      return process.env.EXPO_PUBLIC_NAV_EDGE_ETA;
+    case 'EXPO_PUBLIC_NAV_ETA_BLEND':
+      return process.env.EXPO_PUBLIC_NAV_ETA_BLEND;
+    case 'EXPO_PUBLIC_NAV_SERVER_ETA':
+      return process.env.EXPO_PUBLIC_NAV_SERVER_ETA;
+    case 'EXPO_PUBLIC_NAV_NATIVE_SDK':
+      return process.env.EXPO_PUBLIC_NAV_NATIVE_SDK;
+    case 'EXPO_PUBLIC_NAV_LOGIC_SDK':
+      return process.env.EXPO_PUBLIC_NAV_LOGIC_SDK;
+    case 'EXPO_PUBLIC_NAV_FULLSCREEN_NATIVE':
+      return process.env.EXPO_PUBLIC_NAV_FULLSCREEN_NATIVE;
+    case 'EXPO_PUBLIC_NAV_LOGIC_DEBUG':
+      return process.env.EXPO_PUBLIC_NAV_LOGIC_DEBUG;
+    case 'EXPO_PUBLIC_NAV_LANE_UI':
+      return process.env.EXPO_PUBLIC_NAV_LANE_UI;
+    default:
+      return undefined;
+  }
+}
+
+function envBool(key: NavEnvKey, defaultVal: boolean): boolean {
+  const v = envValue(key);
   if (v === '1' || v === 'true') return true;
   if (v === '0' || v === 'false') return false;
   return defaultVal;
@@ -57,10 +93,10 @@ export function navNativeSdkEnabled(): boolean {
  * When full-screen native navigation is launched, `MapMain` is replaced and this headless mode no
  * longer owns the visible turn-by-turn UI.
  *
- * **Default on:** matched location, reroute, progress, and native TTS come from the Navigation SDK
- * during trips (single authority). Set `EXPO_PUBLIC_NAV_LOGIC_SDK=0` for JS-only Directions +
- * `useNavigationProgress` (e.g. Expo Go / experiments). Requires a **dev client** build with native
- * Mapbox Navigation, not Expo Go.
+ * **Default off for launch:** JS Directions + `useNavigationProgress` own routing, puck,
+ * reroute, progress, and voice. Set `EXPO_PUBLIC_NAV_LOGIC_SDK=1` only for internal
+ * native/headless SDK experiments. Requires a **dev client** build with native Mapbox Navigation,
+ * not Expo Go.
  *
  * Turn-by-turn **card** copy on the RN map: when `NavigationProgress.instructionSource === 'sdk'`,
  * `MapScreen` + `TurnInstructionCard` with `navSdkDrivesContent`: native banner, NavStep, lanes,
@@ -68,7 +104,7 @@ export function navNativeSdkEnabled(): boolean {
  * `NAV_LANE_UI` full JS lane row on SDK trips. JS pipeline remains `instructionSource === 'js'`.
  */
 export function navLogicSdkEnabled(): boolean {
-  return envBool('EXPO_PUBLIC_NAV_LOGIC_SDK', true);
+  return envBool('EXPO_PUBLIC_NAV_LOGIC_SDK', false);
 }
 
 /**

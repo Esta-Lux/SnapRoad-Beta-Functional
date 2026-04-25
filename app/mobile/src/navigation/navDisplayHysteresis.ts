@@ -188,6 +188,62 @@ export type ManeuverDisplayMetersState = {
  * at crawl, bucket in 5m steps and time-gate; at speed, a light EMA + epsilon gate.
  * Large jumps (reroute) commit immediately. Step key change resets the snapshot.
  */
+// ── ETA strip: remaining miles + minutes (NavigationStatusStrip) ───────────
+
+export type StripProgressSnap = {
+  milesPacked: number;
+  minsPacked: number;
+  updatedAt: number;
+};
+
+/** Align with {@link useDriveNavigation} `liveEta` coarse packing. */
+function packStripMiles(m: number): number {
+  return Math.round(Math.max(0, m) * 20) / 20;
+}
+
+function packStripMin(t: number): number {
+  return Math.round(Math.max(0, t) * 4) / 4;
+}
+
+/** Min time between visible strip updates when packed values nudge (traffic jitter). */
+export const STRIP_PROGRESS_DWELL_MS = 1400;
+/** Commit immediately when native reports a large change (reroute, big traffic swing). */
+export const STRIP_MI_JUMP = 0.22;
+export const STRIP_MIN_JUMP = 2.5;
+
+/**
+ * Stabilize remaining distance + time on the nav strip. Native `distanceRemaining` /
+ * `durationRemaining` can flutter every progress tick; this holds the last readable pair
+ * unless packed values move meaningfully or a dwell elapses.
+ */
+export function resolveStableStripProgress(
+  prev: StripProgressSnap | null,
+  rawMiles: number,
+  rawMinutes: number,
+  nowMs: number,
+): StripProgressSnap {
+  const pm = packStripMiles(rawMiles);
+  const pt = packStripMin(rawMinutes);
+  if (!prev) {
+    return { milesPacked: pm, minsPacked: pt, updatedAt: nowMs };
+  }
+  const bigJump =
+    Math.abs(pm - prev.milesPacked) >= STRIP_MI_JUMP ||
+    Math.abs(pt - prev.minsPacked) >= STRIP_MIN_JUMP;
+  if (bigJump) {
+    return { milesPacked: pm, minsPacked: pt, updatedAt: nowMs };
+  }
+  const samePacked =
+    Math.abs(pm - prev.milesPacked) < 1e-9 && Math.abs(pt - prev.minsPacked) < 1e-9;
+  if (samePacked) {
+    return prev;
+  }
+  if (nowMs - prev.updatedAt < STRIP_PROGRESS_DWELL_MS) {
+    return prev;
+  }
+  return { milesPacked: pm, minsPacked: pt, updatedAt: nowMs };
+}
+
 export function resolveStableManeuverDisplayMeters(
   prev: ManeuverDisplayMetersState | null,
   rawM: number,

@@ -14,7 +14,10 @@ import {
   buildSdkWaitingNavigationProgress,
   resetHeadingSmoothing,
 } from './navSdkProgressAdapter';
-import { buildMinimalNavigationProgressFromSdk } from './navSdkMinimalAdapter';
+import {
+  buildMinimalNavigationProgressFromSdk,
+  resetSdkTripEtaSmoothing,
+} from './navSdkMinimalAdapter';
 
 export type SdkGuidancePhase = 'idle' | 'waiting' | 'active';
 
@@ -162,6 +165,7 @@ export function resetNavSdkState() {
   // Module-level EWMA in the adapter must reset across trips so the first
   // heading tick of a new trip isn't pulled toward the last trip's bearing.
   resetHeadingSmoothing();
+  resetSdkTripEtaSmoothing();
   emitStoreImmediate();
 }
 
@@ -279,6 +283,14 @@ export function ingestSdkLaneAssets(assets: NativeLaneAsset[] | null | undefined
 
 export function ingestSdkVoiceSubtitle(text: string | undefined) {
   const t = text?.trim() || null;
+  if (
+    t &&
+    t === state.lastVoiceInstructionText &&
+    state.lastVoiceInstructionAtMs > 0 &&
+    Date.now() - state.lastVoiceInstructionAtMs < 7000
+  ) {
+    return;
+  }
   const tel = { ...state.telemetry, voiceEvents: state.telemetry.voiceEvents + 1 };
   state = {
     ...state,

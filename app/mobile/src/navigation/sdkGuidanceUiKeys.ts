@@ -7,9 +7,9 @@ import type { NavStep, NavigationProgress } from './navModel';
  */
 function metersToGuidanceDisplayBucket(m: number | undefined | null): string {
   if (typeof m !== 'number' || !Number.isFinite(m)) return 'n';
-  if (m > 200) return `a${Math.floor(m / 20) * 20}`;
-  if (m > 50) return `b${Math.floor(m / 10) * 10}`;
-  if (m > 10) return `c${Math.floor(m / 5) * 5}`;
+  if (m > 200) return `a${Math.floor(m / 40) * 40}`;
+  if (m > 50) return `b${Math.floor(m / 12) * 12}`;
+  if (m > 10) return `c${Math.floor(m / 6) * 6}`;
   return `d${Math.max(0, Math.floor(m))}`;
 }
 

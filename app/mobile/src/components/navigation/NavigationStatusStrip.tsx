@@ -17,7 +17,9 @@ import { NAV_MAP_BOTTOM_CHROME_PX } from '../../navigation/cameraPresets';
 import {
   resolveStableArrival,
   resolveStableSpeedMph,
+  resolveStableStripProgress,
   type ArrivalDisplay,
+  type StripProgressSnap,
 } from '../../navigation/navDisplayHysteresis';
 
 /**
@@ -103,14 +105,28 @@ export default React.memo(function NavigationStatusStrip({
     });
   }, [arrivalEpochMs, liveEta.etaMinutes]);
 
-  const distMiles =
+  const rawDistMiles =
     progressDistanceMiles != null && Number.isFinite(progressDistanceMiles)
       ? progressDistanceMiles
       : liveEta.distanceMiles;
-  const durMin =
+  const rawDurMin =
     progressDurationMinutes != null && Number.isFinite(progressDurationMinutes)
       ? progressDurationMinutes
       : liveEta.etaMinutes;
+
+  const stripSnapRef = useRef<StripProgressSnap | null>(null);
+  const { distMiles, durMin } = useMemo(() => {
+    const now = Date.now();
+    const next = resolveStableStripProgress(
+      stripSnapRef.current,
+      rawDistMiles,
+      rawDurMin,
+      now,
+    );
+    stripSnapRef.current = next;
+    return { distMiles: next.milesPacked, durMin: next.minsPacked };
+  }, [rawDistMiles, rawDurMin]);
+
   const distLabel = formatDistance(distMiles);
   const timeLabel = formatDuration(durMin);
 

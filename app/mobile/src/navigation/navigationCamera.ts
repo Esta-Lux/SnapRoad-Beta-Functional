@@ -25,9 +25,9 @@ export function getLookAheadMeters(
     return Math.max(0, Math.min(28, nextManeuverDistanceMeters * 0.35));
   }
   const mph = Math.max(0, speedMps) * 2.236936;
-  if (mode === 'sport') return Math.min(180, 40 + mph * 2.2);
-  if (mode === 'adaptive') return Math.min(140, 30 + mph * 1.6);
-  return Math.min(100, 20 + mph * 1.0);
+  if (mode === 'sport') return Math.min(150, 34 + mph * 1.85);
+  if (mode === 'adaptive') return Math.min(118, 26 + mph * 1.35);
+  return Math.min(88, 18 + mph * 0.9);
 }
 
 export function projectAhead(lat: number, lng: number, headingDeg: number, meters: number) {

@@ -11,10 +11,14 @@ import {
   ARRIVAL_DWELL_MS,
   ARRIVAL_JUMP_MS,
   SPEED_MPH_DELTA,
+  STRIP_MI_JUMP,
+  STRIP_MIN_JUMP,
+  STRIP_PROGRESS_DWELL_MS,
   TEXT_STABLE_MS,
   resolveStableArrival,
   resolveStableManeuverDisplayMeters,
   resolveStableSpeedMph,
+  resolveStableStripProgress,
   resolveStableText,
   type ManeuverDisplayMetersState,
   type StableTextState,
@@ -246,4 +250,27 @@ test('maneuver dist: crawl 45/47/48 share one 6m bucket', () => {
   assert.equal(s.displayed, 45);
   s = resolveStableManeuverDisplayMeters(s, 48, 800, '0|L', mph);
   assert.equal(s.displayed, 48);
+});
+
+test('strip progress: big jump commits immediately', () => {
+  const a = resolveStableStripProgress(null, 12.4, 18.2, 0);
+  const b = resolveStableStripProgress(a, 12.4 - STRIP_MI_JUMP - 0.05, 18.2, 1000);
+  assert.equal(b.milesPacked, Math.round(Math.max(0, 12.4 - STRIP_MI_JUMP - 0.05) * 20) / 20);
+});
+
+test('strip progress: small packed nudge respects dwell', () => {
+  let s = resolveStableStripProgress(null, 5.0, 12.0, 0);
+  const nudged = 5.15;
+  const packedNudge = Math.round(Math.max(0, nudged) * 20) / 20;
+  assert.equal(packedNudge, 5.15);
+  const held = resolveStableStripProgress(s, nudged, 12.0, 100);
+  assert.deepEqual(held, s);
+  const after = resolveStableStripProgress(s, nudged, 12.0, STRIP_PROGRESS_DWELL_MS + 200);
+  assert.equal(after.milesPacked, packedNudge);
+});
+
+test('strip progress: large minute jump commits without dwell', () => {
+  const s = resolveStableStripProgress(null, 4.0, 20.0, 0);
+  const j = resolveStableStripProgress(s, 4.05, 20.0 + STRIP_MIN_JUMP + 0.5, 50);
+  assert.equal(j.minsPacked, Math.round(Math.max(0, 20.0 + STRIP_MIN_JUMP + 0.5) * 4) / 4);
 });

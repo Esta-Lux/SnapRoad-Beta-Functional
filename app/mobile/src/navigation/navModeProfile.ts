@@ -68,15 +68,15 @@ export function getProgressTuning(mode: DrivingMode): ProgressTuning {
   switch (mode) {
     case 'calm':
       return {
-        leadScale: 0.82,
-        leadCapMeters: 18,
+        leadScale: 0.92,
+        leadCapMeters: 22,
         snapLookaheadSegments: 52,
-        alphaOffset: -0.05,
+        alphaOffset: -0.02,
       };
     case 'sport':
       return {
-        leadScale: 1.14,
-        leadCapMeters: 38,
+        leadScale: 1.2,
+        leadCapMeters: 42,
         snapLookaheadSegments: 58,
         alphaOffset: 0.06,
       };

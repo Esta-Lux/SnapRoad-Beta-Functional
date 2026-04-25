@@ -36,6 +36,29 @@ function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
 }
 
+/** EMA on `durationRemaining` for arrival clock only — raw seconds stay authoritative in payload. */
+let sdkEtaDurationSmoothSec: number | null = null;
+const SDK_ETA_DUR_EMA = 0.22;
+const SDK_ETA_JUMP_SEC = 90;
+
+export function resetSdkTripEtaSmoothing(): void {
+  sdkEtaDurationSmoothSec = null;
+}
+
+function smoothedEtaSecondsFromDurationRemaining(durRem: number): number {
+  if (!Number.isFinite(durRem) || durRem < 0) return 0;
+  if (sdkEtaDurationSmoothSec == null) {
+    sdkEtaDurationSmoothSec = durRem;
+    return durRem;
+  }
+  if (Math.abs(durRem - sdkEtaDurationSmoothSec) >= SDK_ETA_JUMP_SEC) {
+    sdkEtaDurationSmoothSec = durRem;
+    return durRem;
+  }
+  sdkEtaDurationSmoothSec = sdkEtaDurationSmoothSec * (1 - SDK_ETA_DUR_EMA) + durRem * SDK_ETA_DUR_EMA;
+  return Math.max(0, Math.round(sdkEtaDurationSmoothSec));
+}
+
 /**
  * Build `NavigationProgress` from native SDK progress + matched location + route polyline.
  * Puck / heading use the native matched fix; route trim uses `fractionTraveled` on the polyline.
@@ -212,7 +235,7 @@ export function buildMinimalNavigationProgressFromSdk(
     distanceRemainingMeters: distRem,
     modelDurationRemainingSeconds: durRem,
     durationRemainingSeconds: durRem,
-    etaEpochMs: Date.now() + durRem * 1000,
+    etaEpochMs: Date.now() + smoothedEtaSecondsFromDurationRemaining(durRem) * 1000,
     isOffRoute: false,
     confidence: 1,
     instructionSource: 'sdk',

@@ -16,7 +16,7 @@ test('sdkGuidanceStabilityKey includes leg + step (multi-leg safe)', () => {
   assert.equal(sdkGuidanceStabilityKey(null, null), 'sdk|leg:0|step:0');
 });
 
-test('sdkGuidanceUiSignature: same for small distance wiggle in same 20m bucket (far)', () => {
+test('sdkGuidanceUiSignature: same for small distance wiggle in same 40m bucket (far)', () => {
   const a = {
     instructionSource: 'sdk',
     nextStep: { rawType: 'turn', rawModifier: 'right' } as NavigationProgress['nextStep'],
@@ -36,6 +36,6 @@ test('sdkGuidanceUiSignature: changes when distance crosses bucket (far)', () =>
     nextStepDistanceMeters: 200,
     nativeStepIdentity: { legIndex: 0, stepIndex: 2 },
   } as unknown as NavigationProgress;
-  const b = { ...a, nextStepDistanceMeters: 230 } as unknown as NavigationProgress;
+  const b = { ...a, nextStepDistanceMeters: 250 } as unknown as NavigationProgress;
   assert.notEqual(sdkGuidanceUiSignature(a), sdkGuidanceUiSignature(b));
 });

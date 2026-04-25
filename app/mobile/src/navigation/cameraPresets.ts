@@ -74,7 +74,7 @@ const MODE_CONFIG: Record<
     padTopSpeed: 50,
     turnApproachPadBoost: 20,
     turnApproachMeters: 200,
-    transitionMs: 3000,
+    transitionMs: 1200,
   },
   adaptive: {
     minPitch: 36,
@@ -86,7 +86,7 @@ const MODE_CONFIG: Record<
     padTopSpeed: 48,
     turnApproachPadBoost: 20,
     turnApproachMeters: 200,
-    transitionMs: 1500,
+    transitionMs: 780,
   },
   sport: {
     minPitch: 18,
@@ -98,7 +98,7 @@ const MODE_CONFIG: Record<
     padTopSpeed: 42,
     turnApproachPadBoost: 18,
     turnApproachMeters: 200,
-    transitionMs: 400,
+    transitionMs: 360,
   },
 };
 
@@ -212,8 +212,8 @@ export function getCameraPreset({
 export function getLiveNavigationCameraPreset(args: Args): CameraPreset {
   const base = getCameraPreset(args);
   const enh = getCameraConfig(args.mode, args.speedMps);
-  const minAnim = args.mode === 'sport' ? 240 : args.mode === 'adaptive' ? 420 : 800;
-  const maxAnim = args.mode === 'calm' ? 3200 : 1800;
+  const minAnim = args.mode === 'sport' ? 180 : args.mode === 'adaptive' ? 260 : 420;
+  const maxAnim = args.mode === 'calm' ? 1100 : args.mode === 'adaptive' ? 760 : 480;
   const animationDuration = Math.round(
     clamp(base.animationDuration * 0.55 + enh.animationDuration * 0.45, minAnim, maxAnim),
   );

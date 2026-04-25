@@ -506,6 +506,11 @@ export default function MapScreen() {
     progress: nav.navigationProgress,
     enabled: !navVoiceMuted && nav.isNavigating && !navLogicSdkEnabled(),
     drivingMode,
+    routeSteps: nav.navigationData?.steps,
+    routePolyline: nav.navigationData?.polyline,
+    currentStepIndex: nav.currentStepIndex,
+    userCoord: nav.navigationProgressCoord,
+    navigationSteps: nav.navigationSteps,
   });
   const sdkStepGap = useSdkStepGapDisplay(nav.isNavigating, nav.navigationProgress);
 
@@ -586,19 +591,42 @@ export default function MapScreen() {
     [nav.applySdkRouteGeometry],
   );
 
+  const sdkRouteHandoffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [sdkRouteHandoffUi, setSdkRouteHandoffUi] = useState(false);
   const handleSdkRouteChanged = useCallback(
     (event: { nativeEvent: { routes?: SdkRoutesNative } }) => {
+      if (sdkRouteHandoffTimerRef.current) {
+        clearTimeout(sdkRouteHandoffTimerRef.current);
+        sdkRouteHandoffTimerRef.current = null;
+      }
+      setSdkRouteHandoffUi(true);
       ingestSdkRouteChangedEvent();
       const routes = event.nativeEvent.routes;
-      if (!routes?.mainRoute) return;
+      if (!routes?.mainRoute) {
+        sdkRouteHandoffTimerRef.current = setTimeout(() => {
+          setSdkRouteHandoffUi(false);
+          sdkRouteHandoffTimerRef.current = null;
+        }, 1400);
+        return;
+      }
       const poly = polylineFromSdkRoutes(routes);
       const mr = routes.mainRoute;
       if (poly.length >= 2 && typeof mr.distance === 'number' && typeof mr.expectedTravelTime === 'number') {
         ingestSdkRoutePolyline(poly);
         nav.applySdkRouteGeometry(poly, mr.distance, mr.expectedTravelTime, routes);
       }
+      sdkRouteHandoffTimerRef.current = setTimeout(() => {
+        setSdkRouteHandoffUi(false);
+        sdkRouteHandoffTimerRef.current = null;
+      }, 1400);
     },
     [nav.applySdkRouteGeometry],
+  );
+  useEffect(
+    () => () => {
+      if (sdkRouteHandoffTimerRef.current) clearTimeout(sdkRouteHandoffTimerRef.current);
+    },
+    [],
   );
 
   /** During nav: single fused coord from `useDriveNavigation` (native matcher when logic SDK; JS snap otherwise). */
@@ -691,7 +719,7 @@ export default function MapScreen() {
       ? Math.max(0.005, Math.min(0.05, 100 / navPolylineLenMetersRaw))
       : 0.02;
   const smoothedFraction = useSmoothedNavFraction(targetFraction, nav.isNavigating && !isNativeSdkPassThrough, {
-    timeConstantMs: 180,
+    timeConstantMs: drivingMode === 'calm' ? 150 : drivingMode === 'sport' ? 105 : 125,
     snapDeltaFraction,
     enabled: !isNativeSdkPassThrough,
     deadReckoning:
@@ -699,6 +727,8 @@ export default function MapScreen() {
         ? {
             polylineLengthMeters: navPolylineLenMetersRaw,
             speedMps: Number.isFinite(lastKnownNavSpeedMps) ? lastKnownNavSpeedMps : 0,
+            staleThresholdMs: drivingMode === 'sport' ? 180 : drivingMode === 'adaptive' ? 220 : 260,
+            maxStaleMs: 3200,
           }
         : undefined,
   });
@@ -3759,7 +3789,7 @@ export default function MapScreen() {
                     showCongestion={
                       modeConfig.showCongestion && (nav.showRoutePreview || nav.isNavigating)
                     }
-                    isRerouting={nav.isRerouting}
+                    isRerouting={nav.isRerouting || sdkRouteHandoffUi}
                     belowLayerID={buildingsBelowLayerId}
                   />
                 );
@@ -4074,7 +4104,7 @@ export default function MapScreen() {
                 state="active"
                 distanceValue="—"
                 distanceUnit=""
-                primaryInstruction={prog.banner?.primaryInstruction ?? 'Acquiring route…'}
+                primaryInstruction={prog.banner?.primaryInstruction ?? 'Syncing route with your location…'}
                 secondaryInstruction={undefined}
                 navSdkDrivesContent
                 textStabilityKey="sdk-waiting"
@@ -4562,7 +4592,7 @@ export default function MapScreen() {
               : null
           }
           speedMph={displaySpeedMph}
-          isRerouting={nav.isRerouting}
+          isRerouting={nav.isRerouting || sdkRouteHandoffUi}
           onEndNavigation={nav.stopNavigation}
           bottomInset={insets.bottom}
           voiceMuted={navVoiceMuted}

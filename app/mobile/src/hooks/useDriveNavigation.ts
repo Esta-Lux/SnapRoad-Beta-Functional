@@ -83,15 +83,16 @@ import * as Haptics from 'expo-haptics';
 /**
  * Turn-by-turn orchestration for SnapRoad.
  *
- * **Single engine rule (critical):** When `navSdkHeadless` is true (default: `EXPO_PUBLIC_NAV_LOGIC_SDK` unset
- * or `1`) and a trip is active, **Mapbox Navigation SDK** (hidden `MapboxNavigationView` + `navSdkStore`) is
+ * **Single engine rule (critical):** Launch builds keep `navSdkHeadless` false unless
+ * `EXPO_PUBLIC_NAV_LOGIC_SDK=1` is explicitly set. JS snap/progress (`useNavigationProgress` +
+ * `navigationProgressCore`) own puck/ETA/off-route for the custom RN map experience.
+ *
+ * When `navSdkHeadless` is true and a trip is active, **Mapbox Navigation SDK**
+ * (hidden `MapboxNavigationView` + `navSdkStore`) is
  * the sole authority for matched location, route progress, reroute, and (unless suppressed) voice. The JS
  * pipeline (`useNavigationProgress`, off-route streak reroute, traffic refresh intervals) is **bypassed** —
  * do not blend or “fall back” to raw GPS progress during that window except the explicit waiting UI from
  * `getSdkWaitingNavigationProgress`.
- *
- * When `navSdkHeadless` is false (`EXPO_PUBLIC_NAV_LOGIC_SDK=0`), JS snap/progress (`useNavigationProgress` +
- * `navigationProgressCore`) owns puck/ETA/off-route for the custom RN map experience.
  */
 
 /** Aligned voice + auto-end: "near destination" along remaining route (`navStepsFromDirections` maps `arrive`). */
@@ -160,8 +161,8 @@ export function useDriveNavigation(params: {
   /** Live friend destination — marks routes as non-qualifying for gems. */
   dynamicDestinationFollow?: boolean;
   /**
-   * When true (`EXPO_PUBLIC_NAV_LOGIC_SDK`), native Navigation SDK supplies progress, puck, and voice;
-   * JS reroute/refresh and progress math are bypassed during `isNavigating`.
+   * When true (`EXPO_PUBLIC_NAV_LOGIC_SDK=1`), native Navigation SDK supplies progress, puck, and voice;
+   * JS reroute/refresh and progress math are bypassed during `isNavigating`. Launch default is false.
    */
   navSdkHeadless?: boolean;
 }) {

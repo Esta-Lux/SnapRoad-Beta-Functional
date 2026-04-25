@@ -8,13 +8,13 @@ Layer 1 is React Navigation (tabs + stacks). Layer 2 is turn-by-turn / Mapbox (`
 - Rename tab-bar driving flag hook: `useNavigationMode` (was `useNavigatingState`).
 - Add `src/navigation/types.ts` for param lists and composite navigation props.
 
-## Phase 1b — SDK vs JS single engine (ongoing)
+## Phase 1b — JS launch engine, SDK opt-in
 
-**Default:** `EXPO_PUBLIC_NAV_LOGIC_SDK` defaults to **on** in [`navFeatureFlags.ts`](../src/navigation/navFeatureFlags.ts) and **`eas.json`** production env. Active trips use the **headless Mapbox Navigation SDK** for matched location, progress, reroute, and native voice; RN map + turn UI **subscribe** to `navSdkStore` / `sdkBuiltNavigationProgress`. Set **`EXPO_PUBLIC_NAV_LOGIC_SDK=0`** for **JavaScript-only** Directions + `useNavigationProgress` (e.g. Expo Go, A/B tests).
+**Launch default:** `EXPO_PUBLIC_NAV_LOGIC_SDK` defaults to **off** in [`navFeatureFlags.ts`](../src/navigation/navFeatureFlags.ts), and **`eas.json`** production env sets it to `"0"`. Active trips use the **JavaScript Directions + RNMapbox pipeline** for route progress, reroute, ETA, turn cards, and voice. Set **`EXPO_PUBLIC_NAV_LOGIC_SDK=1`** only for internal headless Mapbox Navigation SDK experiments.
 
 During navigation, user position is the native **`LocationPuck`**: Android uses **`gps`** render mode for a clear navigation arrow while a trip is active; iOS uses the default puck with `puckBearing` from `CustomLocationProvider` / fused heading. A subtle **accuracy pulse** (route-colored) runs while navigating. `navDisplayCoord` / SDK matched location still drive map follow and turn UI when logic SDK is on.
 
-Headless SDK path (default when logic SDK on):
+Headless SDK path (opt-in when logic SDK is on):
 
 - Hidden `MapboxNavigationView` (`navigationLogicOnly`) feeds `navSdkStore` (`ingestSdkProgress`, `ingestSdkLocation`, …).
 - `useDriveNavigation` selects **`sdkBuiltNavigationProgress`** over JS `useNavigationProgress` while `sdkActive`.

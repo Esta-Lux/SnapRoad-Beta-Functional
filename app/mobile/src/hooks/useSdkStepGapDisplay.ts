@@ -7,8 +7,9 @@ import type {
   RoadSignal,
 } from '../navigation/navModel';
 
-const GAP_MAX_DIST_M = 130;
-const FRAC_CUE = 0.78;
+/** Wider gate reduces spurious gap-mode when native briefly omits primary near maneuvers. */
+const GAP_MAX_DIST_M = 148;
+const FRAC_CUE = 0.805;
 
 function stepKey(np: NavigationProgress): string {
   const i = np.nativeStepIdentity;

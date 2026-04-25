@@ -94,8 +94,8 @@ Direct comparison of the observable behaviours that make Apple Maps nav feel smo
 
 | Var | Default | Effect |
 |---|---|---|
-| `EXPO_PUBLIC_NAV_LOGIC_SDK` | **on** | Headless Navigation SDK drives logic on `MapScreen`. Set `0` for JS-only Directions + `useNavigationProgress` (Expo Go / experiments). |
-| `EXPO_PUBLIC_NAV_FULLSCREEN_NATIVE` | **off** | Route `Start navigation` through the full-screen `NativeNavigationScreen` (Mapbox's default UI chrome, themed via `NavigationViewControllerDelegate`). Default keeps the branded JS map. |
+| `EXPO_PUBLIC_NAV_LOGIC_SDK` | **off** | JS Directions + `useNavigationProgress` drive launch navigation on `MapScreen`. Set `1` only for internal headless Navigation SDK experiments. |
+| `EXPO_PUBLIC_NAV_FULLSCREEN_NATIVE` | **off** | Route `Start navigation` through the full-screen `NativeNavigationScreen` (Mapbox's default UI chrome, themed via `NavigationViewControllerDelegate`). Default keeps the branded RNMapbox map. |
 | `EXPO_PUBLIC_NAV_NATIVE_SDK` | build-capable default | Gates both of the above when the dev client lacks the native Mapbox Navigation module (e.g. Expo Go). |
 
 Both surfaces render the same `DRIVING_MODES[drivingMode]` palette — the Swift delegate (`routeLineLayerWithIdentifier` / `routeCasingLineLayerWithIdentifier`) applies the same hex values the JS `RouteOverlay` uses, so switching between hybrid and full-screen is visually coherent.
