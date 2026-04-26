@@ -1451,6 +1451,8 @@ export default function MapScreen() {
     showPhotoReports, setShowPhotoReports, showTrafficSafety, setShowTrafficSafety } = useMapLayers();
   /** Apple Maps baseline: safety cameras should be visible during active nav even if the explore layer is off. */
   const trafficSafetyWanted = showTrafficSafety || nav.isNavigating;
+  /** Camera POIs are a premium browse layer, but active navigation should still populate safety context. */
+  const cameraPoisWanted = (Boolean(user?.isPremium) && showCameras) || nav.isNavigating;
 
   // ── New layer data ──
   const [photoReports, setPhotoReports] = useState<PhotoReport[]>([]);
@@ -1888,12 +1890,7 @@ export default function MapScreen() {
   }, [Math.round(location.lat * 100), Math.round(location.lng * 100)]);
 
   useEffect(() => {
-    if (!user?.isPremium) {
-      if (showCameras) setShowCameras(false);
-      setCameraLocations([]);
-      return;
-    }
-    if (!showCameras) {
+    if (!cameraPoisWanted) {
       setCameraLocations([]);
       return;
     }
@@ -1928,7 +1925,7 @@ export default function MapScreen() {
         }
       })
       .catch((e) => logMapDataIssue('GET /api/map/cameras', e));
-  }, [showCameras, user?.isPremium, setShowCameras, mapTabFocused, Math.round(poiSearchCoord.lat * 100), Math.round(poiSearchCoord.lng * 100)]);
+  }, [cameraPoisWanted, mapTabFocused, Math.round(poiSearchCoord.lat * 100), Math.round(poiSearchCoord.lng * 100)]);
 
   const refreshPhotoReportsNearby = useCallback(() => {
     if (!showPhotoReports) return;
@@ -3916,7 +3913,7 @@ export default function MapScreen() {
             if (inc.type === 'construction') return showConstruction;
             return true;
           })} onIncidentTap={setActiveReportCard} zoomLevel={mapZoomLevel} />}
-          {user?.isPremium && showCameras && (
+          {cameraPoisWanted && (
             <CameraMarkers
               cameras={cameraLocations}
               onCameraTap={(cam) => setSelectedTrafficCamera(cam)}

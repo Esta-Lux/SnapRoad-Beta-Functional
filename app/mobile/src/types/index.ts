@@ -259,6 +259,9 @@ export interface CommuteRoute {
   leave_by_time: string;
   tz: string;
   alert_minutes_before: number;
+  monitoring_duration_minutes?: number;
+  notification_interval_minutes?: number;
+  max_notifications_per_window?: number;
   days_of_week: string[];
   notifications_enabled: boolean;
   created_at?: string;

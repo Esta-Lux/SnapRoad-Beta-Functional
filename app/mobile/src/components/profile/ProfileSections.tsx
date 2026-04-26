@@ -465,6 +465,9 @@ export function CommuteRoutesSection({
                 Leave {r.leave_by_time} · alert {r.alert_minutes_before >= 60 ? `${Math.round(r.alert_minutes_before / 60)}h` : `${r.alert_minutes_before}m`} before
               </Text>
               <Text style={{ color: sub, fontSize: 10, marginTop: 2 }}>
+                Scan {r.monitoring_duration_minutes ?? 180}m · every {r.notification_interval_minutes ?? 30}m · max {r.max_notifications_per_window ?? 3}
+              </Text>
+              <Text style={{ color: sub, fontSize: 10, marginTop: 2 }}>
                 {(r.days_of_week || []).map((d) => DAY_LABELS[d] || d).join(' ')}
               </Text>
             </View>

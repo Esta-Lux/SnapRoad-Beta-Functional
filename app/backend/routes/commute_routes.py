@@ -48,6 +48,9 @@ class CommuteRouteCreate(BaseModel):
     leave_by_time: str = Field(..., description="HH:MM local")
     tz: str = "America/New_York"
     alert_minutes_before: int = 120
+    monitoring_duration_minutes: int = 180
+    notification_interval_minutes: int = 30
+    max_notifications_per_window: int = 3
     days_of_week: List[str] = Field(default_factory=lambda: list(DAY_KEYS))
     notifications_enabled: bool = True
 
@@ -63,6 +66,9 @@ class CommuteRouteUpdate(BaseModel):
     leave_by_time: Optional[str] = None
     tz: Optional[str] = None
     alert_minutes_before: Optional[int] = None
+    monitoring_duration_minutes: Optional[int] = None
+    notification_interval_minutes: Optional[int] = None
+    max_notifications_per_window: Optional[int] = None
     days_of_week: Optional[List[str]] = None
     notifications_enabled: Optional[bool] = None
 
@@ -122,6 +128,9 @@ def create_commute_route(
         "leave_by_time": body.leave_by_time.strip(),
         "tz": body.tz or "America/New_York",
         "alert_minutes_before": max(5, min(body.alert_minutes_before, 24 * 60)),
+        "monitoring_duration_minutes": _safe_int(body.monitoring_duration_minutes, 180, 15, 12 * 60),
+        "notification_interval_minutes": _safe_int(body.notification_interval_minutes, 30, 5, 240),
+        "max_notifications_per_window": _safe_int(body.max_notifications_per_window, 3, 1, 12),
         "days_of_week": [d.lower()[:3] for d in body.days_of_week],
         "notifications_enabled": body.notifications_enabled,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -150,6 +159,12 @@ def update_commute_route(
         updates["days_of_week"] = [d.lower()[:3] for d in updates["days_of_week"]]
     if "alert_minutes_before" in updates and updates["alert_minutes_before"] is not None:
         updates["alert_minutes_before"] = max(5, min(int(updates["alert_minutes_before"]), 24 * 60))
+    if "monitoring_duration_minutes" in updates and updates["monitoring_duration_minutes"] is not None:
+        updates["monitoring_duration_minutes"] = _safe_int(updates["monitoring_duration_minutes"], 180, 15, 12 * 60)
+    if "notification_interval_minutes" in updates and updates["notification_interval_minutes"] is not None:
+        updates["notification_interval_minutes"] = _safe_int(updates["notification_interval_minutes"], 30, 5, 240)
+    if "max_notifications_per_window" in updates and updates["max_notifications_per_window"] is not None:
+        updates["max_notifications_per_window"] = _safe_int(updates["max_notifications_per_window"], 3, 1, 12)
     try:
         res = sb.table("commute_routes").update(updates).eq("id", route_id).eq("user_id", uid).execute()
         if not res.data:
@@ -195,6 +210,60 @@ def _parse_hhmm(s: str) -> Optional[tuple[int, int]]:
     return None
 
 
+def _safe_int(value: object, default: int, low: int, high: int) -> int:
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        n = default
+    return max(low, min(n, high))
+
+
+def _push_day(dt: datetime) -> str:
+    return dt.date().isoformat()
+
+
+def _iso_dt(value: object) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        s = str(value).replace("Z", "+00:00")
+        return datetime.fromisoformat(s)
+    except Exception:
+        return None
+
+
+def _window_push_count(route: dict, day_key: str) -> int:
+    if str(route.get("push_window_day") or "") != day_key:
+        return 0
+    return _safe_int(route.get("pushes_sent_window"), 0, 0, 999)
+
+
+def _can_send_window_push(route: dict, now_utc: datetime, day_key: str) -> bool:
+    max_count = _safe_int(route.get("max_notifications_per_window"), 3, 1, 12)
+    sent = _window_push_count(route, day_key)
+    if sent >= max_count:
+        return False
+    last = _iso_dt(route.get("last_push_at"))
+    if not last:
+        return True
+    interval_min = _safe_int(route.get("notification_interval_minutes"), 30, 5, 240)
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return now_utc - last.astimezone(timezone.utc) >= timedelta(minutes=interval_min)
+
+
+def _mark_window_push_sent(sb, route_id: str, now_utc: datetime, day_key: str, route: dict) -> None:
+    sent = _window_push_count(route, day_key) + 1
+    sb.table("commute_routes").update(
+        {
+            "last_push_at": now_utc.isoformat(),
+            "last_push_date": day_key,
+            "push_window_day": day_key,
+            "pushes_sent_window": sent,
+        }
+    ).eq("id", route_id).execute()
+
+
 @router.post("/internal/dispatch")
 async def dispatch_commute_alerts(request: Request):
     """Cron/worker: send push alerts when leave window approaches.
@@ -210,7 +279,7 @@ async def dispatch_commute_alerts(request: Request):
         routes = res.data or []
     except Exception:
         routes = []
-    today_utc = datetime.now(timezone.utc).date()
+    now_utc = datetime.now(timezone.utc)
     sent = 0
     for route in routes:
         uid = route.get("user_id")
@@ -228,11 +297,12 @@ async def dispatch_commute_alerts(request: Request):
         leave_local = now_local.replace(hour=hm[0], minute=hm[1], second=0, microsecond=0)
         alert_min = int(route.get("alert_minutes_before") or 120)
         notify_at = leave_local - timedelta(minutes=alert_min)
-        # 15-minute dispatch window
-        if not (notify_at <= now_local < notify_at + timedelta(minutes=15)):
+        monitor_min = _safe_int(route.get("monitoring_duration_minutes"), 180, 15, 12 * 60)
+        window_end = min(leave_local, notify_at + timedelta(minutes=monitor_min))
+        if not (notify_at <= now_local <= window_end):
             continue
-        last_push = route.get("last_push_date")
-        if last_push == str(today_utc) or last_push == today_utc.isoformat():
+        day_key = _push_day(now_local)
+        if not _can_send_window_push(route, now_utc, day_key):
             continue
         prof_row = sb_get_profile(str(uid)) or {}
         token = (prof_row.get("expo_push_token") or "").strip() or None
@@ -241,16 +311,16 @@ async def dispatch_commute_alerts(request: Request):
             continue
         origin = route.get("origin_label") or "Start"
         dest = route.get("dest_label") or "Destination"
-        title = "Time to head out"
+        title = "Commute scan"
         if is_premium:
             body = (
                 f"Leave by {route.get('leave_by_time')} for {dest}. "
-                "Premium live scan: leave a few minutes early if roads are heavy, or open SnapRoad for a faster alternate route."
+                "SnapRoad is watching traffic so you can save time, fuel, and road stress."
             )
         else:
             body = (
                 f"Leave by {route.get('leave_by_time')} for {dest}. "
-                "Options: leave early for traffic, or try an eco route to save fuel."
+                "Leave early if roads are heavy, or open SnapRoad for an efficient route."
             )
         data = {
             "type": "commute_alert",
@@ -259,6 +329,8 @@ async def dispatch_commute_alerts(request: Request):
             "origin_label": origin,
             "dest_label": dest,
             "alert_minutes_before": alert_min,
+            "monitoring_duration_minutes": monitor_min,
+            "max_notifications_per_window": _safe_int(route.get("max_notifications_per_window"), 3, 1, 12),
             "is_premium": is_premium,
             "suggested_actions": (
                 ["leave_early", "alternate_route"] if is_premium else ["leave_early", "eco_route"]
@@ -266,7 +338,7 @@ async def dispatch_commute_alerts(request: Request):
         }
         if send_expo_push(token, title, body, data):
             try:
-                sb.table("commute_routes").update({"last_push_date": str(today_utc)}).eq("id", route["id"]).execute()
+                _mark_window_push_sent(sb, str(route["id"]), now_utc, day_key, route)
             except Exception:
                 logger.debug("failed to update last_push_date for commute route %s", route["id"])
             sent += 1
@@ -302,7 +374,7 @@ async def dispatch_commute_traffic_alerts(request: Request):
     window_min = max(30, min(360, int(os.getenv("COMMUTE_TRAFFIC_WINDOW_START_BEFORE_LEAVE_MIN", "180"))))
     min_extra = float(os.getenv("COMMUTE_TRAFFIC_MIN_EXTRA_SEC", "300"))
     min_ratio = float(os.getenv("COMMUTE_TRAFFIC_EXTRA_RATIO", "0.12"))
-    cooldown = max(600, min(24 * 3600, int(os.getenv("COMMUTE_TRAFFIC_PUSH_COOLDOWN_SEC", "2700"))))
+    default_cooldown = max(600, min(24 * 3600, int(os.getenv("COMMUTE_TRAFFIC_PUSH_COOLDOWN_SEC", "2700"))))
 
     sb = get_supabase()
     try:
@@ -341,12 +413,26 @@ async def dispatch_commute_traffic_alerts(request: Request):
                 continue
 
             leave_local = now_local.replace(hour=hm[0], minute=hm[1], second=0, microsecond=0)
-            window_start = leave_local - timedelta(minutes=window_min)
-            if now_local < window_start or now_local > leave_local:
+            alert_min = _safe_int(route.get("alert_minutes_before"), window_min, 5, 24 * 60)
+            monitor_min = _safe_int(route.get("monitoring_duration_minutes"), window_min, 15, 12 * 60)
+            window_start = leave_local - timedelta(minutes=min(window_min, alert_min))
+            window_end = min(leave_local, window_start + timedelta(minutes=monitor_min))
+            if now_local < window_start or now_local > window_end:
                 skipped += 1
                 continue
 
+            interval_sec = _safe_int(
+                route.get("notification_interval_minutes"),
+                max(10, default_cooldown // 60),
+                5,
+                240,
+            ) * 60
+            cooldown = max(600, min(default_cooldown, interval_sec))
             if not _traffic_push_cooldown_elapsed(route.get("last_traffic_push_at"), cooldown):
+                skipped += 1
+                continue
+            day_key = _push_day(now_local)
+            if not _can_send_window_push(route, datetime.now(timezone.utc), day_key):
                 skipped += 1
                 continue
 
@@ -391,6 +477,8 @@ async def dispatch_commute_traffic_alerts(request: Request):
                 "extra_minutes": extra_min,
                 "traffic_duration_min": traffic_min,
                 "baseline_duration_min": baseline_min,
+                "monitoring_duration_minutes": monitor_min,
+                "max_notifications_per_window": _safe_int(route.get("max_notifications_per_window"), 3, 1, 12),
                 "suggested_actions": ["leave_early", "alternate_route"],
             }
             if send_expo_push(token, title, body, data):
@@ -400,6 +488,10 @@ async def dispatch_commute_traffic_alerts(request: Request):
                         {
                             "last_traffic_push_at": now_iso,
                             "last_traffic_extra_sec": int(round(float(extra_sec))),
+                            "last_push_at": now_iso,
+                            "last_push_date": day_key,
+                            "push_window_day": day_key,
+                            "pushes_sent_window": _window_push_count(route, day_key) + 1,
                         }
                     ).eq("id", route["id"]).execute()
                     sent += 1

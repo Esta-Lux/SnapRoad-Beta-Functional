@@ -27,6 +27,7 @@ const appPkg = require("./package.json") as { version: string };
 
 const envAny = (names: string[], fallback = ""): string => {
   for (const name of names) {
+    // eslint-disable-next-line expo/no-dynamic-env-var
     const value = process.env[name];
     if (value && value.trim().length > 0) return value;
   }
@@ -162,6 +163,7 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
+        "POST_NOTIFICATIONS",
         "RECORD_AUDIO",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
@@ -232,6 +234,7 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
     extra: {
       /** Set by EAS during `eas build` -- used at runtime to treat preview/internal builds as non-store. */
       easBuildProfile: process.env.EAS_BUILD_PROFILE || "",
+      easProjectId: EAS_PROJECT_ID,
       apiUrl: resolveApiUrl(),
       // Restrict this token in the Mapbox dashboard: iOS/Android bundle com.snaproad.app; web https://app.snaproad.app
       mapboxPublicToken: envAny(

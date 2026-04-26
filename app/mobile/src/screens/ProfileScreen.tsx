@@ -55,6 +55,7 @@ import {
 import type { ProfileOverviewActionItem } from '../components/profile/types';
 import { ProfileStatsStrip, ProfileTabBar } from '../components/profile/ProfileScreenBlocks';
 import PlaceAlertsDashboardModal from '../components/profile/PlaceAlertsDashboardModal';
+import { registerCommutePushToken } from '../utils/pushNotifications';
 
 export default function ProfileScreen() {
   const navigation = useNavigation<ProfileStackScreenNavigationProp>();
@@ -102,9 +103,6 @@ export default function ProfileScreen() {
   ];
 
   const [pushEnabled, setPushEnabled] = useState(true);
-  const [friendRequests, setFriendRequests] = useState(true);
-  const [offerAlerts, setOfferAlerts] = useState(true);
-  const [speedAlerts, setSpeedAlerts] = useState(true);
 
   const [defaultMode, setDefaultMode] = useState<DrivingMode>('adaptive');
   const [showPlanModal, setShowPlanModal] = useState(false);
@@ -288,10 +286,7 @@ export default function ProfileScreen() {
       const push = (notifPayload.push_notifications && typeof notifPayload.push_notifications === 'object'
         ? (notifPayload.push_notifications as Record<string, unknown>)
         : {});
-      setPushEnabled(Boolean(push.trip_summary ?? true));
-      setFriendRequests(Boolean(push.friend_activity ?? true));
-      setOfferAlerts(Boolean(push.offers ?? true));
-      setSpeedAlerts(Boolean(push.safety_alerts ?? true));
+      setPushEnabled(Boolean(push.commute_alerts ?? true));
       if (!isPremiumUser) {
         setWeeklyRecap({
           totalTrips: 0,
@@ -606,6 +601,17 @@ export default function ProfileScreen() {
   const syncNotification = useCallback(async (setting: string, enabled: boolean) => {
     setNotifSyncing(true);
     try {
+      if (enabled && setting === 'commute_alerts') {
+        const registered = await registerCommutePushToken();
+        if (!registered.ok) {
+          Alert.alert(
+            'Push notifications',
+            registered.reason === 'permission_denied'
+              ? 'Enable notifications in iOS Settings so SnapRoad can send commute alerts.'
+              : 'Could not register this device for commute alerts yet.',
+          );
+        }
+      }
       await api.put(`/api/settings/notifications?category=push_notifications&setting=${setting}&enabled=${enabled}`);
     } finally {
       setNotifSyncing(false);
@@ -813,7 +819,7 @@ export default function ProfileScreen() {
             >
               <SectionHeader title={`Commute reminders (${commutes.length}/${commuteLimit})`} isLight={isLight} />
               <Text style={{ color: sub, fontSize: 12, paddingHorizontal: 16, marginBottom: 6, marginTop: -6, lineHeight: 16 }}>
-                Recurring commute routes with typical leave times. Use Place alerts above for one-off destinations and richer leave-time options.
+                Recurring A→B route scans for leave-time, traffic, fuel, and stress savings. Push notifications are only used for commute alerts.
               </Text>
               <CommuteRoutesSection
                 cardBg={cardBg}
@@ -939,10 +945,7 @@ export default function ProfileScreen() {
               text={text}
               sub={sub}
               items={[
-                { label: 'Push Notifications', val: pushEnabled, set: (v) => { setPushEnabled(v); syncNotification('trip_summary', v); } },
-                { label: 'Friend Requests', val: friendRequests, set: (v) => { setFriendRequests(v); syncNotification('friend_activity', v); } },
-                { label: 'Offer Alerts', val: offerAlerts, set: (v) => { setOfferAlerts(v); syncNotification('offers', v); } },
-                { label: 'Speed Alerts', val: speedAlerts, set: (v) => { setSpeedAlerts(v); syncNotification('safety_alerts', v); } },
+                { label: 'Commute Alerts', val: pushEnabled, set: (v) => { setPushEnabled(v); syncNotification('commute_alerts', v); } },
               ]}
             />
 

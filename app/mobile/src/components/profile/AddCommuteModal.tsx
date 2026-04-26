@@ -22,6 +22,7 @@ import {
   type CommuteGeocodeHit,
 } from '../../lib/commutePlacesSearch';
 import { storage } from '../../utils/storage';
+import { registerCommutePushToken } from '../../utils/pushNotifications';
 
 const DAYS: { key: string; label: string }[] = [
   { key: 'mon', label: 'Mo' },
@@ -67,6 +68,9 @@ export default function AddCommuteModal({
   const [name, setName] = useState('My commute');
   const [leaveBy, setLeaveBy] = useState('08:00');
   const [alertMin, setAlertMin] = useState('120');
+  const [monitorMin, setMonitorMin] = useState('180');
+  const [notifyEveryMin, setNotifyEveryMin] = useState('30');
+  const [maxPushes, setMaxPushes] = useState('3');
   const [dayMap, setDayMap] = useState<Record<string, boolean>>(() =>
     DAYS.reduce((a, d) => ({ ...a, [d.key]: true }), {} as Record<string, boolean>),
   );
@@ -273,6 +277,9 @@ export default function AddCommuteModal({
       return;
     }
     const am = Math.max(5, Math.min(parseInt(alertMin, 10) || 120, 24 * 60));
+    const monitor = Math.max(15, Math.min(parseInt(monitorMin, 10) || 180, 12 * 60));
+    const every = Math.max(5, Math.min(parseInt(notifyEveryMin, 10) || 30, 240));
+    const max = Math.max(1, Math.min(parseInt(maxPushes, 10) || 3, 12));
     let tz = 'America/New_York';
     try {
       tz = Intl.DateTimeFormat().resolvedOptions().timeZone || tz;
@@ -281,6 +288,7 @@ export default function AddCommuteModal({
     }
     setSaving(true);
     try {
+      await registerCommutePushToken();
       const res = await api.post('/api/commute-routes', {
         name: name.trim() || 'Commute',
         origin_lat: oLat,
@@ -292,6 +300,9 @@ export default function AddCommuteModal({
         leave_by_time: leaveBy.trim(),
         tz,
         alert_minutes_before: am,
+        monitoring_duration_minutes: monitor,
+        notification_interval_minutes: every,
+        max_notifications_per_window: max,
         days_of_week: days,
         notifications_enabled: true,
       });
@@ -316,8 +327,8 @@ export default function AddCommuteModal({
       >
         <Text style={[styles.title, { color: text }]}>Commute alert</Text>
         <Text style={[styles.sub, { color: sub }]}>
-          Name your commute and set start and destination with addresses (no map favorites required). Premium gets
-          richer commute pushes when it is time to leave.
+          Set where you leave, where you need to go, and how aggressively SnapRoad should scan for traffic so the app
+          can protect your time, fuel, and road stress.
         </Text>
 
         <Text style={[styles.label, { color: sub }]}>Commute name</Text>
@@ -511,6 +522,44 @@ export default function AddCommuteModal({
           placeholderTextColor={sub}
           style={[styles.input, { color: text, borderColor: border, backgroundColor: cardBg }]}
         />
+        <View style={styles.gridRow}>
+          <View style={styles.gridCell}>
+            <Text style={[styles.label, { color: sub }]}>Scan for</Text>
+            <TextInput
+              value={monitorMin}
+              onChangeText={setMonitorMin}
+              keyboardType="number-pad"
+              placeholder="180"
+              placeholderTextColor={sub}
+              style={[styles.input, { color: text, borderColor: border, backgroundColor: cardBg }]}
+            />
+          </View>
+          <View style={styles.gridCell}>
+            <Text style={[styles.label, { color: sub }]}>Every</Text>
+            <TextInput
+              value={notifyEveryMin}
+              onChangeText={setNotifyEveryMin}
+              keyboardType="number-pad"
+              placeholder="30"
+              placeholderTextColor={sub}
+              style={[styles.input, { color: text, borderColor: border, backgroundColor: cardBg }]}
+            />
+          </View>
+          <View style={styles.gridCell}>
+            <Text style={[styles.label, { color: sub }]}>Max alerts</Text>
+            <TextInput
+              value={maxPushes}
+              onChangeText={setMaxPushes}
+              keyboardType="number-pad"
+              placeholder="3"
+              placeholderTextColor={sub}
+              style={[styles.input, { color: text, borderColor: border, backgroundColor: cardBg }]}
+            />
+          </View>
+        </View>
+        <Text style={{ color: sub, fontSize: 12, lineHeight: 16, marginTop: -6, marginBottom: 12 }}>
+          Minutes: scan window, alert spacing, and max pushes per commute window.
+        </Text>
         <Text style={[styles.label, { color: sub }]}>Days</Text>
         <View style={styles.dayRow}>
           {DAYS.map((d) => (
@@ -565,6 +614,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   hitRow: { padding: 12, borderRadius: 12, borderWidth: 1, marginBottom: 8 },
+  gridRow: { flexDirection: 'row', gap: 8 },
+  gridCell: { flex: 1, minWidth: 0 },
   geoIconBtn: {
     borderRadius: 12,
     paddingHorizontal: 12,
