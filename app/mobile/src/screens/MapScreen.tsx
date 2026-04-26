@@ -1449,6 +1449,8 @@ export default function MapScreen() {
   const { showTraffic, showIncidents, showCameras, setShowTraffic, setShowIncidents, setShowCameras,
     showConstruction, setShowConstruction,
     showPhotoReports, setShowPhotoReports, showTrafficSafety, setShowTrafficSafety } = useMapLayers();
+  /** Apple Maps baseline: safety cameras should be visible during active nav even if the explore layer is off. */
+  const trafficSafetyWanted = showTrafficSafety || nav.isNavigating;
 
   // ── New layer data ──
   const [photoReports, setPhotoReports] = useState<PhotoReport[]>([]);
@@ -1964,10 +1966,10 @@ export default function MapScreen() {
   }, [refreshPhotoReportsNearby, Math.round(location.lat * 100), Math.round(location.lng * 100)]);
 
   useEffect(() => {
-    if (!showTrafficSafety) {
+    if (!trafficSafetyWanted) {
       setTrafficSafetyHint(null);
     }
-  }, [showTrafficSafety]);
+  }, [trafficSafetyWanted]);
 
   // Traffic safety POIs (Overpass via API; hidden in restricted regions)
   useEffect(() => {
@@ -1978,7 +1980,7 @@ export default function MapScreen() {
       setTrafficSafetyHint(null);
       return;
     }
-    if (!showTrafficSafety || !isTrafficSafetyLayerEnabled(poiSearchCoord.lat, poiSearchCoord.lng)) {
+    if (!trafficSafetyWanted || !isTrafficSafetyLayerEnabled(poiSearchCoord.lat, poiSearchCoord.lng)) {
       setTrafficSafetyZones([]);
       setTrafficSafetyHint(null);
       return;
@@ -1991,7 +1993,7 @@ export default function MapScreen() {
       .then((r) => {
         if (!r.success || r.data == null) {
           setTrafficSafetyZones([]);
-          setTrafficSafetyHint('Could not load speed camera data. Try again later.');
+          setTrafficSafetyHint(showTrafficSafety ? 'Could not load speed camera data. Try again later.' : null);
           return;
         }
         const raw = r.data as Record<string, unknown>;
@@ -2007,7 +2009,7 @@ export default function MapScreen() {
         const zl = payload?.zones;
         if (!Array.isArray(zl)) {
           setTrafficSafetyZones([]);
-          setTrafficSafetyHint('Unexpected response from traffic safety service.');
+          setTrafficSafetyHint(showTrafficSafety ? 'Unexpected response from traffic safety service.' : null);
           return;
         }
         const mapped = zl
@@ -2027,21 +2029,21 @@ export default function MapScreen() {
         }
         if (payload?.reason === 'rate_limited') {
           const sec = typeof payload.retry_after_seconds === 'number' ? payload.retry_after_seconds : 60;
-          setTrafficSafetyHint(`Rate limited — try again in ~${sec}s.`);
+          setTrafficSafetyHint(showTrafficSafety ? `Rate limited — try again in ~${sec}s.` : null);
           return;
         }
         if (payload?.limited) {
-          setTrafficSafetyHint('No mapped speed cameras in this area (OpenStreetMap). Zoom out or move to try again.');
+          setTrafficSafetyHint(showTrafficSafety ? 'No mapped speed cameras in this area (OpenStreetMap). Zoom out or move to try again.' : null);
           return;
         }
-        setTrafficSafetyHint('No speed camera POIs returned in this area yet.');
+        setTrafficSafetyHint(showTrafficSafety ? 'No speed camera POIs returned in this area yet.' : null);
       })
       .catch((e) => {
         logMapDataIssue('GET /api/traffic-safety/zones', e);
         setTrafficSafetyZones([]);
-        setTrafficSafetyHint('Network error loading speed cameras.');
+        setTrafficSafetyHint(showTrafficSafety ? 'Network error loading speed cameras.' : null);
       });
-  }, [showTrafficSafety, Math.round(poiSearchCoord.lat * 100), Math.round(poiSearchCoord.lng * 100)]);
+  }, [trafficSafetyWanted, showTrafficSafety, Math.round(poiSearchCoord.lat * 100), Math.round(poiSearchCoord.lng * 100)]);
 
   // Crash detection removed — SOS endpoints (/api/family/sos, /api/concerns/submit) do not exist.
   // Will be re-implemented when family/emergency features are built with real backend support.
@@ -3343,6 +3345,38 @@ export default function MapScreen() {
     }
   }, [location.lat, location.lng, nav.isNavigating]);
 
+  const handleRouteOverview = useCallback(() => {
+    const route = nav.navigationData?.polyline;
+    if (!nav.isNavigating || !route || route.length < 2) return;
+    const lngs = route.map((c) => c.lng).filter(Number.isFinite);
+    const lats = route.map((c) => c.lat).filter(Number.isFinite);
+    if (!lngs.length || !lats.length) return;
+    if (autoRelockTimer.current) clearTimeout(autoRelockTimer.current);
+    userInteracting.current = true;
+    setCameraLocked(false);
+    setFollowMode('free');
+    const winH = Dimensions.get('window').height;
+    const topPad = insets.top + 170;
+    const sidePad = 40;
+    const bottomPad = Math.min(
+      Math.round(winH * 0.48),
+      MAP_NAV_BOTTOM_INSET + insets.bottom + 56,
+    );
+    cameraRef.current?.fitBounds(
+      [Math.max(...lngs), Math.max(...lats)],
+      [Math.min(...lngs), Math.min(...lats)],
+      [topPad, sidePad, bottomPad, sidePad],
+      520,
+    );
+    autoRelockTimer.current = setTimeout(() => {
+      if (nav.isNavigating) {
+        setCameraLocked(true);
+        userInteracting.current = false;
+        setFollowMode('follow');
+      }
+    }, 9000);
+  }, [insets.bottom, insets.top, nav.isNavigating, nav.navigationData?.polyline]);
+
   const handleSubmitReport = useCallback(async (type: string) => {
     setShowReportPicker(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -3765,7 +3799,7 @@ export default function MapScreen() {
           {showPhotoReports && (
             <PhotoReportMarkers reports={photoReports} onReportTap={(r) => setSelectedPhotoReport(r)} />
           )}
-          {showTrafficSafety && isTrafficSafetyLayerEnabled(poiSearchCoord.lat, poiSearchCoord.lng) && !nav.showRoutePreview && mapZoomLevel >= TRAFFIC_CAM_MIN_ZOOM && (
+          {trafficSafetyWanted && isTrafficSafetyLayerEnabled(poiSearchCoord.lat, poiSearchCoord.lng) && !nav.showRoutePreview && mapZoomLevel >= TRAFFIC_CAM_MIN_ZOOM && (
             <TrafficSafetyLayer
               zones={trafficSafetyZones}
               onZoneTap={(z) =>
@@ -4844,6 +4878,17 @@ export default function MapScreen() {
               borderWidth: 1,
               borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
             }]}
+            onPress={handleRouteOverview}
+            accessibilityLabel="Show route overview"
+          >
+            <Ionicons name="map-outline" size={20} color={colors.textSecondary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.navFab, {
+              backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(30,41,59,0.94)',
+              borderWidth: 1,
+              borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
+            }]}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               setShowReportPicker(true);
@@ -5012,7 +5057,7 @@ export default function MapScreen() {
         </View>
       )}
 
-      {speed > 1 && !selectedPlace && !selectedPlaceId && (() => {
+      {(nav.isNavigating || speed > 1) && !selectedPlace && !selectedPlaceId && (() => {
         // Prefer the native SDK speed limit when the logic SDK is authoritative — it
         // reflects matched-location truth and updates continuously. Fall back to the
         // Directions `maxspeeds[step]` array when the SDK value is unavailable (warmup,
@@ -5063,14 +5108,11 @@ export default function MapScreen() {
               </Text>
               <Text style={[s.speedUnit, { color: colors.textTertiary }]}>mph</Text>
               {hasLimit ? (
-                <Text
-                  style={[
-                    s.speedLimitInline,
-                    { color: isOverSpeed ? '#FF3B30' : colors.textTertiary },
-                  ]}
-                >
-                  LIMIT {currentSpeedLimit}
-                </Text>
+                <View style={[s.speedLimitPlate, { borderColor: isOverSpeed ? '#FF3B30' : 'rgba(15,23,42,0.22)' }]}>
+                  <Text style={[s.speedLimitPlateTop, { color: isOverSpeed ? '#FF3B30' : '#111827' }]}>SPEED</Text>
+                  <Text style={[s.speedLimitPlateMid, { color: isOverSpeed ? '#FF3B30' : '#111827' }]}>LIMIT</Text>
+                  <Text style={[s.speedLimitPlateNum, { color: isOverSpeed ? '#FF3B30' : '#111827' }]}>{currentSpeedLimit}</Text>
+                </View>
               ) : null}
             </View>
           </View>
@@ -5888,11 +5930,23 @@ const s = StyleSheet.create({
   turnIconCalm: { backgroundColor: 'rgba(255,255,255,0.2)' },
   endBtnCalm: { backgroundColor: '#E05252', borderRadius: 16 },
   speedBadge: { minWidth: 58, minHeight: 58, borderRadius: 29, borderWidth: 2.5, justifyContent: 'center', alignItems: 'center', ...shadow(10, 0.15) },
-  speedBadgeWithLimit: { minWidth: 64, minHeight: 80, borderRadius: 32, paddingVertical: 10, paddingHorizontal: 8 },
+  speedBadgeWithLimit: { minWidth: 66, minHeight: 106, borderRadius: 22, paddingVertical: 8, paddingHorizontal: 7 },
   speedVal: { fontSize: 17, fontWeight: '800' },
   speedValCompact: { fontSize: 16 },
   speedUnit: { fontSize: 9, fontWeight: '600', marginTop: -1 },
   speedLimitInline: { fontSize: 8, fontWeight: '800', letterSpacing: 0.4, marginTop: 4, textTransform: 'uppercase' as const },
+  speedLimitPlate: {
+    width: 44,
+    marginTop: 7,
+    borderWidth: 1.5,
+    borderRadius: 5,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    paddingVertical: 3,
+  },
+  speedLimitPlateTop: { fontSize: 5.5, fontWeight: '900', letterSpacing: 0.2, lineHeight: 7 },
+  speedLimitPlateMid: { fontSize: 6.5, fontWeight: '900', letterSpacing: 0.2, lineHeight: 8 },
+  speedLimitPlateNum: { fontSize: 16, fontWeight: '900', lineHeight: 18, marginTop: 1 },
   layerBtn: { position: 'absolute', right: 16, width: 46, height: 46, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1, ...shadow(8, 0.15), zIndex: 12 },
   locBanner: { position: 'absolute', alignSelf: 'center', backgroundColor: 'rgba(59,130,246,0.92)', paddingHorizontal: 18, paddingVertical: 9, borderRadius: 22 },
   mapLayerHint: {
