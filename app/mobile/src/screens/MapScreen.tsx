@@ -1195,6 +1195,14 @@ export default function MapScreen() {
   camCtrlRef.current = camCtrlForNav;
   /** One instant snap per `navCameraSessionKey` — avoids ease fighting the remounted Camera + duplicate flyTo. */
   const lastNavCamSessionBootstrappedRef = useRef(-1);
+  const lastNavCameraCommandRef = useRef<{
+    lat: number;
+    lng: number;
+    heading: number | null;
+    zoom: number;
+    pitch: number;
+    at: number;
+  } | null>(null);
   /**
    * While navigating, `followUserLocation` uses Mapbox's internal GPS — not
    * `CustomLocationProvider` — which fights the snapped puck (camera feels offset).
@@ -1209,23 +1217,59 @@ export default function MapScreen() {
     const anchor = cameraLeadCoord ?? navDisplayCoord;
     if (!Number.isFinite(anchor.lat) || !Number.isFinite(anchor.lng)) return;
     const h = Number.isFinite(navPuckHeading) ? navPuckHeading : heading;
-    const pad = c.followPadding;
+    const headingDeg = Number.isFinite(h) ? ((h % 360) + 360) % 360 : null;
+    const zoom = Math.max(3, Math.min(22, Number.isFinite(c.followZoomLevel) ? c.followZoomLevel : modeConfig.navZoom));
+    const pitch = Math.max(0, Math.min(80, Number.isFinite(c.followPitch) ? c.followPitch : modeConfig.navPitch));
+    const pad = c.followPadding ?? navFallbackFollowPadding(modeConfig, insets.bottom);
+    const cleanPad = {
+      paddingTop: Math.max(0, Math.min(900, Number.isFinite(pad.paddingTop) ? pad.paddingTop : 0)),
+      paddingBottom: Math.max(0, Math.min(900, Number.isFinite(pad.paddingBottom) ? pad.paddingBottom : 0)),
+      paddingLeft: Math.max(0, Math.min(240, Number.isFinite(pad.paddingLeft) ? pad.paddingLeft : 0)),
+      paddingRight: Math.max(0, Math.min(240, Number.isFinite(pad.paddingRight) ? pad.paddingRight : 0)),
+    };
     const isNewNavSession = lastNavCamSessionBootstrappedRef.current !== navCameraSessionKey;
     if (isNewNavSession) lastNavCamSessionBootstrappedRef.current = navCameraSessionKey;
-    cam.setCamera({
+    const now = Date.now();
+    const last = lastNavCameraCommandRef.current;
+    const movedM = last ? haversineMeters(last.lat, last.lng, anchor.lat, anchor.lng) : Infinity;
+    const headingDelta =
+      last?.heading != null && headingDeg != null
+        ? Math.abs(((headingDeg - last.heading + 540) % 360) - 180)
+        : Infinity;
+    const commandIsRedundant =
+      !isNewNavSession &&
+      !!last &&
+      movedM < 0.8 &&
+      headingDelta < 0.8 &&
+      Math.abs(last.zoom - zoom) < 0.03 &&
+      Math.abs(last.pitch - pitch) < 0.5 &&
+      now - last.at < 220;
+    if (commandIsRedundant) return;
+    const animationDuration = isNewNavSession
+      ? 0
+      : Math.max(80, Math.min(900, Number.isFinite(c.animationDuration) ? c.animationDuration : 280));
+    lastNavCameraCommandRef.current = {
+      lat: anchor.lat,
+      lng: anchor.lng,
+      heading: headingDeg,
+      zoom,
+      pitch,
+      at: now,
+    };
+    const cameraCommand = {
       centerCoordinate: [anchor.lng, anchor.lat],
-      zoomLevel: c.followZoomLevel,
-      pitch: c.followPitch,
-      heading: Number.isFinite(h) ? h : undefined,
-      padding: {
-        paddingTop: pad.paddingTop,
-        paddingBottom: pad.paddingBottom,
-        paddingLeft: pad.paddingLeft,
-        paddingRight: pad.paddingRight,
-      },
+      zoomLevel: zoom,
+      pitch,
+      ...(headingDeg != null ? { heading: headingDeg } : {}),
+      padding: cleanPad,
       animationMode: 'easeTo',
-      animationDuration: isNewNavSession ? 0 : c.animationDuration,
-    });
+      animationDuration,
+    };
+    try {
+      cam.setCamera(cameraCommand);
+    } catch (err) {
+      if (__DEV__) console.warn('[MapScreen] Navigation camera update failed', err);
+    }
   }, [
     nav.isNavigating,
     cameraLocked,
@@ -1243,6 +1287,13 @@ export default function MapScreen() {
     heading,
     cameraLeadCoord?.lat,
     cameraLeadCoord?.lng,
+    cameraLeadCoord,
+    camCtrlForNav,
+    modeConfig,
+    navDisplayCoord,
+    modeConfig.navPitch,
+    modeConfig.navZoom,
+    insets.bottom,
   ]);
 
   // ── Reports ──
