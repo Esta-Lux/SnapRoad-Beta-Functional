@@ -1,12 +1,13 @@
 import type { NavBannerModel, NavStep } from './navModel';
-import { phraseForManeuverKind } from './spokenManeuver';
+import { hudPhraseForManeuverKind } from './spokenManeuver';
 import { bannerFieldsFromNavStep } from './navBannerFromStep';
 
+function lowerFirst(s: string): string {
+  return s ? s.charAt(0).toLowerCase() + s.slice(1) : s;
+}
+
 function primaryLine(step: NavStep): string {
-  const t = step.displayInstruction?.trim() || step.instruction?.trim();
-  if (t) return t;
-  const p = phraseForManeuverKind(step.kind);
-  return p.charAt(0).toUpperCase() + p.slice(1);
+  return hudPhraseForManeuverKind(step.kind, step.roundaboutExitNumber);
 }
 
 /**
@@ -25,11 +26,8 @@ export function buildNavBanner(
 
   let secondaryInstruction: string | null = rich?.secondaryInstruction ?? null;
   if (following) {
-    const ft =
-      following.displayInstruction?.trim() ||
-      following.instruction?.trim() ||
-      phraseForManeuverKind(following.kind);
-    secondaryInstruction = `Then ${ft}`;
+    const ft = hudPhraseForManeuverKind(following.kind, following.roundaboutExitNumber);
+    secondaryInstruction = `Then ${lowerFirst(ft)}`;
   }
 
   return {

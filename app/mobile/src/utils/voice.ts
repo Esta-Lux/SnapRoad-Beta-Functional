@@ -1,12 +1,10 @@
 import * as Speech from 'expo-speech';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import type { DrivingMode } from '../types';
-import { DRIVING_MODES } from '../constants/modes';
 import { shouldSuppressJsTurnGuidance } from '../navigation/navVoiceGate';
 import { isSdkTripAuthoritative } from '../navigation/navSdkAuthority';
 import { markNavVoiceFromJs, msSinceLastSdkVoice } from '../navigation/navSdkStore';
 import type { LaneInfo, ManeuverKind, RoadSignal } from '../navigation/navModel';
-import { getVoiceNavTuning } from '../navigation/navModeProfile';
 import { navLaneGuidanceUiEnabled } from '../navigation/navFeatureFlags';
 import { getPreferredTtsVoiceIdentifier } from './ttsVoicePreference';
 
@@ -106,7 +104,7 @@ export type SpeakRateSource = 'driving' | 'navigation_fixed' | 'advisory';
 
 export type SpeakOptions = {
   /**
-   * `driving` — calm/sport/adaptive from {@link DRIVING_MODES} (Orion, ambient offers).
+   * `driving` — same male voice rate as Orion so active HUD output stays consistent.
    * `navigation_fixed` — normal nav rate (not tied to driving mode). Blocked during an
    *    SDK-authoritative trip (native TTS owns turn cues).
    * `advisory` — navigation-time extras (offer nearby, incident ahead). During an
@@ -146,12 +144,12 @@ export function resetVoiceDevCounters(): void {
   navigationFixedBlockedCount = 0;
 }
 
-function speechRateForMode(mode: DrivingMode): number {
-  return DRIVING_MODES[mode]?.speechRate ?? ORION_SPEECH_RATE;
+function speechRateForMode(_mode: DrivingMode): number {
+  return ORION_SPEECH_RATE;
 }
 
-function speechPitchForMode(mode: DrivingMode): number {
-  return DRIVING_MODES[mode]?.speechPitch ?? ORION_SPEECH_PITCH;
+function speechPitchForMode(_mode: DrivingMode): number {
+  return ORION_SPEECH_PITCH;
 }
 
 function onUtteranceFinished() {
@@ -258,14 +256,12 @@ export function speakGuidance(
 
   markNavVoiceFromJs();
 
-  const voiceTune = getVoiceNavTuning(_mode);
-
   void (async () => {
     Speech.stop();
     await configureAudioSessionForSpeechOutput();
     const voiceId = await getPreferredTtsVoiceIdentifier();
     Speech.speak(phrase, {
-      rate: NAVIGATION_SPEECH_RATE * voiceTune.guidanceRateMultiplier,
+      rate: NAVIGATION_SPEECH_RATE,
       pitch: NAVIGATION_SPEECH_PITCH,
       language: language || 'en-US',
       ...(voiceId ? { voice: voiceId } : {}),
@@ -286,8 +282,8 @@ export function speakOrionReply(text: string, onFinish?: () => void) {
     await configureAudioSession();
     const voiceId = await getPreferredTtsVoiceIdentifier();
     Speech.speak(text.trim(), {
-      rate: 0.96,
-      pitch: 1,
+      rate: NAVIGATION_SPEECH_RATE,
+      pitch: NAVIGATION_SPEECH_PITCH,
       language: 'en-US',
       ...(voiceId ? { voice: voiceId } : {}),
       onDone: onFinish,
@@ -384,11 +380,7 @@ function laneAdvice(lanes?: LaneInfo[]): string {
   return '';
 }
 
-function chainHint(
-  nextKind?: ManeuverKind | null,
-  nextStreet?: string | null,
-  nextDist?: number | null,
-): string {
+function chainHint(nextKind?: ManeuverKind | null, nextDist?: number | null): string {
   if (!nextKind) return '';
   if (nextDist != null && nextDist > 300) return '';
   const dirMap: Partial<Record<ManeuverKind, string>> = {
@@ -404,8 +396,7 @@ function chainHint(
   };
   const chain = dirMap[nextKind];
   if (!chain) return '';
-  const road = nextStreet ? ` onto ${nextStreet}` : '';
-  return `, then ${chain}${road}`;
+  return `, then ${chain}`;
 }
 
 export interface NextTurnInfo {
@@ -418,7 +409,7 @@ export type NavStepSpeechData = {
   lanes?: LaneInfo[];
   roundaboutExitNumber?: number | null;
   destinationRoad?: string | null;
-  shields?: Array<{ displayRef: string }>;
+  shields?: { displayRef: string }[];
   nextManeuverKind?: ManeuverKind | null;
   nextManeuverStreet?: string | null;
   nextManeuverDistanceMeters?: number | null;
@@ -477,7 +468,6 @@ export function formatTurnInstruction(
       const exitPhrase = `at the roundabout, take the ${ord} exit`;
       const chain = chainHint(
         navStepData?.nextManeuverKind,
-        navStepData?.nextManeuverStreet,
         navStepData?.nextManeuverDistanceMeters,
       );
       if (mode === 'calm') return buildCalmPhrase(exitPhrase, dist, chain, laneAdvice(lanes));
@@ -564,7 +554,6 @@ export function formatTurnInstruction(
   const chain =
     chainHint(
       navStepData?.nextManeuverKind,
-      null,
       navStepData?.nextManeuverDistanceMeters,
     ) ||
     (() => {

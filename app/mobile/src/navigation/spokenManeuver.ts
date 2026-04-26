@@ -36,6 +36,34 @@ export function phraseForManeuverKind(kind: ManeuverKind): string {
   return PHRASES[kind] ?? 'continue straight';
 }
 
+/** HUD/action phrase shared by turn cards and JS voice so both speak the same maneuver. */
+export function hudPhraseForManeuverKind(
+  kind: ManeuverKind | null | undefined,
+  exitNumber?: number | null,
+): string {
+  if (
+    kind === 'rotary' ||
+    kind === 'roundabout_left' ||
+    kind === 'roundabout_right' ||
+    kind === 'roundabout_straight'
+  ) {
+    if (exitNumber != null && Number.isFinite(exitNumber) && exitNumber > 0) {
+      const ordinals: Record<number, string> = {
+        1: 'first',
+        2: 'second',
+        3: 'third',
+        4: 'fourth',
+        5: 'fifth',
+        6: 'sixth',
+      };
+      const ord = ordinals[exitNumber] ?? `${exitNumber}th`;
+      return `Take the ${ord} exit`;
+    }
+  }
+  const p = phraseForManeuverKind(kind ?? 'straight');
+  return p.charAt(0).toUpperCase() + p.slice(1);
+}
+
 /** Hyphenated maneuver key for turn icons (DirectionsStep-style substrings). */
 export function maneuverKeyFromKind(kind: ManeuverKind): string {
   switch (kind) {

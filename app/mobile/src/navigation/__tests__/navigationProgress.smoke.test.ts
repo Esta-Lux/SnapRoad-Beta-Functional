@@ -183,7 +183,7 @@ test('computeNavigationProgressFrame: tryGlobalReanchor corrects snap when local
   assert.ok(withGlobal!.snapped.segmentIndex > localOnly!.snapped.segmentIndex + 5);
 });
 
-test('banner primary text drives NavStep displayInstruction so banner matches voice/cards', () => {
+test('banner primary action stays voice-aligned while road remains context', () => {
   const navSteps = buildNavStepsFromDirections(steps, poly);
   assert.equal(navSteps[1]!.displayInstruction, 'Turn right onto Oak Avenue');
   const route = poly.map((p) => ({ lat: p.lat, lng: p.lng }));
@@ -204,5 +204,6 @@ test('banner primary text drives NavStep displayInstruction so banner matches vo
     previous: null,
   });
   assert.ok(frame?.banner);
-  assert.equal(frame!.banner!.primaryInstruction, 'Turn right onto Oak Avenue');
+  assert.equal(frame!.banner!.primaryInstruction, 'Turn right');
+  assert.equal(frame!.banner!.primaryStreet, 'Oak');
 });

@@ -3,6 +3,7 @@ import type { DirectionsStep } from '../lib/directions';
 import type { ManeuverKind, NavStep } from './navModel';
 import { getTurnCardNavTuning, previewDistanceMaxMeters } from './navModeProfile';
 import { navManeuverFieldsFromDirectionsStep } from './navStepsFromDirections';
+import { hudPhraseForManeuverKind } from './spokenManeuver';
 
 export type TurnCardState = 'preview' | 'active' | 'confirm' | 'cruise';
 
@@ -123,14 +124,18 @@ function maneuverWords(maneuver: string): string {
   return 'Continue';
 }
 
+function lowerFirst(s: string): string {
+  return s ? s.charAt(0).toLowerCase() + s.slice(1) : s;
+}
+
 /** Single-line turn phrase onto a named road (avoids duplicating Mapbox essay + compass noise). */
 export function buildActivePrimary(
   nextStep: DirectionsStep | null | undefined,
   destinationName?: string | null,
   navStep?: NavStep | null,
 ): string {
-  if (navStep?.displayInstruction?.trim()) {
-    return navStep.displayInstruction.trim();
+  if (navStep) {
+    return hudPhraseForManeuverKind(navStep.kind, navStep.roundaboutExitNumber);
   }
   if (!nextStep) return '';
   const dest = destinationName?.trim() || '';
@@ -161,24 +166,22 @@ export function buildChainInstruction(navStep: NavStep | null | undefined): stri
   }
 
   const kindToPhrase: Partial<Record<ManeuverKind, string>> = {
-    turn_left: 'Then turn left',
-    turn_right: 'Then turn right',
-    sharp_left: 'Then sharp left',
-    sharp_right: 'Then sharp right',
-    slight_left: 'Then bear left',
-    slight_right: 'Then bear right',
-    keep_left: 'Then keep left',
-    keep_right: 'Then keep right',
-    uturn: 'Then U-turn',
-    merge_left: 'Then merge left',
-    merge_right: 'Then merge right',
+    turn_left: hudPhraseForManeuverKind('turn_left'),
+    turn_right: hudPhraseForManeuverKind('turn_right'),
+    sharp_left: hudPhraseForManeuverKind('sharp_left'),
+    sharp_right: hudPhraseForManeuverKind('sharp_right'),
+    slight_left: hudPhraseForManeuverKind('slight_left'),
+    slight_right: hudPhraseForManeuverKind('slight_right'),
+    keep_left: hudPhraseForManeuverKind('keep_left'),
+    keep_right: hudPhraseForManeuverKind('keep_right'),
+    uturn: hudPhraseForManeuverKind('uturn'),
+    merge_left: hudPhraseForManeuverKind('merge_left'),
+    merge_right: hudPhraseForManeuverKind('merge_right'),
   };
 
   const phrase = kindToPhrase[navStep.nextManeuverKind];
   if (!phrase) return null;
-
-  const road = navStep.nextManeuverStreet?.trim();
-  return road ? `${phrase} onto ${road}` : phrase;
+  return `Then ${lowerFirst(phrase)}`;
 }
 
 function stripCompassNoise(s: string): string {

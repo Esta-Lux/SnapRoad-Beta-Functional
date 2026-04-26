@@ -3,7 +3,7 @@ import type { DrivingMode } from '../types';
 import type { DirectionsStep } from '../lib/directions';
 import { speakGuidance } from '../utils/voice';
 import type { NavigationProgress, NavStep, ManeuverKind, RoadSignal } from '../navigation/navModel';
-import { phraseForManeuverKind } from '../navigation/spokenManeuver';
+import { hudPhraseForManeuverKind } from '../navigation/spokenManeuver';
 import {
   setLastTurnByTurnPhrase,
   isNavigationGuidanceSuppressed,
@@ -49,20 +49,8 @@ function signalClause(signal: RoadSignal): string {
   }
 }
 
-function roundaboutPhrase(step: NavStep): string {
-  const exit = step.roundaboutExitNumber;
-  if (!exit) return 'Enter the roundabout';
-
-  const ordinals: Record<number, string> = {
-    1: 'first',
-    2: 'second',
-    3: 'third',
-    4: 'fourth',
-    5: 'fifth',
-    6: 'sixth',
-  };
-  const ord = ordinals[exit] ?? `${exit}th`;
-  return `At the roundabout, take the ${ord} exit`;
+function lowerFirst(s: string): string {
+  return s ? s.charAt(0).toLowerCase() + s.slice(1) : s;
 }
 
 /** Only chain the *next* maneuver when it is close — avoids "then …" while still on the current leg. */
@@ -108,14 +96,14 @@ function buildUtterance(
     step.kind === 'roundabout_straight' ||
     step.kind === 'rotary'
   ) {
-    const core = roundaboutPhrase(step);
+    const core = hudPhraseForManeuverKind(step.kind, step.roundaboutExitNumber);
     const chain = bucket === 'imminent' ? chainPhrase(step) : '';
     const chainSuffix = chain ? `, ${chain}` : '';
     if (bucket === 'imminent') return `${core}${chainSuffix}.`;
-    return `${distPart}, ${core.charAt(0).toLowerCase() + core.slice(1)}${chainSuffix}.`;
+    return `${distPart}, ${lowerFirst(core)}${chainSuffix}.`;
   }
 
-  const line = phraseForManeuverKind(step.kind);
+  const line = hudPhraseForManeuverKind(step.kind, step.roundaboutExitNumber);
 
   const sigClause = bucket === 'advance' ? signalClause(step.signal) : '';
   const chain = bucket === 'imminent' ? chainPhrase(step) : '';
@@ -125,7 +113,7 @@ function buildUtterance(
     return `${sigClause}${line}${chainSuffix}.`;
   }
 
-  return `${distPart}, ${sigClause}${line.charAt(0).toLowerCase() + line.slice(1)}${chainSuffix}.`;
+  return `${distPart}, ${sigClause}${lowerFirst(line)}${chainSuffix}.`;
 }
 
 /** After a step advances, suppress far/mid-distance cues so the next maneuver is not spoken until the driver settles. */
