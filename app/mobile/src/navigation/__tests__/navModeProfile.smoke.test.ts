@@ -6,6 +6,7 @@ import {
   buildNavModeProfile,
   getTurnCardNavTuning,
 } from '../navModeProfile';
+import { getLookAheadMeters } from '../navigationCamera';
 
 test('sport lead cap is greater than calm (snappier puck)', () => {
   assert.ok(
@@ -33,4 +34,18 @@ test('turn card: sport activates maneuver window sooner than calm', () => {
     getTurnCardNavTuning('sport').activeManeuverMeters <
       getTurnCardNavTuning('calm').activeManeuverMeters,
   );
+});
+
+test('camera look-ahead freezes when stopped and stays mode ordered at speed', () => {
+  assert.equal(getLookAheadMeters('calm', 0), 0);
+  assert.equal(getLookAheadMeters('adaptive', 0), 0);
+  assert.equal(getLookAheadMeters('sport', 0), 0);
+
+  const speedMps = 18;
+  const calm = getLookAheadMeters('calm', speedMps);
+  const adaptive = getLookAheadMeters('adaptive', speedMps);
+  const sport = getLookAheadMeters('sport', speedMps);
+  assert.ok(calm > 0);
+  assert.ok(adaptive > calm);
+  assert.ok(sport > adaptive);
 });

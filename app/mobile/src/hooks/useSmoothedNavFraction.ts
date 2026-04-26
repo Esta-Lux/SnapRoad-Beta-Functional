@@ -95,12 +95,12 @@ export function useSmoothedNavFraction(
   const drPolylineLenRef = useRef<number>(0);
   const drSpeedMpsRef = useRef<number>(0);
   const drStaleThresholdMsRef = useRef<number>(350);
-  const drMaxStaleMsRef = useRef<number>(4000);
+  const drMaxStaleMsRef = useRef<number>(1400);
 
   drPolylineLenRef.current = deadReckoning?.polylineLengthMeters ?? 0;
   drSpeedMpsRef.current = deadReckoning?.speedMps ?? 0;
   drStaleThresholdMsRef.current = deadReckoning?.staleThresholdMs ?? 350;
-  drMaxStaleMsRef.current = deadReckoning?.maxStaleMs ?? 4000;
+  drMaxStaleMsRef.current = deadReckoning?.maxStaleMs ?? 1400;
 
   useEffect(() => {
     const next = clamp01(targetFraction);
@@ -177,7 +177,7 @@ export function useSmoothedNavFraction(
       const canDeadReckon =
         staleMs >= drStaleThresholdMsRef.current &&
         staleMs <= drMaxStaleMsRef.current &&
-        speed > 0.1 &&
+        speed > 1.2 &&
         polyLen > 1;
 
       /** Phase 1: ease toward latest external target (unless target is stale and behind). */
@@ -245,7 +245,7 @@ export function stepSmoothedFraction(
  *
  *  1. If `target !== current`, exponentially ease toward target.
  *  2. Else if external target has been stale for `[staleThresholdMs,
- *     maxStaleMs]` AND `speedMps > 0.1`, advance `current` forward at the
+ *     maxStaleMs]` AND `speedMps > 1.2`, advance `current` forward at the
  *     given ground speed (converted to fraction via `polylineLengthMeters`).
  *  3. Otherwise return `current` unchanged.
  *
@@ -273,7 +273,7 @@ export function stepSmoothedFractionWithDeadReckoning(params: {
     timeConstantMs = 180,
     snapDeltaFraction = 0.02,
     staleThresholdMs = 350,
-    maxStaleMs = 4000,
+    maxStaleMs = 1400,
   } = params;
   const cur = clamp01(current);
   const tgt = clamp01(target);
@@ -283,7 +283,7 @@ export function stepSmoothedFractionWithDeadReckoning(params: {
   const canDeadReckon =
     isStale &&
     staleMs <= maxStaleMs &&
-    speedMps > 0.1 &&
+    speedMps > 1.2 &&
     polylineLengthMeters > 1;
 
   /**

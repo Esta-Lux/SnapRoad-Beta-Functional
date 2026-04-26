@@ -63,14 +63,14 @@ modProto._load = function patched(request: string, parent: unknown, isMain: bool
   return origLoad.call(this, request, parent, isMain);
 };
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+// eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
 const voiceMod = require('../utils/voice') as typeof import('../utils/voice');
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+// eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
 const storeMod = require('./navSdkStore') as typeof import('./navSdkStore');
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+// eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
 const guardMod = require('./navSdkAuthority') as typeof import('./navSdkAuthority');
 
-const { getVoiceDevCounters, resetVoiceDevCounters, speak, speakGuidance } = voiceMod;
+const { formatTurnInstruction, getVoiceDevCounters, resetVoiceDevCounters, speak, speakGuidance } = voiceMod;
 const { resetNavSdkState, ingestSdkProgress, ingestSdkVoiceSubtitle, getNavSdkState } = storeMod;
 const { isSdkTripAuthoritative } = guardMod;
 
@@ -153,4 +153,22 @@ test('advisory line plays immediately when SDK has never spoken yet', () => {
   const c = getVoiceDevCounters();
   assert.equal(c.advisorySuppressed, 0, 'no hold-off when native has not spoken yet');
   assert.equal(c.advisorySpoken, 1);
+});
+
+test('formatTurnInstruction strips street and shield names from spoken guidance', () => {
+  const phrase = formatTurnInstruction(
+    'Turn left onto Silver Dust Lane',
+    150,
+    'left',
+    'adaptive',
+    [],
+    null,
+    {
+      kind: 'turn_left',
+      destinationRoad: 'Silver Dust Lane',
+      shields: [{ displayRef: 'I-75' }],
+    },
+  );
+  assert.match(phrase.toLowerCase(), /turn left/);
+  assert.doesNotMatch(phrase, /Silver Dust Lane|I-75/);
 });

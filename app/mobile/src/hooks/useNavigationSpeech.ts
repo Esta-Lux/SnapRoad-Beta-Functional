@@ -62,10 +62,7 @@ function roundaboutPhrase(step: NavStep): string {
     6: 'sixth',
   };
   const ord = ordinals[exit] ?? `${exit}th`;
-  const road = step.destinationRoad ?? step.streetName;
-  return road
-    ? `At the roundabout, take the ${ord} exit onto ${road}`
-    : `At the roundabout, take the ${ord} exit`;
+  return `At the roundabout, take the ${ord} exit`;
 }
 
 /** Only chain the *next* maneuver when it is close — avoids "then …" while still on the current leg. */
@@ -91,9 +88,7 @@ function chainPhrase(step: NavStep): string {
 
   const phrase = chainable[step.nextManeuverKind];
   if (!phrase) return '';
-
-  const road = step.nextManeuverStreet;
-  return road ? `${phrase} onto ${road}` : phrase;
+  return phrase;
 }
 
 function buildUtterance(
@@ -120,26 +115,17 @@ function buildUtterance(
     return `${distPart}, ${core.charAt(0).toLowerCase() + core.slice(1)}${chainSuffix}.`;
   }
 
-  const line =
-    step.displayInstruction?.trim() ||
-    step.instruction?.trim() ||
-    phraseForManeuverKind(step.kind);
+  const line = phraseForManeuverKind(step.kind);
 
   const sigClause = bucket === 'advance' ? signalClause(step.signal) : '';
   const chain = bucket === 'imminent' ? chainPhrase(step) : '';
   const chainSuffix = chain ? `, ${chain}` : '';
 
-  let shieldPrefix = '';
-  if (bucket !== 'imminent' && step.shields.length > 0) {
-    const s = step.shields[0]!;
-    shieldPrefix = s.displayRef ? `toward ${s.displayRef}, ` : '';
-  }
-
   if (bucket === 'imminent') {
     return `${sigClause}${line}${chainSuffix}.`;
   }
 
-  return `${distPart}, ${sigClause}${shieldPrefix}${line.charAt(0).toLowerCase() + line.slice(1)}${chainSuffix}.`;
+  return `${distPart}, ${sigClause}${line.charAt(0).toLowerCase() + line.slice(1)}${chainSuffix}.`;
 }
 
 /** After a step advances, suppress far/mid-distance cues so the next maneuver is not spoken until the driver settles. */
@@ -161,6 +147,8 @@ export function useNavigationSpeech({
   const metric = useMemo(() => usesMetricForSpeech(), []);
   const localeTag = useMemo(() => speechLocaleTag(), []);
   const voiceT = useMemo(() => getVoiceNavTuning(drivingMode), [drivingMode]);
+  const userLat = userCoord?.lat;
+  const userLng = userCoord?.lng;
 
   const aligned = useMemo(() => {
     if (!progress?.nextStep) return null;
@@ -181,16 +169,23 @@ export function useNavigationSpeech({
       }
     }
 
-    if (nextStepIsCurrentStep && upcomingDs && routePolyline && routePolyline.length >= 2 && userCoord) {
-      const along = alongRouteDistanceMeters(routePolyline, userCoord, {
+    if (
+      nextStepIsCurrentStep &&
+      upcomingDs &&
+      routePolyline &&
+      routePolyline.length >= 2 &&
+      userLat != null &&
+      userLng != null
+    ) {
+      const along = alongRouteDistanceMeters(routePolyline, { lat: userLat, lng: userLng }, {
         lat: upcomingDs.lat,
         lng: upcomingDs.lng,
       });
       if (Number.isFinite(along) && along >= 0) {
         distanceM = along;
       }
-    } else if (nextStepIsCurrentStep && upcomingDs && userCoord) {
-      const h = haversineMeters(userCoord.lat, userCoord.lng, upcomingDs.lat, upcomingDs.lng);
+    } else if (nextStepIsCurrentStep && upcomingDs && userLat != null && userLng != null) {
+      const h = haversineMeters(userLat, userLng, upcomingDs.lat, upcomingDs.lng);
       if (Number.isFinite(h)) {
         distanceM = h;
       }
@@ -206,8 +201,8 @@ export function useNavigationSpeech({
     routeSteps,
     routePolyline,
     currentStepIndex,
-    userCoord?.lat,
-    userCoord?.lng,
+    userLat,
+    userLng,
     navigationSteps,
   ]);
 

@@ -704,6 +704,10 @@ export default function MapScreen() {
    */
   const lastKnownNavSpeedMps =
     nav.navigationProgress?.displayCoord?.speedMps ?? 0;
+  const deadReckoningSpeedMps =
+    Number.isFinite(lastKnownNavSpeedMps) && lastKnownNavSpeedMps > 1.2
+      ? lastKnownNavSpeedMps
+      : 0;
   /**
    * Scale the "teleport" threshold by route length so it's always bounded
    * in *meters*, not percent. A fixed 2% threshold on a 100-mile route is
@@ -726,9 +730,9 @@ export default function MapScreen() {
       !isNativeSdkPassThrough && navPolylineLenMetersRaw > 1
         ? {
             polylineLengthMeters: navPolylineLenMetersRaw,
-            speedMps: Number.isFinite(lastKnownNavSpeedMps) ? lastKnownNavSpeedMps : 0,
-            staleThresholdMs: drivingMode === 'sport' ? 180 : drivingMode === 'adaptive' ? 220 : 260,
-            maxStaleMs: 3200,
+            speedMps: deadReckoningSpeedMps,
+            staleThresholdMs: drivingMode === 'sport' ? 260 : drivingMode === 'adaptive' ? 320 : 420,
+            maxStaleMs: drivingMode === 'sport' ? 1400 : drivingMode === 'adaptive' ? 1250 : 1100,
           }
         : undefined,
   });
@@ -1193,6 +1197,19 @@ export default function MapScreen() {
 
   const camCtrlRef = useRef(camCtrlForNav);
   camCtrlRef.current = camCtrlForNav;
+  const navCameraAnchorLat = cameraLeadCoord?.lat ?? navDisplayCoord.lat;
+  const navCameraAnchorLng = cameraLeadCoord?.lng ?? navDisplayCoord.lng;
+  const navFollowZoomLevel = camCtrlForNav?.followZoomLevel;
+  const navFollowPitch = camCtrlForNav?.followPitch;
+  const navFollowPadTop = camCtrlForNav?.followPadding?.paddingTop;
+  const navFollowPadBottom = camCtrlForNav?.followPadding?.paddingBottom;
+  const navFollowPadLeft = camCtrlForNav?.followPadding?.paddingLeft;
+  const navFollowPadRight = camCtrlForNav?.followPadding?.paddingRight;
+  const navCameraAnimationDuration = camCtrlForNav?.animationDuration;
+  const navFallbackPad = useMemo(
+    () => navFallbackFollowPadding(modeConfig, insets.bottom),
+    [modeConfig, insets.bottom],
+  );
   /** One instant snap per `navCameraSessionKey` — avoids ease fighting the remounted Camera + duplicate flyTo. */
   const lastNavCamSessionBootstrappedRef = useRef(-1);
   const lastNavCameraCommandRef = useRef<{
@@ -1210,17 +1227,21 @@ export default function MapScreen() {
    * provider + `NavSdkPuck` stay on `navDisplayCoord`. Native SDK keeps reroute, matcher, voice.
    */
   useEffect(() => {
-    if (!nav.isNavigating || !cameraLocked || !camCtrlForNav) return;
+    if (!nav.isNavigating || !cameraLocked || navFollowZoomLevel == null || navFollowPitch == null) return;
     const cam = cameraRef.current;
     if (!cam?.setCamera) return;
-    const c = camCtrlForNav;
-    const anchor = cameraLeadCoord ?? navDisplayCoord;
+    const anchor = { lat: navCameraAnchorLat, lng: navCameraAnchorLng };
     if (!Number.isFinite(anchor.lat) || !Number.isFinite(anchor.lng)) return;
     const h = Number.isFinite(navPuckHeading) ? navPuckHeading : heading;
     const headingDeg = Number.isFinite(h) ? ((h % 360) + 360) % 360 : null;
-    const zoom = Math.max(3, Math.min(22, Number.isFinite(c.followZoomLevel) ? c.followZoomLevel : modeConfig.navZoom));
-    const pitch = Math.max(0, Math.min(80, Number.isFinite(c.followPitch) ? c.followPitch : modeConfig.navPitch));
-    const pad = c.followPadding ?? navFallbackFollowPadding(modeConfig, insets.bottom);
+    const zoom = Math.max(3, Math.min(22, Number.isFinite(navFollowZoomLevel) ? navFollowZoomLevel! : modeConfig.navZoom));
+    const pitch = Math.max(0, Math.min(80, Number.isFinite(navFollowPitch) ? navFollowPitch! : modeConfig.navPitch));
+    const pad = {
+      paddingTop: navFollowPadTop ?? navFallbackPad.paddingTop,
+      paddingBottom: navFollowPadBottom ?? navFallbackPad.paddingBottom,
+      paddingLeft: navFollowPadLeft ?? navFallbackPad.paddingLeft,
+      paddingRight: navFollowPadRight ?? navFallbackPad.paddingRight,
+    };
     const cleanPad = {
       paddingTop: Math.max(0, Math.min(900, Number.isFinite(pad.paddingTop) ? pad.paddingTop : 0)),
       paddingBottom: Math.max(0, Math.min(900, Number.isFinite(pad.paddingBottom) ? pad.paddingBottom : 0)),
@@ -1243,11 +1264,11 @@ export default function MapScreen() {
       headingDelta < 0.8 &&
       Math.abs(last.zoom - zoom) < 0.03 &&
       Math.abs(last.pitch - pitch) < 0.5 &&
-      now - last.at < 220;
+      now - last.at < 320;
     if (commandIsRedundant) return;
     const animationDuration = isNewNavSession
       ? 0
-      : Math.max(80, Math.min(900, Number.isFinite(c.animationDuration) ? c.animationDuration : 280));
+      : Math.max(180, Math.min(1200, Number.isFinite(navCameraAnimationDuration) ? navCameraAnimationDuration! : 420));
     lastNavCameraCommandRef.current = {
       lat: anchor.lat,
       lng: anchor.lng,
@@ -1274,26 +1295,25 @@ export default function MapScreen() {
     nav.isNavigating,
     cameraLocked,
     navCameraSessionKey,
-    camCtrlForNav?.followZoomLevel,
-    camCtrlForNav?.followPitch,
-    camCtrlForNav?.followPadding?.paddingTop,
-    camCtrlForNav?.followPadding?.paddingBottom,
-    camCtrlForNav?.followPadding?.paddingLeft,
-    camCtrlForNav?.followPadding?.paddingRight,
-    camCtrlForNav?.animationDuration,
     navDisplayCoord.lat,
     navDisplayCoord.lng,
     navPuckHeading,
     heading,
-    cameraLeadCoord?.lat,
-    cameraLeadCoord?.lng,
-    cameraLeadCoord,
-    camCtrlForNav,
-    modeConfig,
-    navDisplayCoord,
+    navCameraAnchorLat,
+    navCameraAnchorLng,
+    navFollowZoomLevel,
+    navFollowPitch,
+    navFollowPadTop,
+    navFollowPadBottom,
+    navFollowPadLeft,
+    navFollowPadRight,
+    navCameraAnimationDuration,
+    navFallbackPad.paddingTop,
+    navFallbackPad.paddingBottom,
+    navFallbackPad.paddingLeft,
+    navFallbackPad.paddingRight,
     modeConfig.navPitch,
     modeConfig.navZoom,
-    insets.bottom,
   ]);
 
   // ── Reports ──

@@ -43,7 +43,7 @@ type Args = {
  */
 export const NAV_TURN_CARD_RESERVE_PX = 152;
 
-export const NAV_MAP_BOTTOM_CHROME_PX = 224;
+export const NAV_MAP_BOTTOM_CHROME_PX = 284;
 
 /** @deprecated Use {@link NAV_TURN_CARD_RESERVE_PX} */
 export const NAV_UI_HEIGHT = NAV_TURN_CARD_RESERVE_PX;
@@ -74,7 +74,7 @@ const MODE_CONFIG: Record<
     padTopSpeed: 50,
     turnApproachPadBoost: 20,
     turnApproachMeters: 200,
-    transitionMs: 1200,
+    transitionMs: 1320,
   },
   adaptive: {
     minPitch: 36,
@@ -86,7 +86,7 @@ const MODE_CONFIG: Record<
     padTopSpeed: 48,
     turnApproachPadBoost: 20,
     turnApproachMeters: 200,
-    transitionMs: 780,
+    transitionMs: 920,
   },
   sport: {
     minPitch: 18,
@@ -98,7 +98,7 @@ const MODE_CONFIG: Record<
     padTopSpeed: 42,
     turnApproachPadBoost: 18,
     turnApproachMeters: 200,
-    transitionMs: 360,
+    transitionMs: 520,
   },
 };
 

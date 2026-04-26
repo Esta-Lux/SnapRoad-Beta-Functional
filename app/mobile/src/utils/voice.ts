@@ -474,10 +474,7 @@ export function formatTurnInstruction(
     };
     if (exit) {
       const ord = ordinals[exit] ?? `${exit}th`;
-      const road = navStepData?.destinationRoad;
-      const exitPhrase = road
-        ? `at the roundabout, take the ${ord} exit onto ${road}`
-        : `at the roundabout, take the ${ord} exit`;
+      const exitPhrase = `at the roundabout, take the ${ord} exit`;
       const chain = chainHint(
         navStepData?.nextManeuverKind,
         navStepData?.nextManeuverStreet,
@@ -564,13 +561,10 @@ export function formatTurnInstruction(
   const legacyHasStop = !signal && (intersections?.some((ix) => ix.classes?.includes('stop_sign')) ?? false);
   const useLegacySignal = !signal || signal.kind === 'none';
 
-  const ontoMatch = i.match(/(?:onto|toward|on)\s+(.+)/i);
-  const roadName = navStepData?.destinationRoad ?? ontoMatch?.[1]?.replace(/\.$/, '') ?? null;
-
   const chain =
     chainHint(
       navStepData?.nextManeuverKind,
-      navStepData?.nextManeuverStreet,
+      null,
       navStepData?.nextManeuverDistanceMeters,
     ) ||
     (() => {
@@ -585,19 +579,13 @@ export function formatTurnInstruction(
   const laneSuffix = laneAdvice(lanes);
 
   let core: string;
-  const road = roadName ? ` onto ${roadName}` : '';
-
-  const shieldNote =
-    navStepData?.shields?.length && navStepData.shields[0]!.displayRef
-      ? ` toward ${navStepData.shields[0]!.displayRef}`
-      : '';
 
   if (dir === 'u-turn') {
-    core = `${sigPre}make a U-turn${shieldNote}`;
+    core = `${sigPre}make a U-turn`;
   } else if (dir === 'roundabout') {
-    core = `${sigPre}take the roundabout${road}`;
+    core = `${sigPre}take the roundabout`;
   } else if (dir === 'merge') {
-    core = `${sigPre}merge${road}${shieldNote}`;
+    core = `${sigPre}merge`;
   } else if (dir === 'straight') {
     if (dist < 3000) return '';
     const miles = (dist / 1609.34).toFixed(1);
@@ -612,11 +600,11 @@ export function formatTurnInstruction(
       (useLegacySignal && legacyHasStop ? 'at the stop sign, ' : '');
 
     if (sharpTurn) {
-      core = `${signalLabel}make a sharp ${turnWord}${road}${shieldNote}`;
+      core = `${signalLabel}make a sharp ${turnWord}`;
     } else if (slightTurn) {
-      core = `${signalLabel}bear slightly ${turnWord}${road}${shieldNote}`;
+      core = `${signalLabel}bear slightly ${turnWord}`;
     } else {
-      core = `${signalLabel}turn ${turnWord}${road}${shieldNote}`;
+      core = `${signalLabel}turn ${turnWord}`;
     }
   }
 

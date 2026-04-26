@@ -303,6 +303,7 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
         const lng = loc.coords.longitude;
         const acc = loc.coords.accuracy;
         let speedMph = Math.max(0, (loc.coords.speed ?? 0) * 2.237);
+        const rawSpeedMph = speedMph;
         const gpsHeading = loc.coords.heading;
         const rawCoord = { lat, lng };
         const now = Date.now();
@@ -417,7 +418,7 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
           }
 
           let published = nextCoord;
-          if (isNavigating && !holdOutlier) {
+          if (isNavigating && !holdOutlier && rawSpeedMph >= 6 && nextSpeed >= 8) {
             published = extrapolateForDisplay(
               nextCoord,
               newHeading,

@@ -351,7 +351,12 @@ export function computeNavigationProgressFrame({
   let etaBlendWeight: number | undefined;
   let etaNaiveSeconds: number | undefined;
 
-  if (etaBlend?.enabled && typeof etaBlend.modelRefreshedAtMs === 'number') {
+  const etaBlendSpeedMps = Math.max(0, rawLocation.speedMps ?? 0);
+  if (
+    etaBlend?.enabled &&
+    typeof etaBlend.modelRefreshedAtMs === 'number' &&
+    etaBlendSpeedMps >= 2.2
+  ) {
     const nowTs = typeof rawLocation.timestamp === 'number' ? rawLocation.timestamp : Date.now();
     const prevTs = previous?.displayCoord?.timestamp;
     const dtMs =
@@ -361,7 +366,7 @@ export function computeNavigationProgressFrame({
     const blended = blendModelWithObservedEta({
       modelRemainingSec: modelDurationRemainingSeconds,
       distanceRemainingM: distanceRemainingMeters,
-      smoothedSpeedMps: Math.max(0, rawLocation.speedMps ?? 0),
+      smoothedSpeedMps: etaBlendSpeedMps,
       confidence,
       msSinceModelRefresh: Math.max(0, nowTs - etaBlend.modelRefreshedAtMs),
       speedStability01: Math.max(0, Math.min(1, etaBlend.speedStability01)),

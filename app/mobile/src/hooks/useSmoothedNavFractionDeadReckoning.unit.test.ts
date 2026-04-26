@@ -14,7 +14,7 @@
  *   3. Displacement per frame matches `speed × dt / polylineLengthMeters`.
  *   4. Dead-reckoning stops at `maxStaleMs` (never extrapolates forever).
  *   5. Never overshoots fraction 1.0 even if extrapolation would run past end.
- *   6. `speedMps === 0` holds the puck still (red-light behaviour).
+ *   6. near-stationary speeds hold the puck still (red-light behaviour).
  *   7. When a new external target lands during silence, ease re-engages
  *      (verified by returning to ease-branch output when delta ≠ 0).
  */
@@ -72,7 +72,7 @@ test('4. dead-reckoning stops at maxStaleMs (never runs forever)', () => {
     current: 0.50,
     target: 0.50,
     dtMs: 16,
-    staleMs: 5000, // past default 4000 ms cap
+    staleMs: 5000, // past default 1400 ms cap
     speedMps: 25,
     polylineLengthMeters: POLYLINE_LEN_M,
   });
@@ -93,13 +93,13 @@ test('5. dead-reckoning never overshoots fraction 1.0', () => {
   assert.strictEqual(out, 1.0, `expected clamp to 1.0, got ${out}`);
 });
 
-test('6. speedMps === 0 holds the puck still (red-light guarantee)', () => {
+test('6. near-stationary speed holds the puck still (red-light guarantee)', () => {
   const out = stepSmoothedFractionWithDeadReckoning({
     current: 0.50,
     target: 0.50,
     dtMs: 16,
     staleMs: 3000,
-    speedMps: 0,
+    speedMps: 0.8,
     polylineLengthMeters: POLYLINE_LEN_M,
   });
   assert.strictEqual(out, 0.50, `stopped car drifted: ${out}`);
@@ -118,6 +118,7 @@ test('7. when a new target lands during silence, ease re-engages', () => {
     staleMs: 2000,
     speedMps: 25,
     polylineLengthMeters: POLYLINE_LEN_M,
+    maxStaleMs: 3000,
   });
   assert.ok(extrapolated > 0.50, `dead-reckoning did not fire: ${extrapolated}`);
 
@@ -135,13 +136,13 @@ test('7. when a new target lands during silence, ease re-engages', () => {
   );
 });
 
-test('8. sub-threshold speed (≤ 0.1 m/s) freezes (avoids crawl-drift)', () => {
+test('8. sub-threshold speed (≤ 1.2 m/s) freezes (avoids crawl-drift)', () => {
   const out = stepSmoothedFractionWithDeadReckoning({
     current: 0.50,
     target: 0.50,
     dtMs: 1000,
     staleMs: 1000,
-    speedMps: 0.05, // GPS-level noise, not real motion
+    speedMps: 1.2, // GPS-level crawl/noise, not committed vehicle motion
     polylineLengthMeters: POLYLINE_LEN_M,
   });
   assert.strictEqual(out, 0.50, `crawl-drift triggered: ${out}`);
