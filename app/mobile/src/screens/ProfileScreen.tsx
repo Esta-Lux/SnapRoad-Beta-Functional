@@ -438,6 +438,20 @@ export default function ProfileScreen() {
   }, [route.params?.openCommuteReminders, navigation]);
 
   useEffect(() => {
+    if (!route.params?.openSupport) return;
+    setProfileTab('settings');
+    setShowHelp(true);
+    navigation.setParams({ openSupport: undefined });
+  }, [route.params?.openSupport, navigation]);
+
+  useEffect(() => {
+    if (!route.params?.openBilling) return;
+    setProfileTab('settings');
+    setShowPlanModal(true);
+    navigation.setParams({ openBilling: undefined });
+  }, [route.params?.openBilling, navigation]);
+
+  useEffect(() => {
     if (user?.vehicle_height_meters && user.vehicle_height_meters > 0) {
       setTallVehicle(true);
       setVehicleHeight(String(user.vehicle_height_meters));
@@ -688,6 +702,16 @@ export default function ProfileScreen() {
       },
     },
   ];
+  const snapValue = {
+    timeSaved: Math.max(0, Math.round((weeklyRecap.totalTrips || 0) * 4)),
+    fuelSignal:
+      fuelSummary.monthlyEstimate != null
+        ? `$${fuelSummary.monthlyEstimate}/mo`
+        : fuelSummary.avgMpg != null
+          ? `${fuelSummary.avgMpg.toFixed(1)} mpg`
+          : 'Learning',
+    commuteAlerts: commutes.length,
+  };
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: bg }} edges={['top']}>
       <KeyboardAvoidingView
@@ -726,6 +750,31 @@ export default function ProfileScreen() {
         {profileTab === 'overview' && (
           <>
             <SectionHeader title="Overview" isLight={isLight} />
+            <View style={[styles.valueCard, { backgroundColor: cardBg, borderColor: colors.border }]}>
+              <View style={styles.valueHeaderRow}>
+                <View style={[styles.valueIconWrap, { backgroundColor: isLight ? 'rgba(15,23,42,0.06)' : 'rgba(255,255,255,0.08)' }]}>
+                  <Ionicons name="speedometer-outline" size={22} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.valueTitle, { color: text }]}>SnapRoad value cockpit</Text>
+                  <Text style={[styles.valueSub, { color: sub }]}>Built to save time, fuel, and road stress.</Text>
+                </View>
+              </View>
+              <View style={styles.valueMetricRow}>
+                <View style={styles.valueMetric}>
+                  <Text style={[styles.valueMetricNumber, { color: text }]}>{snapValue.timeSaved}m</Text>
+                  <Text style={[styles.valueMetricLabel, { color: sub }]}>weekly time signal</Text>
+                </View>
+                <View style={styles.valueMetric}>
+                  <Text style={[styles.valueMetricNumber, { color: text }]}>{snapValue.fuelSignal}</Text>
+                  <Text style={[styles.valueMetricLabel, { color: sub }]}>fuel tracker</Text>
+                </View>
+                <View style={styles.valueMetric}>
+                  <Text style={[styles.valueMetricNumber, { color: text }]}>{snapValue.commuteAlerts}</Text>
+                  <Text style={[styles.valueMetricLabel, { color: sub }]}>commute scans</Text>
+                </View>
+              </View>
+            </View>
             <MyCarRow cardBg={cardBg} text={text} sub={sub} accent={colors.primary} />
             <TouchableOpacity
               activeOpacity={0.92}
@@ -935,7 +984,7 @@ export default function ProfileScreen() {
 
             <SectionHeader title={`Quick routes (${routes.length})`} isLight={isLight} />
             <Text style={{ color: sub, fontSize: 12, paddingHorizontal: 16, marginBottom: 8, marginTop: -6, lineHeight: 16 }}>
-              Shortcuts for navigation—home, work, and places you drive to often (separate from Favorites and place alerts). Manage place alerts from the Overview tab.
+              Legacy shortcuts are read-only for launch. New recurring traffic scans live in Commute reminders so notifications stay clean and reliable.
             </Text>
             <RoutesCard cardBg={cardBg} text={text} sub={sub} routes={routes} loading={initialLoading} onDelete={handleDeleteRoute} />
 
@@ -1249,4 +1298,25 @@ const styles = StyleSheet.create({
   placeAlertIconWrap: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   placeAlertDashTitle: { fontSize: 16, fontWeight: '800' },
   placeAlertDashSub: { fontSize: 12, fontWeight: '500', marginTop: 2, lineHeight: 16 },
+  valueCard: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  valueHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  valueIconWrap: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  valueTitle: { fontSize: 17, fontWeight: '900' },
+  valueSub: { fontSize: 12, lineHeight: 16, marginTop: 3, fontWeight: '600' },
+  valueMetricRow: { flexDirection: 'row', gap: 8 },
+  valueMetric: {
+    flex: 1,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(148,163,184,0.1)',
+  },
+  valueMetricNumber: { fontSize: 16, fontWeight: '900', textAlign: 'center' },
+  valueMetricLabel: { fontSize: 9, lineHeight: 12, textAlign: 'center', marginTop: 4, fontWeight: '800', textTransform: 'uppercase' },
 });

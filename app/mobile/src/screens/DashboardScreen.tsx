@@ -76,14 +76,20 @@ function FamilyPreview({ colors, isLight }: { colors: ReturnType<typeof useTheme
   return (
     <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
       <View style={styles.previewOverlayBadge}>
-        <LinearGradient colors={['#2563EB', '#1D4ED8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.comingSoonPill}>
+        <LinearGradient colors={['#334155', '#0F172A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.comingSoonPill}>
           <Ionicons name="time-outline" size={12} color="#fff" />
-          <Text style={styles.comingSoonPillText}>COMING SOON</Text>
+          <Text style={styles.comingSoonPillText}>POLISHED PREVIEW</Text>
         </LinearGradient>
       </View>
 
-      <View style={{ backgroundColor: isLight ? 'rgba(37,99,235,0.08)' : 'rgba(59,130,246,0.14)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, marginHorizontal: 16, marginBottom: 8 }}>
-        <Text style={{ color: isLight ? '#1D4ED8' : '#93C5FD', fontSize: 11, fontWeight: '600', textAlign: 'center' }}>Preview data shown below — real family tracking coming soon</Text>
+      <View style={[styles.familyTruthCard, { backgroundColor: isLight ? 'rgba(15,23,42,0.04)' : 'rgba(255,255,255,0.06)', borderColor: isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.08)' }]}>
+        <Ionicons name="shield-checkmark-outline" size={20} color={isLight ? '#0F172A' : '#E2E8F0'} />
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: colors.text, fontSize: 14, fontWeight: '800' }}>Family backend is locked for launch</Text>
+          <Text style={{ color: colors.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 3 }}>
+            This tab is intentionally a preview. No button here pretends to perform live family tracking until the production API is ready.
+          </Text>
+        </View>
       </View>
       <Text style={[styles.previewSection, { color: colors.text }]}>Family Members</Text>
       {MOCK_FAMILY.map((m) => (
@@ -144,7 +150,6 @@ function FamilyPreview({ colors, isLight }: { colors: ReturnType<typeof useTheme
           { icon: 'locate-outline', label: 'Live Tracking', desc: 'Real-time family locations' },
           { icon: 'shield-checkmark-outline', label: 'Teen Controls', desc: 'Speed limits & curfews' },
           { icon: 'alert-circle-outline', label: 'SOS Alerts', desc: 'Emergency notifications' },
-          { icon: 'bar-chart-outline', label: 'Trip reports', desc: 'Weekly driving summaries' },
           { icon: 'notifications-outline', label: 'Place Alerts', desc: 'Arrive/leave geofences' },
           { icon: 'bar-chart-outline', label: 'Trip Reports', desc: 'Teen driving insights' },
         ].map((f) => (
@@ -158,7 +163,7 @@ function FamilyPreview({ colors, isLight }: { colors: ReturnType<typeof useTheme
 
       <View style={{ alignItems: 'center', marginTop: 20, paddingHorizontal: 24 }}>
         <Text style={{ color: colors.textTertiary, fontSize: 12, textAlign: 'center', lineHeight: 18 }}>
-          Family plan will include everything in Premium plus family safety features. Stay tuned!
+          Family plan will include Premium plus household safety features. Until then, friends and live sharing stay in the Social hub.
         </Text>
       </View>
     </ScrollView>
@@ -865,8 +870,8 @@ export default function DashboardScreen() {
           title="Social"
           subtitle={
             section === 'friends'
-              ? 'Share location with people you trust—calmly, on your terms.'
-              : 'Family features are on the way. Preview what’s coming below.'
+              ? 'Share location with people you trust, calmly and on your terms.'
+              : 'Family is a launch-safe preview while the backend remains intentionally stubbed.'
           }
           onAddPress={section === 'friends' ? () => setShowAddFriend(true) : undefined}
           accentColor={colors.primary}
@@ -880,8 +885,9 @@ export default function DashboardScreen() {
         style={[
           styles.toggleRow,
           {
-            backgroundColor: isLight ? 'rgba(60,60,67,0.05)' : 'rgba(255,255,255,0.06)',
-            borderWidth: 0,
+            backgroundColor: isLight ? 'rgba(15,23,42,0.04)' : 'rgba(255,255,255,0.06)',
+            borderWidth: StyleSheet.hairlineWidth,
+            borderColor: isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.08)',
           },
         ]}
       >
@@ -1812,6 +1818,16 @@ const styles = StyleSheet.create({
   previewOverlayBadge: { alignItems: 'center', marginBottom: 12, marginTop: 4 },
   comingSoonPill: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8 },
   comingSoonPillText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  familyTruthCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 14,
+  },
 
   previewSection: { fontSize: 15, fontWeight: '800', marginBottom: 8, marginTop: 4 },
 

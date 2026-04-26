@@ -33,6 +33,8 @@ export type ProfileStackParamList = {
         session_id?: string;
         openPlaceAlerts?: boolean;
         openCommuteReminders?: boolean;
+        openSupport?: boolean;
+        openBilling?: boolean;
       }
     | undefined;
   ProfileBilling:

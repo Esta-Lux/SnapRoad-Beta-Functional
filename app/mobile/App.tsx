@@ -230,15 +230,19 @@ function MainTabs() {
               display: 'none' as const,
             }
           : {
-              backgroundColor: colors.tabBar,
-              borderTopColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.06)',
+              borderTopLeftRadius: 22,
+              borderTopRightRadius: 22,
+              backgroundColor: isLight ? 'rgba(255,255,255,0.96)' : 'rgba(15,23,42,0.96)',
+              borderTopColor: isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.08)',
+              borderColor: isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.08)',
               borderTopWidth: StyleSheet.hairlineWidth,
-              paddingBottom: Platform.OS === 'ios' ? 28 : 8,
+              borderWidth: StyleSheet.hairlineWidth,
+              paddingBottom: Platform.OS === 'ios' ? 18 : 8,
               paddingTop: 8,
-              height: Platform.OS === 'ios' ? 88 : 64,
-              ...(Platform.OS === 'ios' ? { shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.06, shadowRadius: 8 } : { elevation: 8 }),
+              height: Platform.OS === 'ios' ? 78 : 64,
+              ...(Platform.OS === 'ios' ? { shadowColor: '#000', shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.12, shadowRadius: 18 } : { elevation: 10 }),
             },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600', letterSpacing: 0.1 },
+        tabBarLabelStyle: { fontSize: 10, fontWeight: '800', letterSpacing: 0 },
         tabBarIconStyle: { marginBottom: -2 },
       }}
       screenListeners={{ tabPress: () => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } }}
@@ -247,14 +251,24 @@ function MainTabs() {
         name="Map"
         component={MapStackScreen}
         options={{
-          tabBarIcon: ({ color }) => <Ionicons name="map-outline" size={24} color={color} />,
+          tabBarLabel: 'Drive',
+          tabBarIcon: ({ color, focused }) => (
+            <View style={[styles.tabIconWrap, focused && { backgroundColor: `${colors.primary}18` }]}>
+              <Ionicons name={focused ? 'map' : 'map-outline'} size={22} color={color} />
+            </View>
+          ),
         }}
       />
       <Tab.Screen
         name="Dashboards"
         component={DashboardStackScreen}
         options={{
-          tabBarIcon: ({ color }) => <Ionicons name="people-outline" size={24} color={color} />,
+          tabBarLabel: 'Social',
+          tabBarIcon: ({ color, focused }) => (
+            <View style={[styles.tabIconWrap, focused && { backgroundColor: `${colors.primary}18` }]}>
+              <Ionicons name={focused ? 'people' : 'people-outline'} size={22} color={color} />
+            </View>
+          ),
         }}
       />
       <Tab.Screen
@@ -262,19 +276,37 @@ function MainTabs() {
         component={RewardsStackScreen}
         options={{
           tabBarLabel: 'Wallet',
-          tabBarIcon: ({ color }) => <Ionicons name="wallet-outline" size={24} color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={[styles.tabIconWrap, focused && { backgroundColor: `${colors.primary}18` }]}>
+              <Ionicons name={focused ? 'wallet' : 'wallet-outline'} size={22} color={color} />
+            </View>
+          ),
         }}
       />
       <Tab.Screen
         name="Profile"
         component={ProfileStackScreen}
         options={{
-          tabBarIcon: ({ color }) => <Ionicons name="person-outline" size={24} color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={[styles.tabIconWrap, focused && { backgroundColor: `${colors.primary}18` }]}>
+              <Ionicons name={focused ? 'person' : 'person-outline'} size={22} color={color} />
+            </View>
+          ),
         }}
       />
     </Tab.Navigator>
   );
 }
+
+const styles = StyleSheet.create({
+  tabIconWrap: {
+    width: 38,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
 
 function RootNavigator() {
   const { isAuthenticated, isLoading, user, completeOAuthSignIn } = useAuth();

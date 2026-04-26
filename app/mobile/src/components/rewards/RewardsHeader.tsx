@@ -22,12 +22,12 @@ function formatGems(n: number): string {
 
 /** Gem wallet hero: balance, multiplier, and ledger context line. */
 export default function RewardsHeader({ colors, gems, multiplier }: Props) {
-  const glass = 'rgba(255,255,255,0.14)';
-  const glassBorder = 'rgba(255,255,255,0.22)';
+  const glass = 'rgba(255,255,255,0.1)';
+  const glassBorder = 'rgba(255,255,255,0.18)';
 
   return (
     <LinearGradient
-      colors={[colors.rewardsGradientStart, colors.rewardsGradientEnd]}
+      colors={['#111827', '#1E293B']}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={styles.wrap}
@@ -39,7 +39,7 @@ export default function RewardsHeader({ colors, gems, multiplier }: Props) {
         </View>
       </View>
 
-      <Text style={styles.tagline}>Balance, activity, offers, and redemptions — one gem account.</Text>
+      <Text style={styles.tagline}>Savings cockpit for gems, redemptions, fuel-minded offers, and every reward you earn on the road.</Text>
 
       <View style={styles.heroGemRow}>
         <LinearGradient
@@ -48,22 +48,31 @@ export default function RewardsHeader({ colors, gems, multiplier }: Props) {
           end={{ x: 1, y: 1 }}
           style={styles.heroGemDisc}
         >
-          <Ionicons name="diamond" size={26} color="#FDE68A" />
+          <Ionicons name="diamond" size={26} color="#C7D2FE" />
         </LinearGradient>
         <View style={{ flex: 1, marginLeft: 14 }}>
           <Text style={styles.gemNumber}>{formatGems(gems)}</Text>
-          <Text style={styles.gemCaption}>balance</Text>
+          <Text style={styles.gemCaption}>available gems</Text>
         </View>
       </View>
 
       <View style={styles.pillRow}>
         <View style={[styles.statPill, { backgroundColor: glass, borderColor: glassBorder }]}>
-          <Ionicons name="flash-outline" size={17} color="#FDE68A" style={{ marginBottom: 2 }} />
+          <Ionicons name="flash-outline" size={17} color="#C7D2FE" style={{ marginBottom: 2 }} />
           <Text style={[styles.statValue, styles.statValueAccent]} numberOfLines={1}>
             {multiplier}
           </Text>
           <Text style={styles.statLabel} numberOfLines={1}>
             Gem multiplier
+          </Text>
+        </View>
+        <View style={[styles.statPill, { backgroundColor: glass, borderColor: glassBorder }]}>
+          <Ionicons name="leaf-outline" size={17} color="#A7F3D0" style={{ marginBottom: 2 }} />
+          <Text style={styles.statValue} numberOfLines={1}>
+            Save
+          </Text>
+          <Text style={styles.statLabel} numberOfLines={1}>
+            Time + fuel
           </Text>
         </View>
       </View>
@@ -145,24 +154,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 2,
   },
-  pillRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
+  pillRow: { flexDirection: 'row', justifyContent: 'center', gap: 10 },
   statPill: {
     borderRadius: 16,
     paddingVertical: 12,
     paddingHorizontal: 20,
     alignItems: 'center',
     borderWidth: 1,
-    minWidth: 140,
+    minWidth: 132,
   },
   statValue: {
     color: '#fff',
     fontSize: 17,
     fontWeight: '800',
   },
-  statValueAccent: { color: '#FEF9C3' },
+  statValueAccent: { color: '#E0E7FF' },
   statLabel: {
     color: 'rgba(255,255,255,0.68)',
     fontSize: 10,

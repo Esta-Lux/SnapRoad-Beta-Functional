@@ -5317,8 +5317,22 @@ export default function MapScreen() {
         isLight={isLight}
         onNavigate={(screen) => {
           /* Menu already closed by HamburgerMenu before this runs (deferred). */
-          if (screen === 'Profile' || screen === 'Help') {
+          if (screen === 'Map') {
+            return;
+          } else if (screen === 'Wallet') {
+            rnNav.navigate('Wallet', { screen: 'RewardsMain' });
+          } else if (screen === 'Premium') {
+            (rnNav as { navigate: (name: string, params?: object) => void }).navigate('Profile', {
+              screen: 'ProfileMain',
+              params: { openBilling: true },
+            });
+          } else if (screen === 'Profile') {
             rnNav.navigate('Profile', { screen: 'ProfileMain' });
+          } else if (screen === 'Help') {
+            (rnNav as { navigate: (name: string, params?: object) => void }).navigate('Profile', {
+              screen: 'ProfileMain',
+              params: { openSupport: true },
+            });
           } else if (screen === 'PlaceAlerts') {
             (rnNav as { navigate: (name: string, params?: object) => void }).navigate('Profile', {
               screen: 'ProfileMain',
@@ -5337,7 +5351,14 @@ export default function MapScreen() {
               ]);
               return;
             }
-            setShowConvoy(true);
+            Alert.alert(
+              'Convoy preview',
+              'Friend meetups are available now. Full family convoy is coming soon while the family backend remains locked for launch.',
+              [
+                { text: 'Open meetup', onPress: () => setShowConvoy(true) },
+                { text: 'View Social Hub', onPress: () => rnNav.navigate('Dashboards', { screen: 'DashboardMain' }) },
+              ],
+            );
           } else if (screen === 'Social') {
             if (!user?.isPremium) {
               Alert.alert('Premium feature', 'Friends and live location require SnapRoad Premium.', [
@@ -5346,6 +5367,8 @@ export default function MapScreen() {
               ]);
               return;
             }
+            rnNav.navigate('Dashboards', { screen: 'DashboardMain' });
+          } else if (screen === 'FamilySoon') {
             rnNav.navigate('Dashboards', { screen: 'DashboardMain' });
           }
         }}
