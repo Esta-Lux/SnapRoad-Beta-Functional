@@ -172,6 +172,7 @@ import {
 } from '../navigation/navSdkAuthority';
 import { bucketSpeedMpsTo5Mph, maneuverDistanceBucketMeters } from '../navigation/cameraPresets';
 import { getNativeHeadlessFollowingPitch, getNativeHeadlessFollowingZoom } from '../navigation/nativeNavCameraMirror';
+import { getNavCameraFollowTuning } from '../navigation/navCameraFollowTuning';
 import NavSdkPuck from '../components/map/NavSdkPuck';
 import { MapboxNavigationView, type MapboxNavigationViewRef } from '@badatgil/expo-mapbox-navigation';
 import { routeProfileForPlatform } from '../hooks/useNativeNavBridge';
@@ -695,7 +696,7 @@ export default function MapScreen() {
     () => (navPolylineForSmoothing && navPolylineForSmoothing.length >= 2 ? polylineLengthMeters(navPolylineForSmoothing) : 0),
     [navPolylineForSmoothing],
   );
-  /** Headless SDK minimal path: native `fractionTraveled` only — no RAF ease / dead-reckoning. */
+  /** Headless SDK path targets native `fractionTraveled`; JS eases that scalar between native ticks. */
   const nativeFractionTraveled = nav.navigationProgress?.nativeFractionTraveled;
   const isNativeSdkPassThrough =
     nav.isNavigating &&
@@ -739,12 +740,12 @@ export default function MapScreen() {
     navPolylineLenMetersRaw > 1
       ? Math.max(0.005, Math.min(0.05, 100 / navPolylineLenMetersRaw))
       : 0.02;
-  const smoothedFraction = useSmoothedNavFraction(targetFraction, nav.isNavigating && !isNativeSdkPassThrough, {
+  const smoothedFraction = useSmoothedNavFraction(targetFraction, nav.isNavigating, {
     timeConstantMs: drivingMode === 'calm' ? 150 : drivingMode === 'sport' ? 105 : 125,
     snapDeltaFraction,
-    enabled: !isNativeSdkPassThrough,
+    enabled: true,
     deadReckoning:
-      !isNativeSdkPassThrough && navPolylineLenMetersRaw > 1
+      navPolylineLenMetersRaw > 1
         ? {
             polylineLengthMeters: navPolylineLenMetersRaw,
             speedMps: deadReckoningSpeedMps,
@@ -754,17 +755,14 @@ export default function MapScreen() {
         : undefined,
   });
   /**
-   * Native SDK: **only** `nativeFractionTraveled` from the bridge — same scalar the SDK uses
-   * internally. No JS recomputation from cumulative meters / polyline length (those can drift
-   * if arc-length differs from the native router’s fraction). JS-only trips keep eased `smoothedFraction`.
+   * Route split uses the same eased scalar as the puck/camera. The target still
+   * comes from native `fractionTraveled` when the SDK is authoritative; easing
+   * only fills visual frames between native samples.
    */
   const routeOverlayFraction = useMemo(() => {
     if (!nav.isNavigating) return null;
-    if (isNativeSdkPassThrough && typeof nativeFractionTraveled === 'number' && Number.isFinite(nativeFractionTraveled)) {
-      return Math.max(0, Math.min(1, nativeFractionTraveled));
-    }
     return smoothedFraction;
-  }, [nav.isNavigating, isNativeSdkPassThrough, nativeFractionTraveled, smoothedFraction]);
+  }, [nav.isNavigating, smoothedFraction]);
   /**
    * Has the nav pipeline actually produced real progress yet? Used to gate
    * `smoothedNavPuckCoord` below — without this check the smoothed fraction
@@ -794,7 +792,6 @@ export default function MapScreen() {
   }, [nav.isNavigating, nav.navigationProgress?.instructionSource]);
   const smoothedNavPuckCoord = useMemo(() => {
     if (!nav.isNavigating) return null;
-    if (isNativeSdkPassThrough) return null;
     if (!hasRealNavProgress) return null;
     if (!navPolylineForSmoothing || navPolylineForSmoothing.length < 2) return null;
     if (navPolylineLenMetersRaw <= 0) return null;
@@ -804,7 +801,6 @@ export default function MapScreen() {
     );
   }, [
     nav.isNavigating,
-    isNativeSdkPassThrough,
     hasRealNavProgress,
     navPolylineForSmoothing,
     navPolylineLenMetersRaw,
@@ -1228,6 +1224,10 @@ export default function MapScreen() {
   const navFollowPadLeft = camCtrlForNav?.followPadding?.paddingLeft;
   const navFollowPadRight = camCtrlForNav?.followPadding?.paddingRight;
   const navCameraAnimationDuration = camCtrlForNav?.animationDuration;
+  const navCameraFollowTuning = useMemo(
+    () => getNavCameraFollowTuning(drivingMode, fusedSpeedMpsNav ?? 0, nextManeuverDistanceMeters),
+    [drivingMode, fusedSpeedMpsNav, nextManeuverDistanceMeters],
+  );
   const navFallbackPad = useMemo(
     () => navFallbackFollowPadding(modeConfig, insets.bottom),
     [modeConfig, insets.bottom],
@@ -1254,7 +1254,14 @@ export default function MapScreen() {
     if (!cam?.setCamera) return;
     const anchor = { lat: navCameraAnchorLat, lng: navCameraAnchorLng };
     if (!Number.isFinite(anchor.lat) || !Number.isFinite(anchor.lng)) return;
-    const h = Number.isFinite(navPuckHeading) ? navPuckHeading : heading;
+    const last = lastNavCameraCommandRef.current;
+    const stoppedForCamera = (fusedSpeedMpsNav ?? 0) < 0.75;
+    const h =
+      stoppedForCamera && last?.heading != null
+        ? last.heading
+        : Number.isFinite(navPuckHeading)
+          ? navPuckHeading
+          : heading;
     const headingDeg = Number.isFinite(h) ? ((h % 360) + 360) % 360 : null;
     const zoom = Math.max(3, Math.min(22, Number.isFinite(navFollowZoomLevel) ? navFollowZoomLevel! : modeConfig.navZoom));
     const pitch = Math.max(0, Math.min(80, Number.isFinite(navFollowPitch) ? navFollowPitch! : modeConfig.navPitch));
@@ -1273,7 +1280,6 @@ export default function MapScreen() {
     const isNewNavSession = lastNavCamSessionBootstrappedRef.current !== navCameraSessionKey;
     if (isNewNavSession) lastNavCamSessionBootstrappedRef.current = navCameraSessionKey;
     const now = Date.now();
-    const last = lastNavCameraCommandRef.current;
     const movedM = last ? haversineMeters(last.lat, last.lng, anchor.lat, anchor.lng) : Infinity;
     const headingDelta =
       last?.heading != null && headingDeg != null
@@ -1282,15 +1288,24 @@ export default function MapScreen() {
     const commandIsRedundant =
       !isNewNavSession &&
       !!last &&
-      movedM < 0.8 &&
-      headingDelta < 0.8 &&
+      movedM < navCameraFollowTuning.minMoveMeters &&
+      headingDelta < navCameraFollowTuning.minHeadingDeltaDeg &&
       Math.abs(last.zoom - zoom) < 0.03 &&
       Math.abs(last.pitch - pitch) < 0.5 &&
-      now - last.at < 320;
+      now - last.at < navCameraFollowTuning.minUpdateIntervalMs;
     if (commandIsRedundant) return;
     const animationDuration = isNewNavSession
       ? 0
-      : Math.max(180, Math.min(1200, Number.isFinite(navCameraAnimationDuration) ? navCameraAnimationDuration! : 420));
+      : Math.max(
+          140,
+          Math.min(
+            520,
+            Math.min(
+              Number.isFinite(navCameraAnimationDuration) ? navCameraAnimationDuration! : 420,
+              navCameraFollowTuning.animationDurationMs,
+            ),
+          ),
+        );
     lastNavCameraCommandRef.current = {
       lat: anchor.lat,
       lng: anchor.lng,
@@ -1323,6 +1338,7 @@ export default function MapScreen() {
     heading,
     navCameraAnchorLat,
     navCameraAnchorLng,
+    fusedSpeedMpsNav,
     navFollowZoomLevel,
     navFollowPitch,
     navFollowPadTop,
@@ -1330,6 +1346,10 @@ export default function MapScreen() {
     navFollowPadLeft,
     navFollowPadRight,
     navCameraAnimationDuration,
+    navCameraFollowTuning.animationDurationMs,
+    navCameraFollowTuning.minHeadingDeltaDeg,
+    navCameraFollowTuning.minMoveMeters,
+    navCameraFollowTuning.minUpdateIntervalMs,
     navFallbackPad.paddingTop,
     navFallbackPad.paddingBottom,
     navFallbackPad.paddingLeft,
@@ -4008,8 +4028,9 @@ export default function MapScreen() {
                 the very first frame of the trip — no "raw-GPS chevron visible
                 for 500 ms while the SDK warms up" seam.
             The hidden `MapboxNavigationView` still provides matched points; a
-            short ease on `NavSdkPuck` (below) only smooths discrete native
-            location ticks — it does not reintroduce a second GPS source.
+            single RAF-smoothed route fraction above feeds the provider,
+            route split, camera anchor, and `NavSdkPuck`. The marker itself
+            mirrors that coordinate so we do not double-ease and lag behind.
           */}
           <MapboxGL.LocationPuck
             visible={!nav.isNavigating}
@@ -4034,7 +4055,7 @@ export default function MapScreen() {
                 nav.navigationProgress?.displayCoord?.speedMps ??
                 0
               }
-              mirrorNativePosition={false}
+              mirrorNativePosition
             />
           ) : null}
         </MapboxGL.MapView>
