@@ -3637,6 +3637,7 @@ export default function MapScreen() {
           navigationLogicOnly
           coordinates={navLogicCoords}
           mute={navVoiceMuted}
+          locale="en-US"
           routeProfile={routeProfileForPlatform()}
           drivingMode={drivingMode}
           followingZoom={navLogicFollowingZoom}

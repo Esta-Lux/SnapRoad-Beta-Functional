@@ -2,7 +2,7 @@ import type { Voice } from 'expo-speech';
 import * as Speech from 'expo-speech';
 
 /**
- * Prefer a male-sounding English TTS voice for navigation + Orion (`expo-speech`).
+ * Prefer a clear US male / young-adult sounding TTS voice for navigation + Orion (`expo-speech`).
  *
  * Mapbox Navigation SDK (headless native) uses its own speech pipeline; it is not
  * configurable from JS in this app. On iOS/Android, system / engine TTS settings
@@ -11,11 +11,17 @@ import * as Speech from 'expo-speech';
 
 const MALE_NAME_HINTS = [
   'aaron',
+  'alex',
+  'evan',
+  'nathan',
+  'josh',
+  'justin',
+  'tyler',
+  'ryan',
   'fred',
   'tom',
   'nick',
   'gordon',
-  'alex',
   'daniel',
   'arthur',
   'oliver',
@@ -33,6 +39,22 @@ const MALE_NAME_HINTS = [
   'baritone',
   'male',
 ];
+
+const YOUNG_ADULT_NAME_HINTS = [
+  'aaron',
+  'alex',
+  'evan',
+  'nathan',
+  'josh',
+  'justin',
+  'tyler',
+  'ryan',
+  'daniel',
+  'oliver',
+  'james',
+];
+
+const OLDER_NAME_HINTS = ['fred', 'ralph', 'grandpa', 'albert', 'arthur'];
 
 const FEMALE_NAME_HINTS = [
   'samantha',
@@ -54,16 +76,24 @@ const FEMALE_NAME_HINTS = [
 
 let voiceLoadPromise: Promise<string | undefined> | null = null;
 
-function scoreVoiceName(name: string): number {
-  const n = name.toLowerCase();
+function scoreVoice(v: Voice): number {
+  const n = `${v.name || ''} ${v.identifier || ''}`.toLowerCase();
+  const language = (v.language || '').toLowerCase();
   let s = 0;
+  if (language === 'en-us') s += 80;
+  else if (language.startsWith('en-us')) s += 70;
+  else if (language.startsWith('en')) s += 12;
+  else s -= 80;
+  if (String(v.quality).toLowerCase().includes('enhanced')) s += 14;
   for (const h of MALE_NAME_HINTS) if (n.includes(h)) s += 10;
+  for (const h of YOUNG_ADULT_NAME_HINTS) if (n.includes(h)) s += 7;
+  for (const h of OLDER_NAME_HINTS) if (n.includes(h)) s -= 5;
   for (const f of FEMALE_NAME_HINTS) if (n.includes(f)) s -= 10;
   return s;
 }
 
 /**
- * Pick best-effort male English voice from the device list.
+ * Pick best-effort clear US male voice from the device list.
  * Set `EXPO_PUBLIC_TTS_VOICE_IDENTIFIER` to a voice `identifier` from the device to force a voice.
  */
 export function pickMaleEnglishVoiceIdentifier(voices: Voice[]): string | undefined {
@@ -79,13 +109,10 @@ export function pickMaleEnglishVoiceIdentifier(voices: Voice[]): string | undefi
   if (!en.length) return undefined;
 
   const ranked = en
-    .map((v) => ({ v, score: scoreVoiceName(v.name || '') }))
+    .map((v) => ({ v, score: scoreVoice(v) }))
     .sort((a, b) => b.score - a.score);
 
-  if (ranked[0]!.score > 0) return ranked[0]!.v.identifier;
-  const nonNegative = ranked.filter((r) => r.score >= 0);
-  if (nonNegative.length) return nonNegative[0]!.v.identifier;
-  return undefined;
+  return ranked[0]?.v.identifier;
 }
 
 /** Cached promise so concurrent `speak` calls share one voice resolution. */

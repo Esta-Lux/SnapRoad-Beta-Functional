@@ -70,7 +70,7 @@ const storeMod = require('./navSdkStore') as typeof import('./navSdkStore');
 // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
 const guardMod = require('./navSdkAuthority') as typeof import('./navSdkAuthority');
 
-const { formatTurnInstruction, getVoiceDevCounters, resetVoiceDevCounters, speak, speakGuidance } = voiceMod;
+const { formatTurnInstruction, getTtsSpeechProfile, getVoiceDevCounters, resetVoiceDevCounters, speak, speakGuidance } = voiceMod;
 const { resetNavSdkState, ingestSdkProgress, ingestSdkVoiceSubtitle, getNavSdkState } = storeMod;
 const { isSdkTripAuthoritative } = guardMod;
 
@@ -171,4 +171,19 @@ test('formatTurnInstruction strips street and shield names from spoken guidance'
   );
   assert.match(phrase.toLowerCase(), /turn left/);
   assert.doesNotMatch(phrase, /Silver Dust Lane|I-75/);
+});
+
+test('HUD and Orion speech profiles are mode-aware US male-style settings', () => {
+  const calm = getTtsSpeechProfile('calm');
+  const adaptive = getTtsSpeechProfile('adaptive');
+  const sport = getTtsSpeechProfile('sport');
+
+  assert.equal(calm.language, 'en-US');
+  assert.equal(adaptive.language, 'en-US');
+  assert.equal(sport.language, 'en-US');
+  assert.ok(calm.rate < adaptive.rate);
+  assert.ok(adaptive.rate < sport.rate);
+  assert.ok(calm.pitch < 1);
+  assert.ok(adaptive.pitch < 1);
+  assert.ok(sport.pitch < 1);
 });

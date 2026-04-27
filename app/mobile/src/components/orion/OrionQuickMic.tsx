@@ -12,6 +12,7 @@ import {
   stopSpeaking,
 } from '../../utils/voice';
 import type { OrionContext, OrionPlaceSuggestion } from './OrionChat';
+import type { DrivingMode } from '../../types';
 
 type VoiceType = {
   destroy: () => Promise<void>;
@@ -41,6 +42,10 @@ function loadVoice(): VoiceType | null {
 const Voice = loadVoice();
 
 type OrionAction = { type: string; name?: string; lat?: number; lng?: number; address?: string };
+
+function normalizeDrivingMode(mode?: string): DrivingMode {
+  return mode === 'calm' || mode === 'sport' || mode === 'adaptive' ? mode : 'adaptive';
+}
 
 export type OrionQuickInteractionMode = 'explore' | 'navigation';
 
@@ -90,11 +95,11 @@ export default function OrionQuickMic({
       Speech.stop();
       stopSpeaking();
       orionSpeakingRef.current = true;
-      speakOrionReply(reply, finish);
+      speakOrionReply(reply, finish, normalizeDrivingMode(context?.drivingMode));
     } catch {
       finish();
     }
-  }, []);
+  }, [context?.drivingMode]);
 
   const sendPrompt = useCallback(
     async (prompt: string) => {
@@ -364,4 +369,3 @@ const styles = StyleSheet.create({
   },
   stateText: { color: '#E5E7EB', fontSize: 12, fontWeight: '600', flexShrink: 1 },
 });
-

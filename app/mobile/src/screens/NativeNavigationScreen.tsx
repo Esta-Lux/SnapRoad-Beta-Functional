@@ -451,6 +451,7 @@ export default function NativeNavigationScreen() {
         style={styles.nav}
         coordinates={coordinates}
         mute={voiceMuted}
+        locale="en-US"
         routeProfile={bridge.routeProfile}
         mapStyle={resolvedMapStyleUrl}
         followingZoom={followingZoom}

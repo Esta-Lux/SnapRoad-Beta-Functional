@@ -26,6 +26,7 @@ import {
   speakOrionReply,
   stopSpeaking,
 } from '../../utils/voice';
+import type { DrivingMode } from '../../types';
 
 type VoiceType = {
   destroy: () => Promise<void>;
@@ -53,6 +54,10 @@ function loadVoice(): VoiceType | null {
 }
 
 const Voice = loadVoice();
+
+function normalizeDrivingMode(mode?: string): DrivingMode {
+  return mode === 'calm' || mode === 'sport' || mode === 'adaptive' ? mode : 'adaptive';
+}
 
 interface Message {
   id: string;
@@ -162,12 +167,12 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
       Speech.stop();
       stopSpeaking();
       orionSpeakingRef.current = true;
-      speakOrionReply(reply, finish);
+      speakOrionReply(reply, finish, normalizeDrivingMode(context?.drivingMode));
     } catch {
       orionSpeakingRef.current = false;
       void restoreDefaultAudioSession();
     }
-  }, []);
+  }, [context?.drivingMode]);
 
   const sendMessage = useCallback(
     async (textRaw: string) => {

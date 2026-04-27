@@ -92,13 +92,17 @@ export async function configureAudioSessionForVoiceInput(): Promise<void> {
   }
 }
 
-/** Orion fallback when mode config is missing. */
-const ORION_SPEECH_RATE = 0.96;
-const ORION_SPEECH_PITCH = 1.0;
+export type TtsSpeechProfile = {
+  rate: number;
+  pitch: number;
+  language: 'en-US';
+};
 
-/** Turn-by-turn + trip messages: one rate regardless of calm/sport/adaptive. */
-const NAVIGATION_SPEECH_RATE = 0.96;
-const NAVIGATION_SPEECH_PITCH = 1.0;
+const MODE_SPEECH_PROFILE: Record<DrivingMode, TtsSpeechProfile> = {
+  calm: { rate: 0.92, pitch: 0.93, language: 'en-US' },
+  adaptive: { rate: 0.95, pitch: 0.94, language: 'en-US' },
+  sport: { rate: 0.99, pitch: 0.95, language: 'en-US' },
+};
 
 export type SpeakRateSource = 'driving' | 'navigation_fixed' | 'advisory';
 
@@ -144,12 +148,8 @@ export function resetVoiceDevCounters(): void {
   navigationFixedBlockedCount = 0;
 }
 
-function speechRateForMode(_mode: DrivingMode): number {
-  return ORION_SPEECH_RATE;
-}
-
-function speechPitchForMode(_mode: DrivingMode): number {
-  return ORION_SPEECH_PITCH;
+export function getTtsSpeechProfile(mode: DrivingMode = 'adaptive'): TtsSpeechProfile {
+  return MODE_SPEECH_PROFILE[mode] ?? MODE_SPEECH_PROFILE.adaptive;
 }
 
 function onUtteranceFinished() {
@@ -203,10 +203,7 @@ export function speak(
 
   if (priority === 'high') Speech.stop();
 
-  const rate =
-    rateSource === 'navigation_fixed' ? NAVIGATION_SPEECH_RATE : speechRateForMode(mode);
-  const pitch =
-    rateSource === 'navigation_fixed' ? NAVIGATION_SPEECH_PITCH : speechPitchForMode(mode);
+  const profile = getTtsSpeechProfile(mode);
   if (rateSource === 'navigation_fixed') {
     markNavVoiceFromJs();
   }
@@ -215,9 +212,9 @@ export function speak(
     await configureAudioSessionForSpeechOutput();
     const voiceId = await getPreferredTtsVoiceIdentifier();
     Speech.speak(phrase, {
-      rate,
-      pitch,
-      language: 'en-US',
+      rate: profile.rate,
+      pitch: profile.pitch,
+      language: profile.language,
       ...(voiceId ? { voice: voiceId } : {}),
       onDone: onUtteranceFinished,
       onStopped: onUtteranceFinished,
@@ -232,7 +229,7 @@ export function speak(
  */
 export function speakGuidance(
   phrase: string,
-  _mode: DrivingMode = 'adaptive',
+  mode: DrivingMode = 'adaptive',
   language: string = 'en-US',
 ) {
   if (shouldSuppressJsTurnGuidance()) return;
@@ -260,10 +257,11 @@ export function speakGuidance(
     Speech.stop();
     await configureAudioSessionForSpeechOutput();
     const voiceId = await getPreferredTtsVoiceIdentifier();
+    const profile = getTtsSpeechProfile(mode);
     Speech.speak(phrase, {
-      rate: NAVIGATION_SPEECH_RATE,
-      pitch: NAVIGATION_SPEECH_PITCH,
-      language: language || 'en-US',
+      rate: profile.rate,
+      pitch: profile.pitch,
+      language: language || profile.language,
       ...(voiceId ? { voice: voiceId } : {}),
       onDone: onUtteranceFinished,
       onStopped: onUtteranceFinished,
@@ -276,15 +274,16 @@ export function speakGuidance(
  * Orion assistant replies: same male-voice preference as nav; uses {@link configureAudioSession}
  * (CarPlay-friendly mixing) like the previous Orion inline `Speech.speak`.
  */
-export function speakOrionReply(text: string, onFinish?: () => void) {
+export function speakOrionReply(text: string, onFinish?: () => void, mode: DrivingMode = 'adaptive') {
   if (!text.trim()) return;
   void (async () => {
-    await configureAudioSession();
+    await configureAudioSessionForSpeechOutput();
     const voiceId = await getPreferredTtsVoiceIdentifier();
+    const profile = getTtsSpeechProfile(mode);
     Speech.speak(text.trim(), {
-      rate: NAVIGATION_SPEECH_RATE,
-      pitch: NAVIGATION_SPEECH_PITCH,
-      language: 'en-US',
+      rate: profile.rate,
+      pitch: profile.pitch,
+      language: profile.language,
       ...(voiceId ? { voice: voiceId } : {}),
       onDone: onFinish,
       onStopped: onFinish,
