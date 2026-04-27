@@ -556,58 +556,50 @@ export default function DriverApp() {
   // #region agent log
   void 0// #endregion
 
-  // #region agent log
-  // Try/catch to capture the next TDZ identifier inside useNavigationState argument evaluation.
-  let _navigationState: ReturnType<typeof useNavigationState> | null = null
-  try {
-    _navigationState = useNavigationState({
-      userLocation,
-      setUserLocation,
-      setCarHeading,
-      compassHeadingRef,
-      mapInstanceRef,
-      isNavigatingRef,
-      cameraLockedRef,
-      latRef,
-      lngRef,
-      zoomToUserRef,
-      hasZoomedToUser,
-      lastActivityRef,
-      userRef,
-      isSharingLocationRef,
-      friendTrackingEnabledRef,
-      checkNearbyFriendAlerts: stableCheckNearbyFriendAlerts,
-      haversineMeters,
-      BROADCAST_MIN_DISTANCE,
-      triggerCrashDetection,
-      crashCancelActive,
-      crashDetected,
-      osmSignals,
-      nearestControlType,
-      formatTurnInstructionForVoice,
-      apiClient: api,
-      toastClient: toast,
-      mode,
-      setActiveTripId,
-      setShowMenu,
-      setShowSearch,
-      setShowTurnByTurn,
-      setSelectedDestination,
-      setRoutePolyline,
-      invalidateRewardsCaches: invalidateRewardsCachesWrapper,
-      activeTripId,
-      getUserGemMultiplier,
-      getDrivingAggression: () => getDrivingMetrics().style.aggression,
-      hasVehicle: Boolean(vehicle),
-      setLastTripData,
-      setSelectedRouteId,
-      clearMapUserInteracting: () => mapActionsRef.current?.clearUserInteracting?.(),
-      recenter,
-    })
-  } catch (e) {
-    throw e
-  }
-  // #endregion
+  const navigationState = useNavigationState({
+    userLocation,
+    setUserLocation,
+    setCarHeading,
+    compassHeadingRef,
+    mapInstanceRef,
+    isNavigatingRef,
+    cameraLockedRef,
+    latRef,
+    lngRef,
+    zoomToUserRef,
+    hasZoomedToUser,
+    lastActivityRef,
+    userRef,
+    isSharingLocationRef,
+    friendTrackingEnabledRef,
+    checkNearbyFriendAlerts: stableCheckNearbyFriendAlerts,
+    haversineMeters,
+    BROADCAST_MIN_DISTANCE,
+    triggerCrashDetection,
+    crashCancelActive,
+    crashDetected,
+    osmSignals,
+    nearestControlType,
+    formatTurnInstructionForVoice,
+    apiClient: api,
+    toastClient: toast,
+    mode,
+    setActiveTripId,
+    setShowMenu,
+    setShowSearch,
+    setShowTurnByTurn,
+    setSelectedDestination,
+    setRoutePolyline,
+    invalidateRewardsCaches: invalidateRewardsCachesWrapper,
+    activeTripId,
+    getUserGemMultiplier,
+    getDrivingAggression: () => getDrivingMetrics().style.aggression,
+    hasVehicle: Boolean(vehicle),
+    setLastTripData,
+    setSelectedRouteId,
+    clearMapUserInteracting: () => mapActionsRef.current?.clearUserInteracting?.(),
+    recenter,
+  })
 
   const {
     carHeadingRef,
@@ -651,7 +643,7 @@ export default function DriverApp() {
     handleGoFromRoutePreview,
     handleRouteSelect,
     onRecenterNavigation,
-  } = _navigationState as ReturnType<typeof useNavigationState>
+  } = navigationState
 
   useEffect(() => {
     if (!needsCompassPermission) return

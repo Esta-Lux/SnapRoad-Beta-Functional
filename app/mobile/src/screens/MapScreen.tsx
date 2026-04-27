@@ -160,6 +160,7 @@ import {
   ingestSdkRouteChangedEvent,
   ingestSdkRoutePolyline,
   ingestSdkVoiceSubtitle,
+  resetNavSdkState,
 } from '../navigation/navEngine';
 import type { NativeFormattedDistance, NativeLaneAsset, SdkCameraPayload } from '../navigation/navSdkMirrorTypes';
 import type { SdkLocationPayload, SdkProgressPayload } from '../navigation/navSdkStore';
@@ -401,6 +402,8 @@ export default function MapScreen() {
   const modeConfig = DRIVING_MODES[drivingMode];
 
   const [navVoiceMuted, setNavVoiceMuted] = useState(false);
+  const [navLogicRuntimeDisabled, setNavLogicRuntimeDisabled] = useState(false);
+  const navLogicEffective = navLogicSdkEnabled() && !navLogicRuntimeDisabled;
   useEffect(() => {
     const v = storage.getString('snaproad_nav_voice_muted');
     setNavVoiceMuted(v === '1');
@@ -412,12 +415,12 @@ export default function MapScreen() {
   /** Unmuting is always safe. Muting clears JS TTS only — on headless SDK, native owns audio; avoid Speech.stop + session restore fighting Mapbox voice. */
   const handleNavVoiceToggle = useCallback(() => {
     setNavVoiceMuted((m) => {
-      if (!m && !navLogicSdkEnabled()) {
+      if (!m && !navLogicEffective) {
         stopSpeaking();
       }
       return !m;
     });
-  }, []);
+  }, [navLogicEffective]);
 
   const [friendLocations, setFriendLocations] = useState<FriendLocation[]>([]);
   const [friendFollowSession, setFriendFollowSession] = useState<{
@@ -500,11 +503,11 @@ export default function MapScreen() {
     drivingMode,
     voiceMuted: navVoiceMuted,
     dynamicDestinationFollow: friendFollowSession?.mode === 'live',
-    navSdkHeadless: navLogicSdkEnabled(),
+    navSdkHeadless: navLogicEffective,
   });
   useNavigationSpeech({
     progress: nav.navigationProgress,
-    enabled: !navVoiceMuted && nav.isNavigating && !navLogicSdkEnabled(),
+    enabled: !navVoiceMuted && nav.isNavigating && !navLogicEffective,
     drivingMode,
     routeSteps: nav.navigationData?.steps,
     routePolyline: nav.navigationData?.polyline,
@@ -516,6 +519,17 @@ export default function MapScreen() {
 
   const navLogicRef = useRef<MapboxNavigationViewRef | null>(null);
   const [navLogicCoords, setNavLogicCoords] = useState<Array<{ latitude: number; longitude: number }>>([]);
+  const handleNavLogicFailure = useCallback((message?: string) => {
+    console.warn('[NavLogicSDK] disabling hidden navigation engine for this trip', message ?? 'unknown error');
+    try {
+      navLogicRef.current?.stopNavigation?.();
+    } catch (error) {
+      console.warn('[NavLogicSDK] stopNavigation after failure failed', error);
+    }
+    resetNavSdkState();
+    setNavLogicRuntimeDisabled(true);
+    setNavLogicCoords([]);
+  }, []);
 
   /**
    * `navLogicCoords` is the `coordinates` prop on the hidden
@@ -542,11 +556,11 @@ export default function MapScreen() {
     locationRef.current = location;
   }, [location?.lat, location?.lng]);
   const trackOriginForNavLogic = useMemo(
-    () => navLogicSdkEnabled() && nav.isNavigating && (nav.sdkRoutePolyline?.length ?? 0) < 2,
-    [nav.isNavigating, nav.sdkRoutePolyline.length],
+    () => navLogicEffective && nav.isNavigating && (nav.sdkRoutePolyline?.length ?? 0) < 2,
+    [navLogicEffective, nav.isNavigating, nav.sdkRoutePolyline.length],
   );
   useEffect(() => {
-    if (!navLogicSdkEnabled() || !nav.isNavigating || !nav.navigationData) {
+    if (!navLogicEffective || !nav.isNavigating || !nav.navigationData) {
       setNavLogicCoords([]);
       return;
     }
@@ -563,6 +577,7 @@ export default function MapScreen() {
     nav.isNavigating,
     nav.navigationData?.destination?.lat,
     nav.navigationData?.destination?.lng,
+    navLogicEffective,
     trackOriginForNavLogic,
     trackOriginForNavLogic ? location?.lat : null,
     trackOriginForNavLogic ? location?.lng : null,
@@ -571,6 +586,7 @@ export default function MapScreen() {
   useEffect(() => {
     if (!nav.isNavigating) {
       setNavLogicCoords([]);
+      setNavLogicRuntimeDisabled(false);
     }
   }, [nav.isNavigating]);
 
@@ -656,7 +672,7 @@ export default function MapScreen() {
    */
   /** Polyline for JS-only smoothing / tangents. Logic SDK trips: native store line only (no REST preview line). */
   const navPolylineForSmoothing = useMemo((): Coordinate[] | null => {
-    if (navLogicSdkEnabled() && nav.isNavigating) {
+    if (navLogicEffective && nav.isNavigating) {
       const fromStore = nav.sdkRoutePolyline;
       if (fromStore.length >= 2) return fromStore;
       const fromProg = nav.navigationProgress?.routePolyline;
@@ -669,6 +685,7 @@ export default function MapScreen() {
     if (rest && rest.length >= 2) return rest;
     return null;
   }, [
+    navLogicEffective,
     nav.isNavigating,
     nav.sdkRoutePolyline,
     nav.navigationProgress?.routePolyline,
@@ -804,7 +821,7 @@ export default function MapScreen() {
 
   /** POI / offers / incidents fetches use route-snapped position while navigating so pins stay near the corridor. */
   const poiSearchCoord = useMemo(() => {
-    if (nav.isNavigating && navLogicSdkEnabled()) {
+    if (nav.isNavigating && navLogicEffective) {
       if (
         Number.isFinite(navDisplayCoord.lat) &&
         Number.isFinite(navDisplayCoord.lng) &&
@@ -830,6 +847,7 @@ export default function MapScreen() {
     }
     return { lat: location.lat, lng: location.lng };
   }, [
+    navLogicEffective,
     nav.isNavigating,
     nav.sdkNavLocation,
     nav.sdkRoutePolyline,
@@ -846,7 +864,7 @@ export default function MapScreen() {
    */
   const navPuckHeading = useMemo(() => {
     if (!nav.isNavigating) return navDisplayHeading;
-    if (navLogicSdkEnabled()) return navDisplayHeading;
+    if (navLogicEffective) return navDisplayHeading;
     if (isNativeSdkPassThrough) return navDisplayHeading;
     const poly = navPolylineForSmoothing;
     const cum = navSnapshotCumMeters;
@@ -867,6 +885,7 @@ export default function MapScreen() {
     navPolylineForSmoothing,
     navSnapshotCumMeters,
     navDisplayHeading,
+    navLogicEffective,
     nav.fusedNavState?.displayCoord?.speedMps,
     nav.navigationProgress?.displayCoord?.speedMps,
     nav.sdkNavLocation?.speed,
@@ -898,7 +917,7 @@ export default function MapScreen() {
       setStickyRoutePolyline(null);
       return;
     }
-    if (navLogicSdkEnabled()) {
+    if (navLogicEffective) {
       const fromStore = nav.sdkRoutePolyline;
       const fromProg = nav.navigationProgress?.routePolyline;
       const next =
@@ -911,6 +930,7 @@ export default function MapScreen() {
     const next = sdk && sdk.length >= 2 ? sdk : rest && rest.length >= 2 ? rest : null;
     if (next) setStickyRoutePolyline(next);
   }, [
+    navLogicEffective,
     nav.isNavigating,
     nav.sdkRoutePolyline,
     nav.navigationProgress?.routePolyline,
@@ -918,7 +938,7 @@ export default function MapScreen() {
   ]);
 
   const polylineToRender = useMemo((): Coordinate[] | null => {
-    if (navLogicSdkEnabled() && nav.isNavigating) {
+    if (navLogicEffective && nav.isNavigating) {
       const fromStore = nav.sdkRoutePolyline;
       if (fromStore.length >= 2) return fromStore;
       const fromProg = nav.navigationProgress?.routePolyline;
@@ -939,6 +959,7 @@ export default function MapScreen() {
     if (rest && rest.length >= 2) return rest;
     return stickyRoutePolyline;
   }, [
+    navLogicEffective,
     nav.isNavigating,
     nav.sdkRoutePolyline,
     isNativeSdkPassThrough,
@@ -992,7 +1013,7 @@ export default function MapScreen() {
   ]);
   const displaySpeedMph = useMemo(() => {
     if (!nav.isNavigating) return speed;
-    if (navLogicSdkEnabled()) {
+    if (navLogicEffective) {
       const mps =
         nav.sdkNavLocation?.speed ?? nav.navigationProgress?.displayCoord?.speedMps ?? null;
       if (typeof mps === 'number' && Number.isFinite(mps) && mps >= 0) {
@@ -1007,6 +1028,7 @@ export default function MapScreen() {
     nav.navigationProgress?.displayCoord?.speedMps,
     nav.fusedNavState?.displayCoord?.speedMps,
     speed,
+    navLogicEffective,
   ]);
 
   /**
@@ -1014,12 +1036,12 @@ export default function MapScreen() {
    * reads GPS COG and fights that value. Use `heading` whenever custom coords are injected.
    */
   const locationPuckBearing = useMemo((): 'heading' | 'course' => {
-    const sdkNav = navLogicSdkEnabled();
+    const sdkNav = navLogicEffective;
     const customLocationActive =
       nav.isNavigating && ((sdkNav && nav.sdkNavLocation) || !sdkNav);
     if (customLocationActive) return 'heading';
     return displaySpeedMph > 10 ? 'course' : 'heading';
-  }, [nav.isNavigating, nav.sdkNavLocation, displaySpeedMph]);
+  }, [nav.isNavigating, nav.sdkNavLocation, displaySpeedMph, navLogicEffective]);
 
   const fusedSpeedMpsNav =
     nav.isNavigating
@@ -1487,6 +1509,8 @@ export default function MapScreen() {
   const [avoidLowClearances, setAvoidLowClearances] = useState(false);
   const vehicleHeight = user?.vehicle_height_meters;
   const hasTallVehicle = typeof vehicleHeight === 'number' && vehicleHeight > 0;
+  const navLogicVehicleMaxHeight =
+    avoidLowClearances && hasTallVehicle && Number.isFinite(vehicleHeight) ? vehicleHeight : undefined;
 
   // ── Sync nav state to tab bar ──
   useEffect(() => { setNavCtx(nav.isNavigating); }, [nav.isNavigating, setNavCtx]);
@@ -2282,13 +2306,13 @@ export default function MapScreen() {
   // Fix 5: Reroute when driving mode changes during active nav
   useEffect(() => {
     if (!nav.isNavigating || !nav.selectedDestination) return;
-    if (navLogicSdkEnabled()) return;
+    if (navLogicEffective) return;
     void nav.fetchDirections(nav.selectedDestination).then((r) => {
       if (!r.ok && r.reason === 'route_failed') {
         Alert.alert('Could not refresh route', r.message ?? 'Driving mode changed but directions failed. Try stopping navigation and starting again.');
       }
     });
-  }, [drivingMode]);
+  }, [drivingMode, navLogicEffective]);
 
   // Animate report card timer whenever a new report card shows
   useEffect(() => {
@@ -3236,7 +3260,7 @@ export default function MapScreen() {
     // SDK mode: `fetchDirections` is a no-op during the trip; push the new destination into
     // `navigationData` so `navLogicCoords` rebuilds and the native SDK fires its own reroute.
     // JS mode: call the JS Directions fetcher as before.
-    if (navLogicSdkEnabled()) {
+    if (navLogicEffective) {
       nav.updateNavigationDestination(place);
       friendFollowRerouteBusyRef.current = false;
     } else {
@@ -3248,7 +3272,7 @@ export default function MapScreen() {
           friendFollowRerouteBusyRef.current = false;
         });
     }
-  }, [friendLocations, nav.isNavigating, avoidLowClearances, vehicleHeight]);
+  }, [friendLocations, nav.isNavigating, avoidLowClearances, vehicleHeight, navLogicEffective]);
 
   /** Copy for live friend follow; trips do not earn gems (`dynamicDestination` on route). */
   const friendFollowContextLine = useMemo(() => {
@@ -3581,7 +3605,7 @@ export default function MapScreen() {
         />
       )}
 
-      {navLogicSdkEnabled() && nav.isNavigating && mapTabFocused && navLogicCoords.length >= 2 ? (
+      {navLogicEffective && nav.isNavigating && mapTabFocused && navLogicCoords.length >= 2 ? (
         // Headless native session: this module has no separate "createSession" API — the hidden view
         // drives logic + voice. IMPORTANT: `mapTabFocused` prevents a second nav session from spawning
         // when the user opts into `NativeNavigationScreen` (full-screen), which would otherwise fight
@@ -3598,8 +3622,14 @@ export default function MapScreen() {
           followingZoom={navLogicFollowingZoom}
           followingPitch={navLogicFollowingPitch}
           disableAlternativeRoutes
-          vehicleMaxHeight={avoidLowClearances && hasTallVehicle ? vehicleHeight : undefined}
+          {...(navLogicVehicleMaxHeight != null ? { vehicleMaxHeight: navLogicVehicleMaxHeight } : {})}
           onRoutesLoaded={handleSdkRoutesLoaded}
+          onRouteFailedToLoad={(e: { nativeEvent: { errorMessage?: string } }) =>
+            handleNavLogicFailure(e.nativeEvent?.errorMessage)
+          }
+          onNavigatorError={(e: { nativeEvent: { message?: string } }) =>
+            handleNavLogicFailure(e.nativeEvent?.message)
+          }
           onRouteProgressChanged={(e: { nativeEvent: SdkProgressPayload }) => ingestSdkProgress(e.nativeEvent)}
           onCameraStateChanged={(e: { nativeEvent: SdkCameraPayload }) => ingestSdkCameraState(e.nativeEvent)}
           onLaneVisualsChanged={(e: { nativeEvent: { lanes?: NativeLaneAsset[] } }) =>
@@ -3658,7 +3688,7 @@ export default function MapScreen() {
               <MapboxGL.CustomLocationProvider
                 coordinate={[navDisplayCoord.lng, navDisplayCoord.lat]}
                 heading={
-                  navLogicSdkEnabled() && nav.isNavigating && (!Number.isFinite(navPuckHeading) || navPuckHeading < 0)
+                  navLogicEffective && nav.isNavigating && (!Number.isFinite(navPuckHeading) || navPuckHeading < 0)
                     ? 0
                     : Number.isFinite(navPuckHeading) && navPuckHeading >= 0
                       ? navPuckHeading
@@ -4591,7 +4621,7 @@ export default function MapScreen() {
           progress={nav.navigationProgress ?? null}
           currentStepIndex={nav.currentStepIndex}
           topInset={insets.top}
-          logicSdk={navLogicSdkEnabled()}
+          logicSdk={navLogicEffective}
           sdkDiag={nav.sdkNavDiag}
           extendedDiag={navLogicDebugEnabled()}
         />
@@ -4604,7 +4634,7 @@ export default function MapScreen() {
         analyzeCongestion={analyzeCongestion}
         setDismissed={setTrafficBannerDismissed}
         fetchReroute={async () => {
-          if (navLogicSdkEnabled()) return { ok: false, message: 'Reroute is handled by Navigation SDK.' };
+          if (navLogicEffective) return { ok: false, message: 'Reroute is handled by Navigation SDK.' };
           if (!nav.navigationData?.destination) return { ok: false, message: 'Missing destination.' };
           return nav.fetchDirections(nav.navigationData.destination);
         }}
