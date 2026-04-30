@@ -41,7 +41,7 @@ export function resolveStableArrival(
   nowMs: number,
 ): ArrivalDisplay {
   if (!Number.isFinite(rawEpochMs)) {
-    return prev ?? { epoch: rawEpochMs, updatedAt: nowMs };
+    return prev ?? { epoch: nowMs, updatedAt: nowMs };
   }
   if (!prev) {
     return { epoch: rawEpochMs, updatedAt: nowMs };
@@ -222,6 +222,9 @@ export function resolveStableStripProgress(
   rawMinutes: number,
   nowMs: number,
 ): StripProgressSnap {
+  if (!Number.isFinite(rawMiles) || !Number.isFinite(rawMinutes)) {
+    return prev ?? { milesPacked: 0, minsPacked: 0, updatedAt: nowMs };
+  }
   const pm = packStripMiles(rawMiles);
   const pt = packStripMin(rawMinutes);
   if (!prev) {

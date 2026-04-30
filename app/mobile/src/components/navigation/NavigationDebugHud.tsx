@@ -32,6 +32,20 @@ type Props = {
   extendedDiag?: boolean;
 };
 
+function finiteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function fixed(value: unknown, digits = 0): string {
+  const n = finiteNumber(value);
+  return n == null ? '—' : n.toFixed(digits);
+}
+
+function roundedSeconds(value: unknown): string {
+  const n = finiteNumber(value);
+  return n == null ? '—' : `${Math.round(n)}s`;
+}
+
 /** Dev / optional release HUD — gated by caller (`__DEV__` or {@link navLogicDebugEnabled}). */
 export default React.memo(function NavigationDebugHud({
   progress,
@@ -114,14 +128,14 @@ export default React.memo(function NavigationDebugHud({
         {progress ? (
           <>
             <Text style={styles.line}>
-              nextD={progress.nextStepDistanceMeters.toFixed(0)}m · offRoute=
+              nextD={fixed(progress.nextStepDistanceMeters)}m · offRoute=
               {progress.isOffRoute ? '1' : '0'} · snap=
-              {progress.snapped?.distanceMeters != null ? progress.snapped.distanceMeters.toFixed(0) : '—'}m
+              {fixed(progress.snapped?.distanceMeters)}m
             </Text>
             {progress.etaNaiveSeconds != null && progress.etaBlendWeight != null ? (
               <Text style={styles.line}>
-                ETA model={Math.round(progress.modelDurationRemainingSeconds)}s disp=
-                {Math.round(progress.durationRemainingSeconds)}s
+                ETA model={roundedSeconds(progress.modelDurationRemainingSeconds)} disp=
+                {roundedSeconds(progress.durationRemainingSeconds)}
               </Text>
             ) : null}
           </>
@@ -137,19 +151,19 @@ export default React.memo(function NavigationDebugHud({
   return (
     <View pointerEvents="none" style={[styles.wrap, { top: topInset + 120 }]}>
       <Text style={styles.line}>
-        nextD={progress.nextStepDistanceMeters.toFixed(0)}m · stepIdx={progress.nextStep?.index ?? '—'} ·
+        nextD={fixed(progress.nextStepDistanceMeters)}m · stepIdx={progress.nextStep?.index ?? '—'} ·
         cardIdx={currentStepIndex}
       </Text>
       <Text style={styles.line}>
-        offRoute={progress.isOffRoute ? '1' : '0'} · conf={progress.confidence.toFixed(2)} · snap=
-        {snapM != null ? snapM.toFixed(0) : '—'}m
+        offRoute={progress.isOffRoute ? '1' : '0'} · conf={fixed(progress.confidence, 2)} · snap=
+        {fixed(snapM)}m
       </Text>
       {progress.etaNaiveSeconds != null && progress.etaBlendWeight != null ? (
         <Text style={styles.line}>
-          ETA model={Math.round(progress.modelDurationRemainingSeconds)}s disp=
-          {Math.round(progress.durationRemainingSeconds)}s naive=
-          {Math.round(progress.etaNaiveSeconds)}s w=
-          {progress.etaBlendWeight.toFixed(2)}
+          ETA model={roundedSeconds(progress.modelDurationRemainingSeconds)} disp=
+          {roundedSeconds(progress.durationRemainingSeconds)} naive=
+          {roundedSeconds(progress.etaNaiveSeconds)} w=
+          {fixed(progress.etaBlendWeight, 2)}
         </Text>
       ) : null}
     </View>

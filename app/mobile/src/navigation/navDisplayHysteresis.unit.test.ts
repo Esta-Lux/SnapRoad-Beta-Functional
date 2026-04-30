@@ -67,6 +67,12 @@ test('arrival: non-finite input holds previous', () => {
   assert.strictEqual(out, prev);
 });
 
+test('arrival: non-finite first input seeds a valid fallback epoch', () => {
+  const out = resolveStableArrival(null, Number.NaN, 3_000);
+  assert.equal(out.epoch, 3_000);
+  assert.equal(out.updatedAt, 3_000);
+});
+
 // ─── Speed mph hysteresis ────────────────────────────────────────────────────
 
 test('speed: tiny change does not update displayed', () => {
@@ -256,6 +262,17 @@ test('strip progress: big jump commits immediately', () => {
   const a = resolveStableStripProgress(null, 12.4, 18.2, 0);
   const b = resolveStableStripProgress(a, 12.4 - STRIP_MI_JUMP - 0.05, 18.2, 1000);
   assert.equal(b.milesPacked, Math.round(Math.max(0, 12.4 - STRIP_MI_JUMP - 0.05) * 20) / 20);
+});
+
+test('strip progress: non-finite first input seeds a safe zero snapshot', () => {
+  const out = resolveStableStripProgress(null, Number.NaN, Number.NaN, 42);
+  assert.deepEqual(out, { milesPacked: 0, minsPacked: 0, updatedAt: 42 });
+});
+
+test('strip progress: non-finite update holds previous snapshot', () => {
+  const prev = resolveStableStripProgress(null, 12.4, 18.2, 0);
+  const out = resolveStableStripProgress(prev, Number.NaN, 18.2, 42);
+  assert.strictEqual(out, prev);
 });
 
 test('strip progress: small packed nudge respects dwell', () => {

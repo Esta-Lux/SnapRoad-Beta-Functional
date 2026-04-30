@@ -110,7 +110,7 @@ export interface OrionContext {
     currentStep?: string;
     nextStep?: string;
   };
-  nearbyOffers?: Array<{ id?: number | string; title?: string; partner_name?: string; lat?: number; lng?: number }>;
+  nearbyOffers?: { id?: number | string; title?: string; partner_name?: string; lat?: number; lng?: number }[];
   /** Short conditions string from `/api/weather/current` for coach grounding */
   weather?: string;
   /** Filled by the app from the last Orion `suggestions` payload — powers “take me” for the first pick */
@@ -148,6 +148,7 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
   const [isTyping, setIsTyping] = useState(false);
   const listRef = useRef<FlatList>(null);
   const messagesRef = useRef(messages);
+  const sendInFlightRef = useRef(false);
   /** Ignore stale STT results while Orion TTS is playing (avoids nav/Orion speech feeding the mic). */
   const orionSpeakingRef = useRef(false);
 
@@ -177,19 +178,26 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
   const sendMessage = useCallback(
     async (textRaw: string) => {
       const trimmed = textRaw.trim();
-      if (!trimmed) return;
+      if (!trimmed || sendInFlightRef.current) return;
+      sendInFlightRef.current = true;
       const userMsg: Message = { id: String(Date.now()), role: 'user', content: trimmed };
       const prior = messagesRef.current;
       setMessages((prev) => [...prev, userMsg]);
       setInput('');
       setPartialTranscript('');
       setIsTyping(true);
+      try {
+        await Voice?.stop().catch(() => {});
+      } catch {
+        /* ignore */
+      }
+      setIsListening(false);
 
       try {
         const res = await api.post<{
           content?: string;
           text?: string;
-          actions?: Array<{ type: string; name?: string; lat?: number; lng?: number }>;
+          actions?: { type: string; name?: string; lat?: number; lng?: number }[];
         }>('/api/orion/completions', {
           messages: [...prior, userMsg].map((m) => ({ role: m.role, content: m.content })),
           context: {
@@ -205,7 +213,7 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
           ?? "I couldn't process that right now.";
         const inner = raw?.data as Record<string, unknown> | undefined;
         const actions = (raw?.actions ?? inner?.actions) as
-          | Array<{ type: string; name?: string; lat?: number; lng?: number }>
+          | { type: string; name?: string; lat?: number; lng?: number }[]
           | undefined;
         const suggestionsRaw = (raw?.suggestions ?? inner?.suggestions) as OrionPlaceSuggestion[] | undefined;
         let cleanedSuggestions: OrionPlaceSuggestion[] = [];
@@ -243,6 +251,7 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
         ]);
       } finally {
         setIsTyping(false);
+        sendInFlightRef.current = false;
       }
     },
     [context, onAction, speakReply, onSuggestions],
@@ -290,7 +299,12 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
       setPartialTranscript('');
     };
     return () => {
-      void Voice.destroy().then(() => Voice.removeAllListeners());
+      Voice.onSpeechStart = null;
+      Voice.onSpeechPartialResults = null;
+      Voice.onSpeechResults = null;
+      Voice.onSpeechEnd = null;
+      Voice.onSpeechError = null;
+      void Voice.cancel().catch(() => {});
     };
   }, []);
 
@@ -347,7 +361,7 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
       return;
     }
     await startListening();
-  }, [Voice, isListening, stopListening, startListening, input, partialTranscript]);
+  }, [isListening, stopListening, startListening, input, partialTranscript]);
 
   const displayInput = isListening ? (partialTranscript || input) : input;
 
@@ -452,7 +466,12 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
                 <Ionicons name={isListening ? 'stop-circle' : 'mic'} size={22} color={isListening ? '#EF4444' : primary} />
               </TouchableOpacity>
             ) : null}
-            <TouchableOpacity onPress={() => void sendMessage(displayInput)} style={[styles.iconBtn, { backgroundColor: `${primary}22` }]} accessibilityLabel="Send message">
+            <TouchableOpacity
+              onPress={() => void sendMessage(displayInput)}
+              style={[styles.iconBtn, { backgroundColor: `${primary}22`, opacity: isTyping ? 0.55 : 1 }]}
+              disabled={isTyping}
+              accessibilityLabel="Send message"
+            >
               <Ionicons name="send" size={20} color={primary} />
             </TouchableOpacity>
           </View>

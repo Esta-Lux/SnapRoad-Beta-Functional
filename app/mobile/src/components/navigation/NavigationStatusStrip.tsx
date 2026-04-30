@@ -56,6 +56,10 @@ type Props = {
   drivenMiles?: number | null;
 };
 
+function finiteOrFallback(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
 export default React.memo(function NavigationStatusStrip({
   drivingMode,
   modeConfig,
@@ -92,7 +96,8 @@ export default React.memo(function NavigationStatusStrip({
    */
   const arrivalDisplayRef = useRef<ArrivalDisplay | null>(null);
   const arrivalTime = useMemo(() => {
-    const fallback = Date.now() + liveEta.etaMinutes * 60000;
+    const etaMinutes = finiteOrFallback(liveEta.etaMinutes, 0);
+    const fallback = Date.now() + etaMinutes * 60000;
     const rawEpoch =
       arrivalEpochMs != null && Number.isFinite(arrivalEpochMs)
         ? arrivalEpochMs
@@ -105,14 +110,16 @@ export default React.memo(function NavigationStatusStrip({
     });
   }, [arrivalEpochMs, liveEta.etaMinutes]);
 
+  const liveDistanceMiles = finiteOrFallback(liveEta.distanceMiles, 0);
+  const liveEtaMinutes = finiteOrFallback(liveEta.etaMinutes, 0);
   const rawDistMiles =
     progressDistanceMiles != null && Number.isFinite(progressDistanceMiles)
       ? progressDistanceMiles
-      : liveEta.distanceMiles;
+      : liveDistanceMiles;
   const rawDurMin =
     progressDurationMinutes != null && Number.isFinite(progressDurationMinutes)
       ? progressDurationMinutes
-      : liveEta.etaMinutes;
+      : liveEtaMinutes;
 
   const stripSnapRef = useRef<StripProgressSnap | null>(null);
   const { distMiles, durMin } = useMemo(() => {
