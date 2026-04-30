@@ -13,14 +13,16 @@ import * as Battery from 'expo-battery';
 import { API_BASE_URL } from '../api/client';
 import {
   FRIEND_LIVE_LAST_NAV_KEY,
+  FRIEND_LIVE_SHARE_MODE_KEY,
+  FRIEND_LIVE_SHARE_STORAGE_KEY,
   FRIEND_LIVE_SHARE_DISTANCE_INTERVAL_M,
   FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS,
+  type FriendLiveShareMode,
+  isAlwaysFollowMode,
 } from './friendLiveShareConfig';
 
 export const FRIEND_LIVE_SHARE_TASK_NAME = 'snaproad-friend-live-share';
 
-/** Must match `SHARE_LOC_STORAGE_KEY` in MapScreen / Dashboard. */
-const SHARE_LOC_STORAGE_KEY = 'snaproad_share_location';
 const TOKEN_KEY = 'snaproad_token';
 
 const MIN_PUBLISH_INTERVAL_MS = FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS;
@@ -39,8 +41,10 @@ if (Platform.OS !== 'web') {
     let isNavigating = false;
     try {
       const { default: AsyncStorage } = await import('@react-native-async-storage/async-storage');
-      const sharing = await AsyncStorage.getItem(SHARE_LOC_STORAGE_KEY);
+      const sharing = await AsyncStorage.getItem(FRIEND_LIVE_SHARE_STORAGE_KEY);
+      const mode = await AsyncStorage.getItem(FRIEND_LIVE_SHARE_MODE_KEY);
       if (sharing !== '1') return;
+      if (!isAlwaysFollowMode(mode)) return;
       isNavigating = (await AsyncStorage.getItem(FRIEND_LIVE_LAST_NAV_KEY)) === '1';
     } catch {
       return;
@@ -85,6 +89,7 @@ if (Platform.OS !== 'web') {
           speed_mph,
           is_navigating: isNavigating,
           is_sharing: true,
+          sharing_mode: 'always_follow',
           battery_pct,
         }),
       });
@@ -165,8 +170,9 @@ export async function stopFriendLiveShareBackgroundUpdates(): Promise<void> {
 export async function syncFriendLiveShareBackgroundFromPolicy(opts: {
   sharingEnabled: boolean;
   canPublish: boolean;
+  mode?: FriendLiveShareMode;
 }): Promise<void> {
-  if (!opts.sharingEnabled || !opts.canPublish) {
+  if (!opts.sharingEnabled || !opts.canPublish || opts.mode !== 'always_follow') {
     await stopFriendLiveShareBackgroundUpdates();
     return;
   }

@@ -44,10 +44,17 @@ import {
   fetchPendingRequests,
   fetchFriendCategories,
 } from '../features/social/friendsApi';
-import { extractLocationSharingValue, getApiErrorMessage } from '../features/social/locationSharing';
+import { extractLocationSharingState, getApiErrorMessage } from '../features/social/locationSharing';
 import { syncFriendLiveShareBackgroundFromPolicy } from '../location/friendLiveShareBackgroundTask';
 import { nudgeBackgroundLocationAfterEnablingShare } from '../location/friendLocationPermissionUx';
-import { FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS } from '../location/friendLiveShareConfig';
+import {
+  FRIEND_LIVE_SHARE_MODE_KEY,
+  FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS,
+  FRIEND_LIVE_SHARE_STORAGE_KEY,
+  type FriendLiveShareMode,
+  isFriendLiveShareEnabled,
+  normalizeFriendLiveShareMode,
+} from '../location/friendLiveShareConfig';
 import { usePublicAppConfig } from '../hooks/usePublicAppConfig';
 import type { MapFocusFriendParams } from '../types';
 
@@ -56,8 +63,6 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 type Section = 'friends' | 'family';
-
-const SHARE_LOC_STORAGE_KEY = 'snaproad_share_location';
 
 const MOCK_FAMILY = [
   { id: '1', name: 'Mom', status: 'Online', speed: 0, battery: 92, avatar: 'M', color: '#EC4899' },
@@ -244,6 +249,7 @@ export default function DashboardScreen() {
   const [showFriendChallengeHistory, setShowFriendChallengeHistory] = useState(false);
   const [searchHits, setSearchHits] = useState<{ id: string; name: string; email?: string; friend_code?: string; is_friend?: boolean }[]>([]);
   const [addTargetId, setAddTargetId] = useState<string | null>(null);
+  const [shareMode, setShareMode] = useState<FriendLiveShareMode>('off');
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const appStateRef = useRef(AppState.currentState);
 
@@ -273,11 +279,14 @@ export default function DashboardScreen() {
     let cancelled = false;
 
     const run = async () => {
-      const localRaw = await storage.getStringAsync(SHARE_LOC_STORAGE_KEY);
+      const localRaw = await storage.getStringAsync(FRIEND_LIVE_SHARE_STORAGE_KEY);
+      const localModeRaw = await storage.getStringAsync(FRIEND_LIVE_SHARE_MODE_KEY);
       const hadLocal = localRaw === '1' || localRaw === '0';
       const localOn = localRaw === '1';
+      const localMode = normalizeFriendLiveShareMode(localModeRaw, localOn);
       if (!cancelled && hadLocal) {
         setIsSharingLocation(localOn);
+        setShareMode(localMode);
       }
 
       await Promise.all([loadFriends(), loadPending(), loadCategories()]);
@@ -285,12 +294,14 @@ export default function DashboardScreen() {
       try {
         const r = await api.get('/api/friends/location/sharing');
         if (cancelled) return;
-        const v = r.success ? extractLocationSharingValue(r.data) : null;
-        if (typeof v !== 'boolean') return;
+        const state = r.success ? extractLocationSharingState(r.data) : null;
+        if (!state) return;
 
-        if (v) {
+        if (state.isSharing) {
           setIsSharingLocation(true);
-          storage.set(SHARE_LOC_STORAGE_KEY, '1');
+          setShareMode(state.sharingMode);
+          storage.set(FRIEND_LIVE_SHARE_STORAGE_KEY, '1');
+          storage.set(FRIEND_LIVE_SHARE_MODE_KEY, state.sharingMode);
           return;
         }
 
@@ -303,24 +314,31 @@ export default function DashboardScreen() {
           if (!coordsValid) shareLocationNeedsCoordsSyncRef.current = true;
           const syncRes = await api.put('/api/friends/location/sharing', {
             is_sharing: true,
+            sharing_mode: localMode === 'off' ? 'while_using' : localMode,
             ...(coordsValid ? { lat, lng } : {}),
           });
           if (!syncRes.success) {
             if (!cancelled) {
               setIsSharingLocation(false);
-              storage.set(SHARE_LOC_STORAGE_KEY, '0');
+              setShareMode('off');
+              storage.set(FRIEND_LIVE_SHARE_STORAGE_KEY, '0');
+              storage.set(FRIEND_LIVE_SHARE_MODE_KEY, 'off');
             }
             return;
           }
           if (!cancelled) {
             setIsSharingLocation(true);
-            storage.set(SHARE_LOC_STORAGE_KEY, '1');
+            setShareMode(localMode === 'off' ? 'while_using' : localMode);
+            storage.set(FRIEND_LIVE_SHARE_STORAGE_KEY, '1');
+            storage.set(FRIEND_LIVE_SHARE_MODE_KEY, localMode === 'off' ? 'while_using' : localMode);
           }
           return;
         }
 
         setIsSharingLocation(false);
-        storage.set(SHARE_LOC_STORAGE_KEY, '0');
+        setShareMode('off');
+        storage.set(FRIEND_LIVE_SHARE_STORAGE_KEY, '0');
+        storage.set(FRIEND_LIVE_SHARE_MODE_KEY, 'off');
       } catch {
         /* keep hydrated local preference */
       }
@@ -443,6 +461,7 @@ export default function DashboardScreen() {
           speed_mph: speed,
           is_navigating: false,
           is_sharing: true,
+          sharing_mode: shareMode === 'always_follow' ? 'always_follow' : 'while_using',
           battery_pct,
         });
         if (!cancelled) reportPublishResult(res);
@@ -453,7 +472,7 @@ export default function DashboardScreen() {
     return () => {
       cancelled = true;
     };
-  }, [user?.isPremium, friendsTabActive, isSharingLocation, location.lat, location.lng, heading, speed, reportPublishResult]);
+  }, [user?.isPremium, friendsTabActive, isSharingLocation, location.lat, location.lng, heading, speed, shareMode, reportPublishResult]);
 
   /** Heartbeat while parked: GPS effect may not re-run when coordinates are static. */
   useEffect(() => {
@@ -485,6 +504,7 @@ export default function DashboardScreen() {
             speed_mph: sp,
             is_navigating: false,
             is_sharing: true,
+            sharing_mode: shareMode === 'always_follow' ? 'always_follow' : 'while_using',
             battery_pct,
           });
           if (!cancelled) reportPublishResult(res);
@@ -498,7 +518,7 @@ export default function DashboardScreen() {
       cancelled = true;
       clearInterval(id);
     };
-  }, [user?.isPremium, friendsTabActive, isSharingLocation, reportPublishResult]);
+  }, [user?.isPremium, friendsTabActive, isSharingLocation, shareMode, reportPublishResult]);
 
   const myCoord = useMemo(() => {
     if (!Number.isFinite(location.lat) || !Number.isFinite(location.lng)) return null;
@@ -539,6 +559,7 @@ export default function DashboardScreen() {
           speed_mph: speed,
           is_navigating: false,
           is_sharing: true,
+          sharing_mode: shareMode === 'always_follow' ? 'always_follow' : 'while_using',
           battery_pct,
         });
         if (!cancelled) reportPublishResult(updateRes);
@@ -551,7 +572,7 @@ export default function DashboardScreen() {
     return () => {
       cancelled = true;
     };
-  }, [user?.isPremium, isSharingLocation, myCoord, heading, speed, reportPublishResult]);
+  }, [user?.isPremium, isSharingLocation, myCoord, heading, speed, shareMode, reportPublishResult]);
 
   // If the backend kill-switch is on (503), take the user out of the "sharing" UI state
   // so they aren't looking at a green pill while publishes are being rejected. We leave
@@ -559,7 +580,9 @@ export default function DashboardScreen() {
   useEffect(() => {
     if (publishStatus === 'paused_by_admin' && isSharingLocation) {
       setIsSharingLocation(false);
-      storage.set(SHARE_LOC_STORAGE_KEY, '0');
+      setShareMode('off');
+      storage.set(FRIEND_LIVE_SHARE_STORAGE_KEY, '0');
+      storage.set(FRIEND_LIVE_SHARE_MODE_KEY, 'off');
     }
   }, [publishStatus, isSharingLocation]);
 
@@ -575,7 +598,7 @@ export default function DashboardScreen() {
   /** Match MapScreen: background task only when sharing + config allow + server not paused. */
   useEffect(() => {
     if (!isSharingLocation) {
-      void syncFriendLiveShareBackgroundFromPolicy({ sharingEnabled: false, canPublish: true });
+      void syncFriendLiveShareBackgroundFromPolicy({ sharingEnabled: false, canPublish: true, mode: shareMode });
       return;
     }
     const can =
@@ -583,14 +606,45 @@ export default function DashboardScreen() {
       friendTrackingEnabled &&
       liveLocationPublishingEnabled &&
       publishStatus !== 'paused_by_admin';
-    void syncFriendLiveShareBackgroundFromPolicy({ sharingEnabled: true, canPublish: can });
+    void syncFriendLiveShareBackgroundFromPolicy({ sharingEnabled: true, canPublish: can, mode: shareMode });
   }, [
     isSharingLocation,
+    shareMode,
     user?.isPremium,
     friendTrackingEnabled,
     liveLocationPublishingEnabled,
     publishStatus,
   ]);
+
+  const updateLocationShareMode = useCallback(async (nextMode: FriendLiveShareMode) => {
+    const nextSharing = isFriendLiveShareEnabled(nextMode);
+    const prevSharing = isSharingLocation;
+    const prevMode = shareMode;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsSharingLocation(nextSharing);
+    setShareMode(nextMode);
+    storage.set(FRIEND_LIVE_SHARE_STORAGE_KEY, nextSharing ? '1' : '0');
+    storage.set(FRIEND_LIVE_SHARE_MODE_KEY, nextMode);
+    shareLocationNeedsCoordsSyncRef.current = nextSharing && !myCoord;
+    const res = await api.put('/api/friends/location/sharing', {
+      is_sharing: nextSharing,
+      sharing_mode: nextMode === 'always_follow' ? 'always_follow' : 'while_using',
+      ...(nextSharing && myCoord ? { lat: myCoord.lat, lng: myCoord.lng } : {}),
+    });
+    const err = getApiErrorMessage(res, 'Could not update location sharing right now.');
+    if (err) {
+      setIsSharingLocation(prevSharing);
+      setShareMode(prevMode);
+      storage.set(FRIEND_LIVE_SHARE_STORAGE_KEY, prevSharing ? '1' : '0');
+      storage.set(FRIEND_LIVE_SHARE_MODE_KEY, prevMode);
+      shareLocationNeedsCoordsSyncRef.current = prevSharing && !myCoord;
+      Alert.alert('Location sharing', err);
+      return;
+    }
+    if (nextMode === 'always_follow') {
+      nudgeBackgroundLocationAfterEnablingShare();
+    }
+  }, [isSharingLocation, myCoord, shareMode]);
 
   const friendListData = useMemo(
     () =>
@@ -1225,14 +1279,20 @@ export default function DashboardScreen() {
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={[styles.shareLocTitle, { color: colors.text }]}>
-                  {isSharingLocation ? 'Sharing your location' : 'Location sharing off'}
+                  {shareMode === 'always_follow'
+                    ? 'Always Follow is on'
+                    : isSharingLocation
+                      ? 'Sharing while using SnapRoad'
+                      : 'Location sharing off'}
                 </Text>
                 <Text style={[styles.shareLocCaption, { color: colors.textSecondary }]}>
-                  {isSharingLocation
-                    ? `Visible to ${friends.length} friend${friends.length !== 1 ? 's' : ''}`
+                  {shareMode === 'always_follow'
+                    ? `Background updates for ${friends.length} friend${friends.length !== 1 ? 's' : ''}`
+                    : isSharingLocation
+                      ? `Visible while active to ${friends.length} friend${friends.length !== 1 ? 's' : ''}`
                     : 'Friends cannot see where you are'}
                 </Text>
-                {isSharingLocation && Platform.OS === 'ios' ? (
+                {shareMode === 'always_follow' && Platform.OS === 'ios' ? (
                   <Text style={{ fontSize: 11, lineHeight: 15, color: colors.textTertiary, marginTop: 4 }}>
                     Background sharing uses Always location. Set it in Settings if friends see an old
                     position.
@@ -1241,30 +1301,42 @@ export default function DashboardScreen() {
               </View>
               <Switch
                 value={isSharingLocation}
-                onValueChange={async (v) => {
-                  const prev = isSharingLocation;
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setIsSharingLocation(v);
-                  storage.set(SHARE_LOC_STORAGE_KEY, v ? '1' : '0');
-                  if (v && !myCoord) shareLocationNeedsCoordsSyncRef.current = true;
-                  else shareLocationNeedsCoordsSyncRef.current = false;
-                  const res = await api.put('/api/friends/location/sharing', {
-                    is_sharing: v,
-                    ...(v && myCoord ? { lat: myCoord.lat, lng: myCoord.lng } : {}),
-                  });
-                  const err = getApiErrorMessage(res, 'Could not update location sharing right now.');
-                  if (err) {
-                    setIsSharingLocation(prev);
-                    storage.set(SHARE_LOC_STORAGE_KEY, prev ? '1' : '0');
-                    shareLocationNeedsCoordsSyncRef.current = prev && !myCoord;
-                    Alert.alert('Location sharing', err);
-                  } else if (v) {
-                    nudgeBackgroundLocationAfterEnablingShare();
-                  }
+                onValueChange={(v) => {
+                  void updateLocationShareMode(v ? (shareMode === 'always_follow' ? 'always_follow' : 'while_using') : 'off');
                 }}
                 trackColor={{ false: colors.border, true: '#34C759' }}
                 thumbColor="#fff"
               />
+            </View>
+            <View style={styles.shareModeRow}>
+              {([
+                ['while_using', 'While using', 'App open', 'navigate-outline'],
+                ['always_follow', 'Always Follow', 'Background', 'infinite-outline'],
+              ] as const).map(([mode, title, sub, icon]) => {
+                const active = shareMode === mode;
+                return (
+                  <TouchableOpacity
+                    key={mode}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    onPress={() => void updateLocationShareMode(mode)}
+                    activeOpacity={0.86}
+                    style={[
+                      styles.shareModeButton,
+                      {
+                        backgroundColor: active ? (isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.12)') : 'transparent',
+                        borderColor: active ? 'rgba(52,199,89,0.45)' : (isLight ? 'rgba(60,60,67,0.12)' : 'rgba(255,255,255,0.12)'),
+                      },
+                    ]}
+                  >
+                    <Ionicons name={icon} size={15} color={active ? '#34C759' : colors.textSecondary} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[styles.shareModeTitle, { color: active ? colors.text : colors.textSecondary }]}>{title}</Text>
+                      <Text style={[styles.shareModeSub, { color: colors.textTertiary }]}>{sub}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
             {publishStatus !== 'ok' ? (
               <View
@@ -1769,6 +1841,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 14,
   },
+  shareModeRow: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingBottom: 14,
+  },
+  shareModeButton: {
+    flex: 1,
+    minHeight: 54,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  shareModeTitle: { fontSize: 12, fontWeight: '800' },
+  shareModeSub: { fontSize: 10, fontWeight: '600', marginTop: 1 },
   shareLocIcon: {
     width: 40,
     height: 40,

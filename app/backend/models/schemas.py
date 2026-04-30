@@ -135,12 +135,17 @@ class LocationUpdateBody(BaseModel):
         description="When set, updates sharing flag; when omitted, existing DB value is kept.",
     )
     battery_pct: Optional[int] = Field(default=None, ge=0, le=100)
+    sharing_mode: Optional[str] = Field(
+        default=None,
+        description="while_using or always_follow; ignored when omitted.",
+    )
 
 
 class LocationSharingBody(BaseModel):
     is_sharing: bool
     lat: Optional[float] = None
     lng: Optional[float] = None
+    sharing_mode: Optional[str] = None
 
 
 class LocationTagBody(BaseModel):

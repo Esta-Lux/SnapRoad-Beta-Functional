@@ -14,9 +14,9 @@ interface Props {
   referenceCoordinate?: MarkerCoordinate | null;
 }
 
-const LERP_MIN_METERS = 1.5;
-/** Ease duration: ~3/4 of the 2s publish cadence so pins glide between server updates. */
-const LERP_DURATION_MS = 1500;
+const LERP_MIN_METERS = 0.75;
+/** Ease close to the 2s publish cadence so pins glide continuously between server updates. */
+const LERP_DURATION_MS = 1900;
 
 function profileInitials(name: string): string {
   const parts = (name || '').trim().split(/\s+/).filter(Boolean);

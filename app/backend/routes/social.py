@@ -40,6 +40,8 @@ _PROFILE_SEARCH_COLS = "id, name, full_name, email, friend_code"
 
 router = APIRouter(prefix="/api", tags=["Social"])
 
+LIVE_LOCATION_SHARING_MODES = {"while_using", "always_follow"}
+
 FRIEND_CATEGORY_COLORS = {
     "#3b82f6",
     "#22c55e",
@@ -71,6 +73,15 @@ def _friendship_accepted(sb, uid: str, other_id: str) -> bool:
 def _is_missing_column_error(err: Exception, table: str, column: str) -> bool:
     s = str(err).lower()
     return table.lower() in s and column.lower() in s and ("column" in s and "does not exist" in s)
+
+
+def _normalize_live_location_sharing_mode(value: Optional[str], is_sharing: bool) -> str:
+    if not is_sharing:
+        return "off"
+    val = (value or "while_using").strip().lower()
+    if val in LIVE_LOCATION_SHARING_MODES:
+        return val
+    return "while_using"
 
 
 def _select_live_locations_with_optional_battery(sb, user_ids: list[str]):
@@ -586,10 +597,22 @@ def get_my_location_sharing(current_user: CurrentUser):
         raise HTTPException(status_code=503, detail="Location sharing backend is not configured.")
     try:
         sb = get_supabase()
-        res = sb.table("live_locations").select("is_sharing").eq("user_id", uid).limit(1).execute()
+        try:
+            res = sb.table("live_locations").select("is_sharing, sharing_mode").eq("user_id", uid).limit(1).execute()
+        except Exception as e:
+            if not _is_missing_column_error(e, "live_locations", "sharing_mode"):
+                raise
+            res = sb.table("live_locations").select("is_sharing").eq("user_id", uid).limit(1).execute()
         if res.data and len(res.data) > 0:
-            return {"success": True, "data": {"is_sharing": bool(res.data[0].get("is_sharing"))}}
-        return {"success": True, "data": {"is_sharing": False}}
+            is_sharing = bool(res.data[0].get("is_sharing"))
+            return {
+                "success": True,
+                "data": {
+                    "is_sharing": is_sharing,
+                    "sharing_mode": _normalize_live_location_sharing_mode(res.data[0].get("sharing_mode"), is_sharing),
+                },
+            }
+        return {"success": True, "data": {"is_sharing": False, "sharing_mode": "off"}}
     except Exception as e:
         logger.warning("failed to read location sharing: %s", e)
         raise HTTPException(status_code=500, detail="Failed to read location sharing state.")
@@ -638,12 +661,19 @@ def update_my_location(body: LocationUpdateBody, current_user: CurrentUser):
         }
         if body.battery_pct is not None:
             payload["battery_pct"] = int(body.battery_pct)
+        sharing_mode = _normalize_live_location_sharing_mode(body.sharing_mode, is_sharing)
+        if sharing_mode != "off":
+            payload["sharing_mode"] = sharing_mode
         try:
             sb.table("live_locations").upsert(payload).execute()
         except Exception as e:
             if "battery_pct" in payload and _is_missing_column_error(e, "live_locations", "battery_pct"):
                 logger.warning("live_locations.battery_pct missing; retrying location upsert without battery_pct")
                 payload.pop("battery_pct", None)
+                sb.table("live_locations").upsert(payload).execute()
+            elif "sharing_mode" in payload and _is_missing_column_error(e, "live_locations", "sharing_mode"):
+                logger.warning("live_locations.sharing_mode missing; retrying location upsert without sharing_mode")
+                payload.pop("sharing_mode", None)
                 sb.table("live_locations").upsert(payload).execute()
             else:
                 raise
@@ -669,26 +699,45 @@ def set_location_sharing(body: LocationSharingBody, current_user: CurrentUser):
         sb = get_supabase()
         now = _utc_timestamptz_iso()
         existing = sb.table("live_locations").select("user_id, lat, lng").eq("user_id", uid).limit(1).execute()
+        sharing_mode = _normalize_live_location_sharing_mode(body.sharing_mode, bool(body.is_sharing))
         if existing.data and len(existing.data) > 0:
             update_payload: dict[str, object] = {
                 "is_sharing": body.is_sharing,
                 "last_updated": now,
             }
+            if sharing_mode != "off":
+                update_payload["sharing_mode"] = sharing_mode
             if body.lat is not None and body.lng is not None:
                 update_payload["lat"] = float(body.lat)
                 update_payload["lng"] = float(body.lng)
-            sb.table("live_locations").update(update_payload).eq("user_id", uid).execute()
+            try:
+                sb.table("live_locations").update(update_payload).eq("user_id", uid).execute()
+            except Exception as e:
+                if "sharing_mode" in update_payload and _is_missing_column_error(e, "live_locations", "sharing_mode"):
+                    update_payload.pop("sharing_mode", None)
+                    sb.table("live_locations").update(update_payload).eq("user_id", uid).execute()
+                else:
+                    raise
         elif body.is_sharing:
             lat = float(body.lat) if body.lat is not None else 0.0
             lng = float(body.lng) if body.lng is not None else 0.0
-            sb.table("live_locations").insert({
+            insert_payload = {
                 "user_id": uid,
                 "lat": lat,
                 "lng": lng,
                 "is_sharing": True,
+                "sharing_mode": sharing_mode if sharing_mode != "off" else "while_using",
                 "is_navigating": False,
                 "last_updated": now,
-            }).execute()
+            }
+            try:
+                sb.table("live_locations").insert(insert_payload).execute()
+            except Exception as e:
+                if _is_missing_column_error(e, "live_locations", "sharing_mode"):
+                    insert_payload.pop("sharing_mode", None)
+                    sb.table("live_locations").insert(insert_payload).execute()
+                else:
+                    raise
     except Exception as e:
         logger.warning("failed to update location sharing setting: %s", e)
         raise HTTPException(status_code=500, detail="Failed to update location sharing.")

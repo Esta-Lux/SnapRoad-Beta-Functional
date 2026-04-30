@@ -131,6 +131,7 @@ export interface Friend {
   speed_mph?: number;
   heading?: number;
   is_sharing?: boolean;
+  sharing_mode?: 'while_using' | 'always_follow' | 'off';
   last_updated?: string;
   is_navigating?: boolean;
   destination_name?: string;

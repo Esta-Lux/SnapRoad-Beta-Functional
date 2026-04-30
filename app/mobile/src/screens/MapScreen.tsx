@@ -65,7 +65,10 @@ import {
 } from '../location/friendLiveShareBackgroundTask';
 import {
   FRIEND_LIVE_LAST_NAV_KEY,
+  FRIEND_LIVE_SHARE_MODE_KEY,
   FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS,
+  FRIEND_LIVE_SHARE_STORAGE_KEY,
+  isAlwaysFollowMode,
 } from '../location/friendLiveShareConfig';
 import { nudgeBackgroundLocationAfterEnablingShare } from '../location/friendLocationPermissionUx';
 import OfferMarkers from '../components/map/OfferMarkers';
@@ -181,7 +184,7 @@ import type { TripSummary } from '../hooks/useDriveNavigation';
 import type { RouteProp } from '@react-navigation/native';
 import { useNavigation as useRNNavigation, useRoute, useIsFocused, useFocusEffect } from '@react-navigation/native';
 import type { MapStackParamList, MapStackScreenNavigationProp } from '../navigation/types';
-import { extractLocationSharingValue, getApiErrorMessage } from '../features/social/locationSharing';
+import { extractLocationSharingState, getApiErrorMessage } from '../features/social/locationSharing';
 import { storage } from '../utils/storage';
 import { logMapDataIssue } from '../utils/mapApiDiagnostics';
 import { supabase, supabaseConfigured } from '../lib/supabase';
@@ -196,7 +199,6 @@ import { usePublicAppConfig } from '../hooks/usePublicAppConfig';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const SHARE_LOC_STORAGE_KEY = 'snaproad_share_location';
 const MAP_SHARE_INVITE_BANNER_DISMISS_KEY = 'snaproad_map_share_banner_dismissed';
 
 
@@ -448,7 +450,7 @@ export default function MapScreen() {
 
   const shareLocationStorageOn = useMemo(() => {
     void shareLocEpoch;
-    return storage.getString(SHARE_LOC_STORAGE_KEY) === '1';
+    return storage.getString(FRIEND_LIVE_SHARE_STORAGE_KEY) === '1';
   }, [shareLocEpoch]);
 
   const mapCoordsOk = useMemo(() => {
@@ -1389,16 +1391,19 @@ export default function MapScreen() {
     } catch {
       /* optional */
     }
-    storage.set(SHARE_LOC_STORAGE_KEY, '1');
+    storage.set(FRIEND_LIVE_SHARE_STORAGE_KEY, '1');
+    storage.set(FRIEND_LIVE_SHARE_MODE_KEY, 'while_using');
     setShareLocEpoch((n) => n + 1);
     const setShareRes = await api.put('/api/friends/location/sharing', {
       is_sharing: true,
+      sharing_mode: 'while_using',
       lat,
       lng,
     });
     const setShareErr = getApiErrorMessage(setShareRes, 'Could not enable location sharing right now.');
     if (setShareErr) {
-      storage.set(SHARE_LOC_STORAGE_KEY, '0');
+      storage.set(FRIEND_LIVE_SHARE_STORAGE_KEY, '0');
+      storage.set(FRIEND_LIVE_SHARE_MODE_KEY, 'off');
       setShareLocEpoch((n) => n + 1);
       Alert.alert('Location sharing', setShareErr);
       return;
@@ -1799,16 +1804,17 @@ export default function MapScreen() {
   /** If local share preference was never set, align with server so Map publishing matches Dashboard / API. */
   useEffect(() => {
     if (!mapTabFocused || !user?.isPremium) return;
-    const raw = storage.getString(SHARE_LOC_STORAGE_KEY);
+    const raw = storage.getString(FRIEND_LIVE_SHARE_STORAGE_KEY);
     if (raw === '1' || raw === '0') return;
     let cancelled = false;
     void (async () => {
       try {
         const r = await api.get('/api/friends/location/sharing');
         if (cancelled || !r.success) return;
-        const v = extractLocationSharingValue(unwrapOffersApiData(r.data));
-        if (v == null) return;
-        storage.set(SHARE_LOC_STORAGE_KEY, v ? '1' : '0');
+        const state = extractLocationSharingState(unwrapOffersApiData(r.data));
+        if (!state) return;
+        storage.set(FRIEND_LIVE_SHARE_STORAGE_KEY, state.isSharing ? '1' : '0');
+        storage.set(FRIEND_LIVE_SHARE_MODE_KEY, state.sharingMode);
         setShareLocEpoch((n) => n + 1);
       } catch {
         /* offline */
@@ -2164,8 +2170,9 @@ export default function MapScreen() {
 
   useEffect(() => {
     if (!user?.isPremium || !canPublishFriendLocation) return;
-    const sharingOn = storage.getString(SHARE_LOC_STORAGE_KEY) === '1';
+    const sharingOn = storage.getString(FRIEND_LIVE_SHARE_STORAGE_KEY) === '1';
     if (!sharingOn) return;
+    const sharingMode = isAlwaysFollowMode(storage.getString(FRIEND_LIVE_SHARE_MODE_KEY)) ? 'always_follow' : 'while_using';
     const rLat = Math.round(pubLat * 1000);
     const rLng = Math.round(pubLng * 1000);
     if (rLat === 0 && rLng === 0) return;
@@ -2192,6 +2199,7 @@ export default function MapScreen() {
         is_navigating: nav.isNavigating,
         destination_name: nav.selectedDestination?.name ?? undefined,
         is_sharing: true,
+        sharing_mode: sharingMode,
         battery_pct,
       });
       if (!res.success && res.statusCode === 503) setLivePublishPaused503(true);
@@ -2213,8 +2221,9 @@ export default function MapScreen() {
     if (!user?.isPremium || !canPublishFriendLocation) return;
     let cancelled = false;
     const tick = () => {
-      const sharingOn = storage.getString(SHARE_LOC_STORAGE_KEY) === '1';
+      const sharingOn = storage.getString(FRIEND_LIVE_SHARE_STORAGE_KEY) === '1';
       if (!sharingOn) return;
+      const sharingMode = isAlwaysFollowMode(storage.getString(FRIEND_LIVE_SHARE_MODE_KEY)) ? 'always_follow' : 'while_using';
       const { lat, lng, heading: h, speed: sp } = mapLivePublishCoordsRef.current;
       const { isNavigating, destinationName } = mapLiveNavRef.current;
       const rLat = Math.round(lat * 1000);
@@ -2241,6 +2250,7 @@ export default function MapScreen() {
           is_navigating: isNavigating,
           destination_name: destinationName ?? undefined,
           is_sharing: true,
+          sharing_mode: sharingMode,
           battery_pct,
         });
         if (!res.success && res.statusCode === 503) setLivePublishPaused503(true);
@@ -2258,8 +2268,9 @@ export default function MapScreen() {
       void stopFriendLiveShareBackgroundUpdates();
       return;
     }
-    const sharingOn = storage.getString(SHARE_LOC_STORAGE_KEY) === '1';
-    if (!sharingOn) {
+    const sharingOn = storage.getString(FRIEND_LIVE_SHARE_STORAGE_KEY) === '1';
+    const alwaysFollowOn = isAlwaysFollowMode(storage.getString(FRIEND_LIVE_SHARE_MODE_KEY));
+    if (!sharingOn || !alwaysFollowOn) {
       void stopFriendLiveShareBackgroundUpdates();
       return;
     }
