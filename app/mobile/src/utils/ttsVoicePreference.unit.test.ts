@@ -20,10 +20,20 @@ modProto._load = function patched(request: string, parent: unknown, isMain: bool
 };
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
-const { pickMaleEnglishVoiceIdentifier } =
-  require('./ttsVoicePreference') as typeof import('./ttsVoicePreference');
+const { pickMaleEnglishVoiceIdentifier } = require('./ttsVoicePreference') as typeof import('./ttsVoicePreference');
 
-test('prefers clear US male young-adult voice over accented or female voices', () => {
+test('prefers clearer US male voice over Aaron, accented, or female voices', () => {
+  const id = pickMaleEnglishVoiceIdentifier([
+    { identifier: 'com.apple.ttsbundle.Samantha-compact', name: 'Samantha', language: 'en-US', quality: 'Enhanced' },
+    { identifier: 'com.apple.ttsbundle.Daniel-compact', name: 'Daniel', language: 'en-GB', quality: 'Enhanced' },
+    { identifier: 'com.apple.ttsbundle.Aaron-premium', name: 'Aaron', language: 'en-US', quality: 'Enhanced' },
+    { identifier: 'com.apple.speech.synthesis.voice.Alex', name: 'Alex', language: 'en-US', quality: 'Enhanced' },
+  ] as never);
+
+  assert.equal(id, 'com.apple.speech.synthesis.voice.Alex');
+});
+
+test('keeps Aaron as a fallback when clearer male voices are unavailable', () => {
   const id = pickMaleEnglishVoiceIdentifier([
     { identifier: 'com.apple.ttsbundle.Samantha-compact', name: 'Samantha', language: 'en-US', quality: 'Enhanced' },
     { identifier: 'com.apple.ttsbundle.Daniel-compact', name: 'Daniel', language: 'en-GB', quality: 'Enhanced' },

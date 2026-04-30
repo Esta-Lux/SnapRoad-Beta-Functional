@@ -99,9 +99,9 @@ export type TtsSpeechProfile = {
 };
 
 const MODE_SPEECH_PROFILE: Record<DrivingMode, TtsSpeechProfile> = {
-  calm: { rate: 0.92, pitch: 0.93, language: 'en-US' },
-  adaptive: { rate: 0.95, pitch: 0.94, language: 'en-US' },
-  sport: { rate: 0.99, pitch: 0.95, language: 'en-US' },
+  calm: { rate: 0.88, pitch: 0.9, language: 'en-US' },
+  adaptive: { rate: 0.91, pitch: 0.91, language: 'en-US' },
+  sport: { rate: 0.94, pitch: 0.92, language: 'en-US' },
 };
 
 export type SpeakRateSource = 'driving' | 'navigation_fixed' | 'advisory';

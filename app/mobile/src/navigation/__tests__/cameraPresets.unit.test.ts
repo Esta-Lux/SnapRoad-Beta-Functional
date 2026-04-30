@@ -57,8 +57,37 @@ test('getCameraPreset: long roads pull back and show more road ahead', () => {
     safeAreaBottom: 0,
   });
   assert.ok(longAdaptive.zoom < shortAdaptive.zoom);
+  assert.ok(longAdaptive.pitch > shortAdaptive.pitch);
   assert.ok(longAdaptive.padding.paddingTop > shortAdaptive.padding.paddingTop);
   assert.ok(longAdaptive.padding.paddingBottom < shortAdaptive.padding.paddingBottom);
+});
+
+test('getCameraPreset: sport open-road framing is the most advanced follow camera', () => {
+  const calm = getCameraPreset({
+    mode: 'calm',
+    speedMps: 31,
+    nextManeuverDistanceMeters: 1400,
+    safeAreaTop: 0,
+    safeAreaBottom: 0,
+  });
+  const adaptive = getCameraPreset({
+    mode: 'adaptive',
+    speedMps: 31,
+    nextManeuverDistanceMeters: 1400,
+    safeAreaTop: 0,
+    safeAreaBottom: 0,
+  });
+  const sport = getCameraPreset({
+    mode: 'sport',
+    speedMps: 31,
+    nextManeuverDistanceMeters: 1400,
+    safeAreaTop: 0,
+    safeAreaBottom: 0,
+  });
+  assert.ok(sport.zoom < adaptive.zoom);
+  assert.ok(adaptive.zoom < calm.zoom);
+  assert.ok(sport.pitch >= adaptive.pitch);
+  assert.ok(sport.padding.paddingTop > adaptive.padding.paddingTop);
 });
 
 test('getCameraPreset: near turns lower the forward look-ahead and tighten framing', () => {

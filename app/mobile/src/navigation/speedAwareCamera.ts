@@ -6,70 +6,70 @@ import type { DrivingMode } from '../types';
 
 type MphValuePoint = { mph: number; v: number };
 
-const LONG_ROAD_METERS = 260;
-const OPEN_ROAD_METERS = 700;
+const LONG_ROAD_METERS = 220;
+const OPEN_ROAD_METERS = 900;
 
 const SPORT_HIGH_MPH = 60;
-const SPORT_MAX_ZOOM_PULL = 0.32;
-const SPORT_ZOOM_PER_MPH = 0.009;
-const SPORT_PAD_TOP_PER_MPH = 1.55;
-const SPORT_MAX_PAD_TOP = 56;
+const SPORT_MAX_ZOOM_PULL = 0.54;
+const SPORT_ZOOM_PER_MPH = 0.014;
+const SPORT_PAD_TOP_PER_MPH = 2.15;
+const SPORT_MAX_PAD_TOP = 86;
 
 /* ── Zoom (Mapbox level): lower = farther out / more corridor visible ──── */
 const ZOOM_CALM: MphValuePoint[] = [
   { mph: 0, v: 18.45 },
   { mph: 25, v: 18.0 },
-  { mph: 45, v: 17.35 },
-  { mph: 65, v: 16.65 },
-  { mph: 85, v: 16.0 },
-  { mph: 100, v: 15.55 },
+  { mph: 45, v: 17.2 },
+  { mph: 65, v: 16.35 },
+  { mph: 85, v: 15.7 },
+  { mph: 100, v: 15.25 },
 ];
 
 const ZOOM_ADAPTIVE: MphValuePoint[] = [
   { mph: 0, v: 18.5 },
   { mph: 22, v: 18.05 },
-  { mph: 38, v: 17.45 },
-  { mph: 55, v: 16.85 },
-  { mph: 72, v: 16.25 },
-  { mph: 90, v: 15.7 },
-  { mph: 100, v: 15.35 },
+  { mph: 38, v: 17.25 },
+  { mph: 55, v: 16.55 },
+  { mph: 72, v: 15.9 },
+  { mph: 90, v: 15.3 },
+  { mph: 100, v: 14.95 },
 ];
 
 const ZOOM_SPORT: MphValuePoint[] = [
   { mph: 0, v: 18.75 },
-  { mph: 20, v: 18.15 },
-  { mph: 40, v: 17.35 },
-  { mph: 60, v: 16.45 },
-  { mph: 80, v: 15.55 },
-  { mph: 100, v: 14.85 },
+  { mph: 20, v: 18.05 },
+  { mph: 40, v: 17.05 },
+  { mph: 60, v: 15.95 },
+  { mph: 80, v: 14.95 },
+  { mph: 100, v: 14.45 },
 ];
 
 /* ── Pitch (degrees): Calm = high / predictive; Sport = low chase at speed ─ */
 const PITCH_CALM: MphValuePoint[] = [
   { mph: 0, v: 50 },
-  { mph: 25, v: 54 },
-  { mph: 45, v: 57 },
-  { mph: 65, v: 60 },
-  { mph: 85, v: 63 },
-  { mph: 100, v: 65 },
+  { mph: 25, v: 56 },
+  { mph: 45, v: 61 },
+  { mph: 65, v: 65 },
+  { mph: 85, v: 68 },
+  { mph: 100, v: 70 },
 ];
 
 const PITCH_ADAPTIVE: MphValuePoint[] = [
   { mph: 0, v: 48 },
-  { mph: 24, v: 50 },
-  { mph: 40, v: 52 },
-  { mph: 58, v: 55 },
-  { mph: 75, v: 58 },
-  { mph: 100, v: 60 },
+  { mph: 24, v: 53 },
+  { mph: 40, v: 57 },
+  { mph: 58, v: 61 },
+  { mph: 75, v: 64 },
+  { mph: 100, v: 67 },
 ];
 
 const PITCH_SPORT: MphValuePoint[] = [
-  { mph: 0, v: 56 },
-  { mph: 20, v: 50 },
-  { mph: 40, v: 44 },
-  { mph: 60, v: 36 },
-  { mph: 80, v: 28 },
-  { mph: 100, v: 22 },
+  { mph: 0, v: 58 },
+  { mph: 20, v: 58 },
+  { mph: 40, v: 61 },
+  { mph: 60, v: 64 },
+  { mph: 80, v: 66 },
+  { mph: 100, v: 68 },
 ];
 
 const CALM_TURN_HOLD_M = 500;
@@ -160,7 +160,7 @@ export function turnAnticipationOffsets(
   }
 
   const openRoadZoomPullback =
-    mode === 'calm' ? 0.2 * longRoad01 : mode === 'adaptive' ? 0.3 * longRoad01 : 0.4 * longRoad01;
+    mode === 'calm' ? 0.32 * longRoad01 : mode === 'adaptive' ? 0.46 * longRoad01 : 0.72 * longRoad01;
   dZoom -= openRoadZoomPullback;
 
   if (mode === 'sport' && d < SPORT_TUCK_M) {

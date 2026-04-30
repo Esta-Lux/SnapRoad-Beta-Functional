@@ -48,7 +48,7 @@ type Props = {
 const PREDICTIVE_MS = 0;
 const STOPPED_THRESHOLD_MPS = 0.5;
 const ACCURACY_RING_THRESHOLD_M = 15;
-const ROTATION_EASE_MS = 300;
+const ROTATION_EASE_MS = 240;
 
 function shortestAngleDelta(from: number, to: number): number {
   const diff = ((to - from + 540) % 360) - 180;
@@ -301,7 +301,7 @@ function NavSdkPuckImpl({
         )}
 
         <Animated.View style={[styles.arrow, rotateStyle]}>
-          <Svg width={36} height={36} viewBox="0 0 64 64">
+          <Svg width={42} height={42} viewBox="0 0 64 64">
             <Defs>
               <LinearGradient id="navPuckFill" x1="0" y1="0" x2="0" y2="1">
                 <Stop offset="0%" stopColor={color} stopOpacity={1} />
@@ -346,22 +346,22 @@ export const NavSdkPuck = React.memo(NavSdkPuckImpl, (prev, next) => {
 const styles = StyleSheet.create({
   /** Tight bounds — map-stuck SVG metaphor (no elevated “widget” stack). */
   wrap: {
-    width: 44,
-    height: 44,
+    width: 54,
+    height: 54,
     alignItems: 'center',
     justifyContent: 'center',
   },
   accuracyRing: {
     position: 'absolute',
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     borderWidth: 1.25,
     backgroundColor: 'transparent',
   },
   arrow: {
-    width: 36,
-    height: 36,
+    width: 42,
+    height: 42,
     alignItems: 'center',
     justifyContent: 'center',
   },

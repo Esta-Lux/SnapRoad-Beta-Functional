@@ -18,7 +18,7 @@ export default React.memo(function UserMarker({ heading, isNavigating, speed }: 
 
   useEffect(() => {
     rot.value = withTiming(heading, { duration: 200 });
-  }, [heading]);
+  }, [heading, rot]);
 
   const rotateStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${rot.value}deg` }],
@@ -31,7 +31,7 @@ export default React.memo(function UserMarker({ heading, isNavigating, speed }: 
     <View style={S.root}>
       {showCone && (
         <Animated.View style={[S.cone, rotateStyle]}>
-          <Svg width={72} height={100} viewBox="0 0 72 100">
+          <Svg width={84} height={116} viewBox="0 0 72 100">
             <Defs>
               <LinearGradient id="cf" x1="0" y1="1" x2="0" y2="0">
                 <Stop offset="0%" stopColor="rgba(59,130,246,0.32)" />
@@ -47,7 +47,7 @@ export default React.memo(function UserMarker({ heading, isNavigating, speed }: 
         </Animated.View>
       )}
       <Animated.View style={[S.arrow, rotateStyle]}>
-        <Svg width={36} height={36} viewBox="0 0 64 64">
+        <Svg width={42} height={42} viewBox="0 0 64 64">
           <Circle cx={32} cy={32} r={26} fill="#3B82F6" opacity={0.12} />
           <Circle cx={32} cy={32} r={18} fill="#3B82F6" opacity={0.08} />
           <Path
@@ -65,7 +65,7 @@ export default React.memo(function UserMarker({ heading, isNavigating, speed }: 
 });
 
 const S = StyleSheet.create({
-  root: { width: 72, height: 100, alignItems: 'center', justifyContent: 'flex-end' },
+  root: { width: 84, height: 116, alignItems: 'center', justifyContent: 'flex-end' },
   cone: { position: 'absolute', top: 0, alignItems: 'center' },
-  arrow: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  arrow: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
 });

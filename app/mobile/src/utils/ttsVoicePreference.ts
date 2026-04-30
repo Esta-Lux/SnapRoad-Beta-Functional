@@ -2,7 +2,7 @@ import type { Voice } from 'expo-speech';
 import * as Speech from 'expo-speech';
 
 /**
- * Prefer a clear US male / young-adult sounding TTS voice for navigation + Orion (`expo-speech`).
+ * Prefer a clear US male TTS voice for navigation + Orion (`expo-speech`).
  *
  * Mapbox Navigation SDK (headless native) uses its own speech pipeline; it is not
  * configurable from JS in this app. On iOS/Android, system / engine TTS settings
@@ -10,10 +10,10 @@ import * as Speech from 'expo-speech';
  */
 
 const MALE_NAME_HINTS = [
-  'aaron',
   'alex',
   'evan',
   'nathan',
+  'aaron',
   'josh',
   'justin',
   'tyler',
@@ -40,11 +40,24 @@ const MALE_NAME_HINTS = [
   'male',
 ];
 
-const YOUNG_ADULT_NAME_HINTS = [
-  'aaron',
+const CLEAR_DEFAULT_NAME_PRIORITY = [
   'alex',
   'evan',
   'nathan',
+  'tom',
+  'daniel',
+  'oliver',
+  'james',
+  'david',
+  'mark',
+  'aaron',
+] as const;
+
+const YOUNG_ADULT_NAME_HINTS = [
+  'alex',
+  'evan',
+  'nathan',
+  'aaron',
   'josh',
   'justin',
   'tyler',
@@ -55,6 +68,22 @@ const YOUNG_ADULT_NAME_HINTS = [
 ];
 
 const OLDER_NAME_HINTS = ['fred', 'ralph', 'grandpa', 'albert', 'arthur'];
+
+const ACCENTED_OR_HARD_TO_HEAR_HINTS = [
+  // Common non-US English voices exposed by iOS / Android engines.
+  'daniel',
+  'moira',
+  'tessa',
+  'karen',
+  'serena',
+  'veena',
+  'rishi',
+  'arthur',
+  'martha',
+  'gordon',
+  'oliver',
+  'lee',
+];
 
 const FEMALE_NAME_HINTS = [
   'samantha',
@@ -82,12 +111,16 @@ function scoreVoice(v: Voice): number {
   let s = 0;
   if (language === 'en-us') s += 80;
   else if (language.startsWith('en-us')) s += 70;
-  else if (language.startsWith('en')) s += 12;
+  else if (language.startsWith('en')) s -= 25;
   else s -= 80;
   if (String(v.quality).toLowerCase().includes('enhanced')) s += 14;
+  if (String(v.quality).toLowerCase().includes('premium')) s += 18;
+  const priorityIndex = CLEAR_DEFAULT_NAME_PRIORITY.findIndex((h) => n.includes(h));
+  if (priorityIndex >= 0) s += 42 - priorityIndex * 3;
   for (const h of MALE_NAME_HINTS) if (n.includes(h)) s += 10;
   for (const h of YOUNG_ADULT_NAME_HINTS) if (n.includes(h)) s += 7;
   for (const h of OLDER_NAME_HINTS) if (n.includes(h)) s -= 5;
+  for (const h of ACCENTED_OR_HARD_TO_HEAR_HINTS) if (n.includes(h) && language !== 'en-us') s -= 45;
   for (const f of FEMALE_NAME_HINTS) if (n.includes(f)) s -= 10;
   return s;
 }

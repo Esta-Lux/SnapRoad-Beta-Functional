@@ -95,27 +95,27 @@ export function getCameraConfig(mode: NavMode, speedMps: number): CameraConfig {
   switch (mode) {
     case 'calm':
       return {
-        zoom: speedMps > 18 ? 14.4 : 15.3,
-        pitch: 35,
-        animationDuration: 700,
+        zoom: speedMps > 18 ? 14.1 : 15.0,
+        pitch: speedMps > 18 ? 56 : 48,
+        animationDuration: 640,
         headingSmoothing: 0.12,
-        lookAheadMeters: 80,
+        lookAheadMeters: 100,
       };
     case 'sport':
       return {
-        zoom: speedMps > 18 ? 13.8 : 14.8,
-        pitch: 58,
-        animationDuration: 380,
-        headingSmoothing: 0.22,
-        lookAheadMeters: 135,
+        zoom: speedMps > 18 ? 13.35 : 14.35,
+        pitch: speedMps > 18 ? 66 : 58,
+        animationDuration: 320,
+        headingSmoothing: 0.26,
+        lookAheadMeters: 165,
       };
     case 'adaptive':
       return {
-        zoom: speedMps > 22 ? 14.0 : speedMps > 10 ? 14.8 : 15.8,
-        pitch: speedMps > 18 ? 52 : 42,
-        animationDuration: 480,
+        zoom: speedMps > 22 ? 13.65 : speedMps > 10 ? 14.45 : 15.55,
+        pitch: speedMps > 18 ? 61 : 50,
+        animationDuration: 420,
         headingSmoothing: 0.18,
-        lookAheadMeters: speedMps > 18 ? 120 : 90,
+        lookAheadMeters: speedMps > 18 ? 138 : 108,
       };
     case 'browse':
     default:

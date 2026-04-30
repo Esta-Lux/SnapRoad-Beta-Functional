@@ -6,9 +6,9 @@ test('stopped vehicle uses conservative camera cadence to avoid red-light jitter
   const calm = getNavCameraFollowTuning('calm', 0.2, 300);
   const sport = getNavCameraFollowTuning('sport', 0.2, 300);
 
-  assert.equal(calm.minUpdateIntervalMs, 420);
-  assert.ok(calm.minMoveMeters >= 2);
-  assert.ok(calm.minHeadingDeltaDeg >= 8);
+  assert.equal(calm.minUpdateIntervalMs, 520);
+  assert.ok(calm.minMoveMeters >= 3);
+  assert.ok(calm.minHeadingDeltaDeg >= 10);
   assert.ok(sport.animationDurationMs < calm.animationDurationMs);
 });
 

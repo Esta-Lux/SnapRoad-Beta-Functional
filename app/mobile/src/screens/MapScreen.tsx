@@ -716,6 +716,21 @@ export default function MapScreen() {
   const targetFraction = isNativeSdkPassThrough
     ? Math.max(0, Math.min(1, nativeFractionTraveled))
     : targetFractionDerived;
+  const stableNavTargetFractionRef = useRef(targetFraction);
+  const stoppedForPuckSmoothing = (nav.navigationProgress?.displayCoord?.speedMps ?? speed * 0.44704) < 0.75;
+  const stabilizedTargetFraction = useMemo(() => {
+    if (!nav.isNavigating || navPolylineLenMetersRaw <= 1) {
+      stableNavTargetFractionRef.current = targetFraction;
+      return targetFraction;
+    }
+    const prev = stableNavTargetFractionRef.current;
+    const deltaMeters = Math.abs(targetFraction - prev) * navPolylineLenMetersRaw;
+    if (stoppedForPuckSmoothing && deltaMeters < 6) {
+      return prev;
+    }
+    stableNavTargetFractionRef.current = targetFraction;
+    return targetFraction;
+  }, [nav.isNavigating, navPolylineLenMetersRaw, stoppedForPuckSmoothing, targetFraction]);
   /**
    * Dead-reckoning feed — keeps the smoothed fraction advancing during SDK
    * silence (tunnels, matcher hiccups, stalls > ~350 ms). Uses the last-known
@@ -742,8 +757,8 @@ export default function MapScreen() {
     navPolylineLenMetersRaw > 1
       ? Math.max(0.005, Math.min(0.05, 100 / navPolylineLenMetersRaw))
       : 0.02;
-  const smoothedFraction = useSmoothedNavFraction(targetFraction, nav.isNavigating, {
-    timeConstantMs: drivingMode === 'calm' ? 150 : drivingMode === 'sport' ? 105 : 125,
+  const smoothedFraction = useSmoothedNavFraction(stabilizedTargetFraction, nav.isNavigating, {
+    timeConstantMs: drivingMode === 'calm' ? 190 : drivingMode === 'sport' ? 150 : 170,
     snapDeltaFraction,
     enabled: true,
     deadReckoning:
@@ -751,8 +766,8 @@ export default function MapScreen() {
         ? {
             polylineLengthMeters: navPolylineLenMetersRaw,
             speedMps: deadReckoningSpeedMps,
-            staleThresholdMs: drivingMode === 'sport' ? 260 : drivingMode === 'adaptive' ? 320 : 420,
-            maxStaleMs: drivingMode === 'sport' ? 1400 : drivingMode === 'adaptive' ? 1250 : 1100,
+            staleThresholdMs: drivingMode === 'sport' ? 140 : drivingMode === 'adaptive' ? 180 : 240,
+            maxStaleMs: drivingMode === 'sport' ? 2800 : drivingMode === 'adaptive' ? 2500 : 2200,
           }
         : undefined,
   });
@@ -4050,7 +4065,7 @@ export default function MapScreen() {
             puckBearingEnabled
             puckBearing={locationPuckBearing}
             pulsing={{ isEnabled: !nav.isNavigating }}
-            scale={1.55}
+            scale={1.76}
           />
           {nav.isNavigating &&
           Number.isFinite(navDisplayCoord.lat) &&
