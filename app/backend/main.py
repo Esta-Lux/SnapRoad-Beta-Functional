@@ -135,6 +135,11 @@ def _register_exception_handlers(app: FastAPI) -> None:
             return JSONResponse(status_code=422, content={"detail": exc.errors()})
         if isinstance(exc, RateLimitExceeded):
             return await _rate_limit_exceeded_handler(request, exc)
+        # Ensure unhandled errors reach Sentry even though we return a generic 500 to clients.
+        try:
+            sentry_sdk.capture_exception(exc)
+        except Exception:
+            pass
         telemetry_service.publish_fire_and_forget(
             {
                 "id": f"err_{telemetry_service.now_iso()}_{request.method}_{request.url.path}",

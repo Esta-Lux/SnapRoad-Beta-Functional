@@ -1,7 +1,7 @@
 import logging
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from typing import Annotated, Optional
 from datetime import datetime, timedelta, timezone
 from models.schemas import (
@@ -23,6 +23,7 @@ from middleware.auth import get_current_user
 from database import get_supabase
 from config import ENVIRONMENT
 from services.premium_access import require_premium_user
+from limiter import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,8 @@ def get_friends(
 
 
 @router.get("/friends/search", responses={401: {"description": MSG_AUTH_REQUIRED}})
-def search_friends(current_user: CurrentUser, q: str = "", user_id: str = ""):
+@limiter.limit("60/minute")
+def search_friends(request: Request, current_user: CurrentUser, q: str = "", user_id: str = ""):
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     require_premium_user(current_user)
@@ -194,12 +196,13 @@ def get_my_friend_code(current_user: CurrentUser):
 
 
 @router.post("/friends/add", responses={401: {"description": MSG_AUTH_REQUIRED}, 400: {"description": "Invalid request or already friends"}})
-def add_friend(request: FriendRequest, current_user: CurrentUser):
+@limiter.limit("20/minute")
+def add_friend(request: Request, body: FriendRequest, current_user: CurrentUser):
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     require_premium_user(current_user)
     uid = current_user["id"]
-    friend_id = request.user_id
+    friend_id = body.user_id
     if not friend_id or friend_id == uid:
         raise HTTPException(status_code=400, detail="Invalid friend_id")
     supabase = get_supabase()
@@ -216,7 +219,8 @@ def add_friend(request: FriendRequest, current_user: CurrentUser):
 
 
 @router.delete("/friends/{friend_id}", responses={401: {"description": MSG_AUTH_REQUIRED}})
-def remove_friend(friend_id: str, current_user: CurrentUser):
+@limiter.limit("30/minute")
+def remove_friend(request: Request, friend_id: str, current_user: CurrentUser):
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     require_premium_user(current_user)
@@ -342,7 +346,8 @@ def get_friend_categories(current_user: CurrentUser):
 
 
 @router.post("/friends/categories", responses={401: {"description": MSG_AUTH_REQUIRED}})
-def create_friend_category(body: FriendCategoryCreateBody, current_user: CurrentUser):
+@limiter.limit("30/minute")
+def create_friend_category(request: Request, body: FriendCategoryCreateBody, current_user: CurrentUser):
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     require_premium_user(current_user)
@@ -361,7 +366,8 @@ def create_friend_category(body: FriendCategoryCreateBody, current_user: Current
 
 
 @router.put("/friends/categories/{category_id}", responses={401: {"description": MSG_AUTH_REQUIRED}})
-def update_friend_category(category_id: str, body: FriendCategoryUpdateBody, current_user: CurrentUser):
+@limiter.limit("30/minute")
+def update_friend_category(request: Request, category_id: str, body: FriendCategoryUpdateBody, current_user: CurrentUser):
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     require_premium_user(current_user)
@@ -385,7 +391,8 @@ def update_friend_category(category_id: str, body: FriendCategoryUpdateBody, cur
 
 
 @router.delete("/friends/categories/{category_id}", responses={401: {"description": MSG_AUTH_REQUIRED}})
-def delete_friend_category(category_id: str, current_user: CurrentUser):
+@limiter.limit("30/minute")
+def delete_friend_category(request: Request, category_id: str, current_user: CurrentUser):
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     require_premium_user(current_user)
@@ -396,7 +403,8 @@ def delete_friend_category(category_id: str, current_user: CurrentUser):
 
 
 @router.post("/friends/categories/{category_id}/members", responses={401: {"description": MSG_AUTH_REQUIRED}})
-def add_friend_to_category(category_id: str, body: FriendCategoryMemberBody, current_user: CurrentUser):
+@limiter.limit("30/minute")
+def add_friend_to_category(request: Request, category_id: str, body: FriendCategoryMemberBody, current_user: CurrentUser):
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     require_premium_user(current_user)
@@ -418,7 +426,8 @@ def add_friend_to_category(category_id: str, body: FriendCategoryMemberBody, cur
 
 
 @router.delete("/friends/categories/{category_id}/members/{friend_id}", responses={401: {"description": MSG_AUTH_REQUIRED}})
-def remove_friend_from_category(category_id: str, friend_id: str, current_user: CurrentUser):
+@limiter.limit("30/minute")
+def remove_friend_from_category(request: Request, category_id: str, friend_id: str, current_user: CurrentUser):
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     require_premium_user(current_user)
@@ -506,7 +515,8 @@ def get_outgoing_friend_requests(
 
 
 @router.post("/friends/reject", responses={400: {"description": "Missing friendship_id"}, 401: {"description": MSG_AUTH_REQUIRED}})
-def reject_friend_request(body: dict, current_user: CurrentUser):
+@limiter.limit("30/minute")
+def reject_friend_request(request: Request, body: dict, current_user: CurrentUser):
     """Decline an incoming request (body.friendship_id = row id)."""
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
@@ -530,7 +540,8 @@ def reject_friend_request(body: dict, current_user: CurrentUser):
         404: {"description": "Request not found or already resolved"},
     },
 )
-def cancel_outgoing_friend_request(friendship_id: str, current_user: CurrentUser):
+@limiter.limit("30/minute")
+def cancel_outgoing_friend_request(request: Request, friendship_id: str, current_user: CurrentUser):
     """
     Withdraw an outgoing friend request you previously sent.
 
@@ -567,7 +578,8 @@ def cancel_outgoing_friend_request(friendship_id: str, current_user: CurrentUser
 
 
 @router.post("/friends/accept", responses={400: {"description": "Missing friendship_id"}, 401: {"description": MSG_AUTH_REQUIRED}})
-def accept_friend_request(body: dict, current_user: CurrentUser):
+@limiter.limit("30/minute")
+def accept_friend_request(request: Request, body: dict, current_user: CurrentUser):
     """Accept a friend request (body.friendship_id = row id)."""
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
@@ -619,7 +631,8 @@ def get_my_location_sharing(current_user: CurrentUser):
 
 
 @router.post("/friends/location/update", responses={401: {"description": MSG_AUTH_REQUIRED}})
-def update_my_location(body: LocationUpdateBody, current_user: CurrentUser):
+@limiter.limit("300/minute")
+def update_my_location(request: Request, body: LocationUpdateBody, current_user: CurrentUser):
     """Update current user's live location (Supabase: live_locations upsert; mock: no-op)."""
     from services.runtime_config import require_enabled
 
@@ -684,7 +697,8 @@ def update_my_location(body: LocationUpdateBody, current_user: CurrentUser):
 
 
 @router.put("/friends/location/sharing", responses={401: {"description": MSG_AUTH_REQUIRED}})
-def set_location_sharing(body: LocationSharingBody, current_user: CurrentUser):
+@limiter.limit("30/minute")
+def set_location_sharing(request: Request, body: LocationSharingBody, current_user: CurrentUser):
     """Turn location sharing on or off. Upserts a row when enabling sharing if none exists."""
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
@@ -745,7 +759,8 @@ def set_location_sharing(body: LocationSharingBody, current_user: CurrentUser):
 
 
 @router.post("/friends/tag", responses={401: {"description": MSG_AUTH_REQUIRED}})
-def send_location_tag(body: LocationTagBody, current_user: CurrentUser):
+@limiter.limit("30/minute")
+def send_location_tag(request: Request, body: LocationTagBody, current_user: CurrentUser):
     """Send a location tag to a friend."""
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
@@ -769,7 +784,8 @@ def send_location_tag(body: LocationTagBody, current_user: CurrentUser):
 
 
 @router.post("/social/convoy/start", responses={401: {"description": MSG_AUTH_REQUIRED}})
-def convoy_start(body: ConvoyStartBody, current_user: CurrentUser):
+@limiter.limit("10/minute")
+def convoy_start(request: Request, body: ConvoyStartBody, current_user: CurrentUser):
     """Persist a convoy session; navigation still happens client-side from destination."""
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)

@@ -1,0 +1,27 @@
+# SnapRoad backend lint config (ruff).
+# Conservative ruleset focused on real correctness issues so CI gating stays low-risk.
+target-version = "py312"
+line-length = 120
+extend-exclude = [
+    "__pycache__",
+    ".venv",
+    "venv",
+    "build",
+    "dist",
+    "tests/integration",
+]
+
+[lint]
+# Conservative initial gate: pyflakes (F) + syntax errors (E9) only.
+# Bandit / SonarCloud already run separately, and a wider ruleset would surface
+# existing legacy debt that is out of scope for this production-readiness pass.
+select = ["F", "E9"]
+ignore = [
+    "F401",   # unused imports — legacy `from x import *`-style modules; revisit later.
+    "F841",   # unused local variables — many in legacy demo branches.
+]
+
+[lint.per-file-ignores]
+"tests/**" = ["F"]
+"scripts/**" = ["F"]
+"services/mock_data.py" = ["F"]

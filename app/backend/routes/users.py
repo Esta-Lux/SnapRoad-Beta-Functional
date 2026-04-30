@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Optional
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from models.schemas import PlanUpdate, CarCustomization
 from services.mock_data import (
     users_db, pricing_config,
@@ -20,6 +20,7 @@ from services.supabase_service import (
     promotion_access_active,
 )
 from services.snap_road_score import compute_snap_road_fields
+from limiter import limiter
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
 
@@ -190,7 +191,8 @@ def get_user_stats(auth_user: CurrentUser):
 
 
 @router.post("/user/plan")
-def update_user_plan(plan: PlanUpdate, auth_user: CurrentUser):
+@limiter.limit("10/minute")
+def update_user_plan(request: Request, plan: PlanUpdate, auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     user_id = str(user.get("id"))
     requested = str(plan.plan or "").strip().lower()
@@ -225,7 +227,8 @@ def update_user_car(car: CarCustomization, auth_user: CurrentUser):
 
 
 @router.delete("/user/account")
-def delete_account(auth_user: dict = Depends(get_current_user)):
+@limiter.limit("5/minute")
+def delete_account(request: Request, auth_user: dict = Depends(get_current_user)):
     user = _get_user_store(auth_user)
     user_id = str(auth_user.get("user_id") or auth_user.get("id") or user.get("id") or "").strip()
     if not user_id:
@@ -435,7 +438,8 @@ def update_notification_settings(settings: dict, auth_user: CurrentUser):
 
 
 @router.post("/user/push-token", responses={400: {"description": "Missing push token"}})
-def register_push_token(body: dict, auth_user: CurrentUser):
+@limiter.limit("10/minute")
+def register_push_token(request: Request, body: dict, auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     user_id = str(user.get("id"))
     token = str(body.get("token") or "").strip()
@@ -459,7 +463,8 @@ def register_push_token(body: dict, auth_user: CurrentUser):
 
 
 @router.post("/user/location-ping")
-def location_ping(body: dict, auth_user: CurrentUser):
+@limiter.limit("60/minute")
+def location_ping(request: Request, body: dict, auth_user: CurrentUser):
     """Persists last map coordinates for nearby incident push alerts (profiles.last_known_* migration 039)."""
     try:
         lat = float(body.get("lat"))
@@ -488,7 +493,8 @@ def get_faq():
 
 
 @router.post("/help/contact")
-def submit_contact(form: dict):
+@limiter.limit("5/minute")
+def submit_contact(request: Request, form: dict):
     return {"success": True, "message": "Message sent! We'll get back to you within 24 hours."}
 
 
@@ -605,7 +611,8 @@ def update_notification_settings_put(
 
 
 @router.put("/user/profile", responses={400: {"description": "Invalid vehicle_height_meters value"}})
-def update_profile(body: dict, auth_user: CurrentUser):
+@limiter.limit("20/minute")
+def update_profile(request: Request, body: dict, auth_user: CurrentUser):
     user = _get_user_store(auth_user)
     uid = str(auth_user.get("user_id") or auth_user.get("id") or user.get("id") or "").strip()
     updates = {k: v for k, v in body.items() if k not in ("id", "email", "username_changed_at")}

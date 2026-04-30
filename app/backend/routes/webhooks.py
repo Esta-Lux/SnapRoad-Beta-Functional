@@ -37,8 +37,13 @@ def _ws_extract_bearer_raw(websocket: WebSocket, *, allow_query_token: bool) -> 
 
 
 async def _require_ws_token(websocket: WebSocket) -> dict:
-    """Partner/customer sockets: query ?token= allowed (use header/subprotocol in new clients)."""
-    token = _ws_extract_bearer_raw(websocket, allow_query_token=True)
+    """
+    Partner/customer sockets.
+    Production: Authorization: Bearer <jwt> or Sec-WebSocket-Protocol bearer.<jwt> only (no ?token=).
+    Non-production: ?token= still accepted for local tooling.
+    """
+    allow_q = not IS_PRODUCTION
+    token = _ws_extract_bearer_raw(websocket, allow_query_token=allow_q)
     if not token:
         await websocket.close(code=1008, reason="Missing token")
         return {}
@@ -409,23 +414,9 @@ async def admin_moderation_ws(websocket: WebSocket):
     """WebSocket endpoint for real-time admin incident moderation."""
     from services.websocket_manager import ws_manager
     import uuid
-    token = websocket.query_params.get("token")
-    if not token:
-        protocols = websocket.headers.get("sec-websocket-protocol", "")
-        for proto in [p.strip() for p in protocols.split(",") if p.strip()]:
-            if proto.startswith("bearer."):
-                token = proto[len("bearer."):].strip()
-                break
-    if not token:
-        await websocket.close(code=1008, reason="Missing token")
-        return
-    try:
-        payload = decode_token(token)
-        if payload.get("role") not in ("admin", "super_admin"):
-            await websocket.close(code=1008, reason="Admin access required")
-            return
-    except Exception:
-        await websocket.close(code=1008, reason="Invalid token")
+
+    payload = await _require_ws_admin_payload(websocket)
+    if not payload:
         return
     admin_id = f"admin_{uuid.uuid4().hex[:8]}"
     try:

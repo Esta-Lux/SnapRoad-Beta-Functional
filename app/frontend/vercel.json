@@ -5,7 +5,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' https://js.stripe.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://images.unsplash.com https://*.mapbox.com https://*.tiles.mapbox.com https://*.supabase.co https://*.blob.core.windows.net; connect-src 'self' https://api.snaproad.app wss://api.snaproad.app https://*.supabase.co wss://*.supabase.co https://api.mapbox.com https://events.mapbox.com https://publicapi.ohgo.com https://www.gasbuddy.com; frame-src https://js.stripe.com https://hooks.stripe.com https://checkout.stripe.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';"
+          "value": "default-src 'self'; script-src 'self' https://js.stripe.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://images.unsplash.com https://*.mapbox.com https://*.tiles.mapbox.com https://*.supabase.co https://*.blob.core.windows.net; connect-src 'self' https://api.snaproad.app wss://api.snaproad.app https://*.supabase.co wss://*.supabase.co https://api.mapbox.com https://events.mapbox.com https://publicapi.ohgo.com https://www.gasbuddy.com https://*.ingest.sentry.io https://*.sentry.io; frame-src https://js.stripe.com https://hooks.stripe.com https://checkout.stripe.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';"
         },
         {
           "key": "Strict-Transport-Security",

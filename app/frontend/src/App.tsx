@@ -31,6 +31,8 @@ import { isPartnerPortalPrimarySite } from '@/lib/siteProfile'
 
 function App() {
   const partnerPrimary = isPartnerPortalPrimarySite()
+  // Mock-only demo route. Production builds drop it so it can't render with prod data.
+  const showBusinessMock = import.meta.env.MODE !== 'production'
 
   const driverAppTree = (
     <DriverGuard>
@@ -101,7 +103,9 @@ function App() {
               <Navigate to={partnerPrimary ? '/portal/partner/sign-in' : '/driver/auth'} replace />
             }
           />
-          <Route path="/business" element={<BusinessDashboard />} />
+          {showBusinessMock && (
+            <Route path="/business" element={<BusinessDashboard />} />
+          )}
           <Route
             path="*"
             element={<Navigate to={partnerPrimary ? '/portal/partner' : '/'} replace />}

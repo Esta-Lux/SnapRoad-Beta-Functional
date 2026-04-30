@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, HTTPException, Depends
+from fastapi import APIRouter, Query, HTTPException, Depends, Request
 from typing import Annotated, Optional, Any, Dict
 from datetime import datetime, timedelta, timezone
 import json
@@ -24,6 +24,7 @@ from services.llm_client import chat_completion_model, get_sync_openai_client
 from database import get_supabase
 from services.supabase_service import sb_get_profile
 from services.premium_access import require_premium_user
+from limiter import limiter
 
 _trips_log = logging.getLogger(__name__)
 users_db = get_users_store()
@@ -605,7 +606,8 @@ def _read_profile_totals_after_trip(user_id: str) -> Optional[Dict[str, Any]]:
 
 
 @trips_history_router.post("/trips/complete", responses=_503_RESPONSES)
-def complete_trip(body: TripCompleteBody, user: CurrentUser):
+@limiter.limit("30/minute")
+def complete_trip(request: Request, body: TripCompleteBody, user: CurrentUser):
     """Persist a completed trip to Supabase and update profile stats."""
     user_id = str(user.get("user_id") or user.get("id") or "").strip()
     distance = max(0, body.distance_miles)
@@ -1166,7 +1168,8 @@ def get_fuel_history(
 
 @trips_fuel_router.post("/fuel/logs")
 @trips_fuel_router.post("/fuel/log")
-def log_fuel(entry: FuelLogCreate, user: CurrentUser):
+@limiter.limit("20/minute")
+def log_fuel(request: Request, entry: FuelLogCreate, user: CurrentUser):
     uid = _fuel_uid(user)
     if not uid:
         raise HTTPException(status_code=401, detail="Invalid user")

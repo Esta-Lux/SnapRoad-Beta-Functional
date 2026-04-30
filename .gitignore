@@ -23,7 +23,11 @@ yarn-error.*
 .DS_Store
 *.pem
 
-.env*.local
+# Local env files — must never be committed. Rotate any key ever pushed.
+.env
+.env.*
+!.env.example
+!.env*.example
 
 *.tsbuildinfo
 
@@ -34,4 +38,22 @@ ios/
 
 pnpm-lock.yaml
 package-lock.json
+
+# Editor / IDE state
+.idea/
+.vscode/
+
+# Python build / cache
+__pycache__/
+*.pyc
+*.pyo
+.coverage
+.coverage.*
+htmlcov/
+
+# JS test/coverage / Playwright artifacts
+coverage/
+playwright-report/
+test-results/
+.vite/
 
