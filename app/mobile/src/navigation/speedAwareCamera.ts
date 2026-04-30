@@ -10,10 +10,10 @@ const LONG_ROAD_METERS = 220;
 const OPEN_ROAD_METERS = 900;
 
 const SPORT_HIGH_MPH = 60;
-const SPORT_MAX_ZOOM_PULL = 0.54;
-const SPORT_ZOOM_PER_MPH = 0.014;
-const SPORT_PAD_TOP_PER_MPH = 2.15;
-const SPORT_MAX_PAD_TOP = 86;
+const SPORT_MAX_ZOOM_PULL = 0.36;
+const SPORT_ZOOM_PER_MPH = 0.01;
+const SPORT_PAD_TOP_PER_MPH = 1.2;
+const SPORT_MAX_PAD_TOP = 48;
 
 /* ── Zoom (Mapbox level): lower = farther out / more corridor visible ──── */
 const ZOOM_CALM: MphValuePoint[] = [
@@ -49,27 +49,27 @@ const PITCH_CALM: MphValuePoint[] = [
   { mph: 0, v: 50 },
   { mph: 25, v: 56 },
   { mph: 45, v: 61 },
-  { mph: 65, v: 65 },
-  { mph: 85, v: 68 },
-  { mph: 100, v: 70 },
+  { mph: 65, v: 64 },
+  { mph: 85, v: 66 },
+  { mph: 100, v: 67 },
 ];
 
 const PITCH_ADAPTIVE: MphValuePoint[] = [
   { mph: 0, v: 48 },
   { mph: 24, v: 53 },
   { mph: 40, v: 57 },
-  { mph: 58, v: 61 },
-  { mph: 75, v: 64 },
-  { mph: 100, v: 67 },
+  { mph: 58, v: 60 },
+  { mph: 75, v: 62 },
+  { mph: 100, v: 64 },
 ];
 
 const PITCH_SPORT: MphValuePoint[] = [
-  { mph: 0, v: 58 },
-  { mph: 20, v: 58 },
-  { mph: 40, v: 61 },
-  { mph: 60, v: 64 },
-  { mph: 80, v: 66 },
-  { mph: 100, v: 68 },
+  { mph: 0, v: 55 },
+  { mph: 20, v: 56 },
+  { mph: 40, v: 58 },
+  { mph: 60, v: 60 },
+  { mph: 80, v: 61 },
+  { mph: 100, v: 62 },
 ];
 
 const CALM_TURN_HOLD_M = 500;
@@ -145,18 +145,18 @@ export function turnAnticipationOffsets(
   if (mode === 'adaptive' || mode === 'sport') {
     if (d < ADAPT_TURN_IN_M) {
       const p = 1 - d / ADAPT_TURN_IN_M;
-      dPitch += (mode === 'sport' ? 7 : 6) * p * p;
-      dZoom += (mode === 'sport' ? 0.5 : 0.42) * p;
+      dPitch += (mode === 'sport' ? 3.5 : 4.5) * p * p;
+      dZoom += (mode === 'sport' ? 0.62 : 0.56) * p;
     }
     if (d < ADAPT_TURN_TIGHT_M) {
       const p = 1 - d / ADAPT_TURN_TIGHT_M;
-      dPitch += (mode === 'sport' ? 8 : 7) * p * p;
-      dZoom += (mode === 'sport' ? 0.4 : 0.36) * p;
+      dPitch -= (mode === 'sport' ? 4.5 : 5.5) * p * p;
+      dZoom += (mode === 'sport' ? 0.72 : 0.62) * p;
     }
   } else {
-    const maneuverZoomAdjustment = d < 55 ? 0.42 : d < 115 ? 0.26 : 0;
+    const maneuverZoomAdjustment = d < 55 ? 0.78 : d < 115 ? 0.46 : d < 220 ? 0.24 : 0;
     dZoom += maneuverZoomAdjustment;
-    dPitch += d < 60 ? -6.5 : d < 120 ? -4.2 : 0;
+    dPitch += d < 60 ? -7.5 : d < 120 ? -5.2 : d < 220 ? -2.4 : 0;
   }
 
   const openRoadZoomPullback =
@@ -165,8 +165,8 @@ export function turnAnticipationOffsets(
 
   if (mode === 'sport' && d < SPORT_TUCK_M) {
     const u = 1 - d / SPORT_TUCK_M;
-    dPitch += 7 * u * u;
-    dZoom += 0.22 * u;
+    dPitch += 3.5 * u * u;
+    dZoom += 0.34 * u;
   }
 
   return { dPitch, dZoom, holdCalmZoom };

@@ -4662,9 +4662,7 @@ export default function MapScreen() {
         </Animated.View>
       )}
 
-      {(navLogicDebugEnabled() || (typeof __DEV__ !== 'undefined' && __DEV__)) &&
-      nav.isNavigating &&
-      !nav.showRoutePreview ? (
+      {navLogicDebugEnabled() && nav.isNavigating && !nav.showRoutePreview ? (
         <NavigationDebugHud
           progress={nav.navigationProgress ?? null}
           currentStepIndex={nav.currentStepIndex}

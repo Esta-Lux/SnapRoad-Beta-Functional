@@ -86,7 +86,8 @@ test('getCameraPreset: sport open-road framing is the most advanced follow camer
   });
   assert.ok(sport.zoom < adaptive.zoom);
   assert.ok(adaptive.zoom < calm.zoom);
-  assert.ok(sport.pitch >= adaptive.pitch);
+  assert.ok(sport.pitch >= 58);
+  assert.ok(sport.pitch <= adaptive.pitch);
   assert.ok(sport.padding.paddingTop > adaptive.padding.paddingTop);
 });
 

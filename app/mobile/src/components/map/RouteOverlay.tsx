@@ -102,24 +102,19 @@ export default React.memo(function RouteOverlay({
       ? Math.max(0, Math.min(1, fractionTraveled))
       : 0;
   const TRIM_OFFSET_MIN_FRACTION = 5e-4;
-  const hasAuthoritativeSplit =
-    routeSplit != null &&
-    Number.isFinite(routeSplit.segmentIndex) &&
-    Number.isFinite(routeSplit.tOnSegment);
   /**
-   * GPU `lineTrimOffset` is sensitive to the *exact* [0,1] fraction matching the GeoJSON
-   * vertex parameterization. Native `fractionTraveled` + JS polyline can disagree slightly
-   * with iOS Mapbox Maps v11, which made the **ahead** line vanish after the first movement
-   * while trim mode was active. When we have snap-derived `routeSplit` (same basis as puck),
-   * prefer the legacy split-ring path — it stays visually correct.
+   * Prefer the eased fraction for normal nav drawing even when a routeSplit is
+   * available. The split is authoritative but arrives in native/progress ticks;
+   * using it for every visual update makes the passed/ahead color change step
+   * forward in chunks. `fractionTraveled` is eased from that same progress basis
+   * so the gray route slides under the puck instead of popping.
    */
   const useTrimOffset =
     isNavigating &&
     !hasCongestion &&
     typeof fractionTraveled === 'number' &&
     Number.isFinite(fractionTraveled) &&
-    rawFraction > TRIM_OFFSET_MIN_FRACTION &&
-    !hasAuthoritativeSplit;
+    rawFraction > TRIM_OFFSET_MIN_FRACTION;
   const trimFraction = useTrimOffset ? rawFraction : 0;
 
   const fullCoords = useMemo(
@@ -236,7 +231,7 @@ export default React.memo(function RouteOverlay({
     }
 
     return { type: 'FeatureCollection' as const, features };
-  }, [polyline, fullCoords, isNavigating, routeSplit, hasCongestion, congestion, showCongestion, useTrimOffset]);
+  }, [polyline, fullCoords, isNavigating, routeSplit, hasCongestion, congestion, useTrimOffset]);
 
   if (polyline.length < 2 || !MapboxGL) return null;
 
@@ -297,7 +292,7 @@ export default React.memo(function RouteOverlay({
     <MapboxGL.ShapeSource
       id={ROUTE_SOURCE_ID}
       shape={geoJSON as GeoJSON.FeatureCollection}
-      lineMetrics={false}
+      lineMetrics={useTrimOffset}
     >
       {/* Continuous glow on the full-route base feature — no split seam */}
       <MapboxGL.LineLayer

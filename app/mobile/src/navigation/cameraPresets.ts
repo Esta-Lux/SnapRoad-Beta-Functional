@@ -66,7 +66,7 @@ const MODE_CONFIG: Record<
 > = {
   calm: {
     minPitch: 44,
-    maxPitch: 72,
+    maxPitch: 68,
     basePadBottom: NAV_MAP_BOTTOM_CHROME_PX,
     padTop: 286,
     padLeft: 30,
@@ -78,7 +78,7 @@ const MODE_CONFIG: Record<
   },
   adaptive: {
     minPitch: 42,
-    maxPitch: 70,
+    maxPitch: 66,
     basePadBottom: NAV_MAP_BOTTOM_CHROME_PX,
     padTop: 270,
     padLeft: 28,
@@ -89,8 +89,8 @@ const MODE_CONFIG: Record<
     transitionMs: 920,
   },
   sport: {
-    minPitch: 50,
-    maxPitch: 72,
+    minPitch: 48,
+    maxPitch: 64,
     basePadBottom: NAV_MAP_BOTTOM_CHROME_PX,
     padTop: 242,
     padLeft: 24,
@@ -167,7 +167,7 @@ export function getCameraPreset({
     pitch += sportBoost.dPitch;
   }
   const openRoadPitchBoost =
-    mode === 'calm' ? 3.2 * longRoad01 : mode === 'adaptive' ? 4.6 * longRoad01 : 5.8 * longRoad01;
+    mode === 'calm' ? 2.4 * longRoad01 : mode === 'adaptive' ? 3.0 * longRoad01 : 2.4 * longRoad01;
   pitch += openRoadPitchBoost;
 
   pitch = clamp(pitch, cfg.minPitch, cfg.maxPitch);
@@ -179,7 +179,7 @@ export function getCameraPreset({
     safeAreaTop +
     NAV_TURN_CARD_RESERVE_PX +
     speedTopBoost +
-    longRoad01 * (mode === 'calm' ? 54 : mode === 'adaptive' ? 76 : 112);
+    longRoad01 * (mode === 'calm' ? 42 : mode === 'adaptive' ? 58 : 72);
   let paddingBottom = cfg.basePadBottom + safeAreaBottom;
   if (nextManeuverDistanceMeters < cfg.turnApproachMeters) {
     paddingTop += cfg.turnApproachPadBoost * (0.5 + 0.5 * turnNear01);
@@ -188,8 +188,8 @@ export function getCameraPreset({
   if (mode === 'sport') {
     paddingTop += sportHighwayTopPad(mph);
   }
-  paddingBottom -= (mode === 'calm' ? 28 : mode === 'adaptive' ? 38 : 58) * longRoad01;
-  paddingBottom = Math.max(cfg.basePadBottom + safeAreaBottom - (mode === 'sport' ? 56 : 38), paddingBottom);
+  paddingBottom -= (mode === 'calm' ? 20 : mode === 'adaptive' ? 28 : 38) * longRoad01;
+  paddingBottom = Math.max(cfg.basePadBottom + safeAreaBottom - (mode === 'sport' ? 38 : 30), paddingBottom);
 
   const padding: CameraPadding = {
     paddingTop,
