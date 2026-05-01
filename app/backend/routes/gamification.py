@@ -839,7 +839,14 @@ def get_driving_score(user: CurrentUser):
         base_score = int(profile.get("safety_score", 0))
         is_premium = profile_row_is_premium(profile)
 
-        trips = sb.table("trips").select("safety_score, hard_braking_events, speeding_events, created_at").eq("profile_id", user_id).order("created_at", desc=True).limit(50).execute()
+        trips = (
+            sb.table("trips")
+            .select("safety_score, hard_braking_events, speeding_events, ended_at, created_at")
+            .eq("profile_id", user_id)
+            .order("ended_at", desc=True)
+            .limit(50)
+            .execute()
+        )
         rows = trips.data or []
 
         if not rows:
@@ -934,11 +941,11 @@ def get_weekly_recap(
             trip_q = (
                 sb.table("trips")
                 .select(
-                    "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, created_at, hard_braking_events, speeding_events, max_speed_mph, avg_speed_mph"
+                    "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, ended_at, created_at, hard_braking_events, speeding_events, max_speed_mph, avg_speed_mph"
                 )
                 .eq("profile_id", user_id)
-                .gte("created_at", start)
-                .lte("created_at", end)
+                .gte("ended_at", start)
+                .lte("ended_at", end)
             )
             trip_res = trip_q.execute()
             redemption_res = (
@@ -954,10 +961,10 @@ def get_weekly_recap(
             trip_res = (
                 sb.table("trips")
                 .select(
-                    "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, created_at, hard_braking_events, speeding_events, max_speed_mph, avg_speed_mph"
+                    "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, ended_at, created_at, hard_braking_events, speeding_events, max_speed_mph, avg_speed_mph"
                 )
                 .eq("profile_id", user_id)
-                .gte("created_at", cutoff)
+                .gte("ended_at", cutoff)
                 .execute()
             )
             redemption_res = sb.table("redemptions").select("id").eq("user_id", user_id).gte("created_at", cutoff).execute()

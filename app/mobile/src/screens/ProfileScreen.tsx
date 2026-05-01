@@ -332,7 +332,7 @@ export default function ProfileScreen() {
       const recentTrips = Array.isArray(historyRoot) ? historyRoot : [];
       setTripHistoryRows(
         recentTrips.map((t: Record<string, unknown>, idx: number) => {
-          const rawDate = String(t.date ?? '');
+          const rawDate = String(t.ended_at ?? t.date ?? '');
           let dateStr = '';
           let timeStr = '';
           let tripEndedAtIso = rawDate;
@@ -354,8 +354,8 @@ export default function ProfileScreen() {
             id: String(t.id ?? idx),
             date: dateStr || rawDate,
             time: timeStr,
-            origin: String(t.origin ?? 'Start'),
-            destination: String(t.destination ?? 'End'),
+            origin: String(t.origin ?? 'Start').trim() || 'Start',
+            destination: String(t.destination ?? 'End').trim() || 'End',
             distance_miles: dist,
             duration_minutes: durMin,
             gems_earned: Number(t.gems_earned ?? 0),
@@ -368,6 +368,10 @@ export default function ProfileScreen() {
             speeding_events: Number(t.speeding_events ?? 0),
             tripEndedAtIso,
           };
+        }).sort((a, b) => {
+          const ams = Date.parse(a.tripEndedAtIso || '');
+          const bms = Date.parse(b.tripEndedAtIso || '');
+          return (Number.isFinite(bms) ? bms : 0) - (Number.isFinite(ams) ? ams : 0);
         }),
       );
       const gemData = (unwrapProfileApiData(gemsRes?.data) as Record<string, unknown>) ?? {};

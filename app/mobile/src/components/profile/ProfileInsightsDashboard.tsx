@@ -24,6 +24,7 @@ import {
   formatPctDelta,
   getPresetRange,
   getPreviousRange,
+  tripTimeMs,
   type TimeRangePreset,
 } from './insightsAggregations';
 import type {
@@ -52,6 +53,21 @@ type DrivingMetric = {
 };
 
 type OrionTip = { id: string; metric: string; tip: string; priority: string };
+
+function cleanTripEndpoint(value: string | undefined, fallback: string): string {
+  const v = (value || '').trim();
+  if (!v) return fallback;
+  if (fallback === 'Start location' && /^start$/i.test(v)) return fallback;
+  if (fallback === 'Destination' && /^end$/i.test(v)) return fallback;
+  return v;
+}
+
+function routeTitle(trip: ProfileTripHistoryItem): string {
+  const from = cleanTripEndpoint(trip.origin, 'Start location');
+  const to = cleanTripEndpoint(trip.destination, 'Destination');
+  if (from === 'Start location' && to === 'Destination') return 'Recorded drive';
+  return `${from} › ${to}`;
+}
 
 function categoryIcon(cat: string): keyof typeof Ionicons.glyphMap {
   const c = (cat || '').toLowerCase();
@@ -115,7 +131,7 @@ export default function ProfileInsightsDashboard({
   const previousRange = useMemo(() => getPreviousRange(range), [range.startMs, range.endMs]);
 
   const filteredTrips = useMemo(
-    () => filterTripsInRange(tripHistoryRows, range),
+    () => filterTripsInRange(tripHistoryRows, range).sort((a, b) => tripTimeMs(b) - tripTimeMs(a)),
     [tripHistoryRows, range.startMs, range.endMs],
   );
   const previousTrips = useMemo(
@@ -154,6 +170,13 @@ export default function ProfileInsightsDashboard({
     }
     return m;
   }, [kpis.miles, preset, isPremium, weeklyRecap.totalMiles]);
+  const kpiTripsDisplay = useMemo(() => {
+    let n = kpis.trips;
+    if (preset === 'week' && isPremium && weeklyRecap.totalTrips > 0) {
+      n = Math.max(n, weeklyRecap.totalTrips);
+    }
+    return n;
+  }, [kpis.trips, preset, isPremium, weeklyRecap.totalTrips]);
 
   /** Top speed display — prefer in-range max; fall back to server recap when the range is "week". */
   const topSpeedDisplay = useMemo(() => {
@@ -399,7 +422,7 @@ export default function ProfileInsightsDashboard({
             <View style={{ flex: 1 }}>
               <Text style={styles.heroEyebrow}>YOUR TRACKING</Text>
               <Text style={styles.heroTitle}>
-                {kpis.trips} {kpis.trips === 1 ? 'trip' : 'trips'} · {kpiMilesDisplay.toFixed(1)} mi
+                {kpiTripsDisplay} {kpiTripsDisplay === 1 ? 'trip' : 'trips'} · {kpiMilesDisplay.toFixed(1)} mi
               </Text>
               <Text style={styles.heroSub}>
                 {preset === 'day'
@@ -470,7 +493,7 @@ export default function ProfileInsightsDashboard({
         ) : null}
 
         <View style={styles.kpiGrid}>
-          {kpiTile('car-outline', String(kpis.trips), 'Trips', deltas.trips, colors.primary)}
+          {kpiTile('car-outline', String(kpiTripsDisplay), 'Trips', deltas.trips, colors.primary)}
           {kpiTile(
             'location-outline',
             kpiMilesDisplay.toFixed(1),
@@ -667,7 +690,7 @@ export default function ProfileInsightsDashboard({
                     {trip.date} · {trip.time}
                   </Text>
                   <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }} numberOfLines={2}>
-                    {trip.origin} › {trip.destination}
+                    {routeTitle(trip)}
                   </Text>
                   <Text style={{ color: colors.textSecondary, fontSize: 11 }}>
                     {Number(trip.distance_miles ?? 0).toFixed(1)} mi · {trip.duration_minutes ?? 0} min
@@ -822,14 +845,18 @@ export default function ProfileInsightsDashboard({
               <Ionicons name="navigate-outline" size={18} color={colors.primary} />
               <View style={{ flex: 1, marginLeft: 10 }}>
                 <Text style={{ color: colors.textSecondary, fontSize: 11 }}>From</Text>
-                <Text style={{ color: colors.text, fontWeight: '700' }}>{tripDetail.origin}</Text>
+                <Text style={{ color: colors.text, fontWeight: '700' }}>
+                  {cleanTripEndpoint(tripDetail.origin, 'Start location')}
+                </Text>
               </View>
             </View>
             <View style={styles.tripDetailRow}>
               <Ionicons name="flag-outline" size={18} color={colors.primary} />
               <View style={{ flex: 1, marginLeft: 10 }}>
                 <Text style={{ color: colors.textSecondary, fontSize: 11 }}>To</Text>
-                <Text style={{ color: colors.text, fontWeight: '700' }}>{tripDetail.destination}</Text>
+                <Text style={{ color: colors.text, fontWeight: '700' }}>
+                  {cleanTripEndpoint(tripDetail.destination, 'Destination')}
+                </Text>
               </View>
             </View>
             <View style={[styles.tripStatGrid, { borderColor: colors.border }]}>

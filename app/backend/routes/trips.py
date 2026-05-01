@@ -340,6 +340,8 @@ def get_recent_trips_mobile(
             out.append({
                 "id": str(r.get("id")),
                 "date": r.get("ended_at") or r.get("started_at") or "",
+                "started_at": r.get("started_at") or "",
+                "ended_at": r.get("ended_at") or "",
                 "origin": r.get("origin") or "Start",
                 "destination": r.get("destination") or "End",
                 "distance": float(r.get("distance_miles") or 0),
@@ -350,7 +352,10 @@ def get_recent_trips_mobile(
                 "gems_earned": int(r.get("gems_earned") or 0),
                 "xp_earned": int(r.get("xp_earned") or 0),
                 "avg_speed_mph": float(r.get("avg_speed_mph") or r.get("avg_speed") or 0),
+                "max_speed_mph": float(r.get("max_speed_mph") or 0),
                 "fuel_used_gallons": float(r.get("fuel_used_gallons") or 0),
+                "hard_braking_events": int(r.get("hard_braking_events") or 0),
+                "speeding_events": int(r.get("speeding_events") or 0),
             })
         return {"success": True, "data": out}
     except Exception as exc:

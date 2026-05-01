@@ -896,15 +896,6 @@ export default function MapScreen() {
         : undefined,
   });
   /**
-   * Route split uses the same eased scalar as the puck/camera. The target still
-   * comes from native `fractionTraveled` when the SDK is authoritative; easing
-   * only fills visual frames between native samples.
-   */
-  const routeOverlayFraction = useMemo(() => {
-    if (!nav.isNavigating) return null;
-    return smoothedFraction;
-  }, [nav.isNavigating, smoothedFraction]);
-  /**
    * Has the nav pipeline actually produced real progress yet? Used to gate
    * `smoothedNavPuckCoord` below — without this check the smoothed fraction
    * is pinned to 0 during the pre-progress waiting window (SDK 'idle' /
@@ -1371,13 +1362,27 @@ export default function MapScreen() {
    * puck. This avoids the dot riding one point while the blue/gray seam uses
    * another, and also keeps the line visible on native builds where
    * `lineTrimOffset` can intermittently hide the whole route after Start.
+   *
+   * Native ShapeSource updates are expensive, so the split sent to RouteOverlay
+   * is decimated to a few meters while the puck/camera keep reading the full
+   * RAF-smoothed fraction. This keeps long trips from rebuilding route GeoJSON
+   * sixty times per second.
    */
+  const polylineToRenderLenMeters = useMemo(
+    () => (polylineToRender && polylineToRender.length >= 2 ? polylineLengthMeters(polylineToRender) : 0),
+    [polylineToRender],
+  );
+  const routeOverlayCumMeters = useMemo(() => {
+    if (!nav.isNavigating || !polylineToRender || polylineToRenderLenMeters <= 1) return 0;
+    const stepM = drivingMode === 'sport' ? 2.5 : drivingMode === 'adaptive' ? 3.25 : 4;
+    const meters = Math.max(0, Math.min(polylineToRenderLenMeters, smoothedFraction * polylineToRenderLenMeters));
+    return Math.max(0, Math.min(polylineToRenderLenMeters, Math.round(meters / stepM) * stepM));
+  }, [nav.isNavigating, polylineToRender, polylineToRenderLenMeters, drivingMode, smoothedFraction]);
   const navigationRouteSplit = useMemo((): RouteSplitForOverlay | null => {
     if (!nav.isNavigating) return null;
     if (polylineToRender && polylineToRender.length >= 2) {
-      const len = polylineLengthMeters(polylineToRender);
-      const st = len > 1
-        ? segmentAndTFromCumAlongPolyline(smoothedFraction * len, polylineToRender)
+      const st = polylineToRenderLenMeters > 1
+        ? segmentAndTFromCumAlongPolyline(routeOverlayCumMeters, polylineToRender)
         : null;
       if (st) return { segmentIndex: st.segmentIndex, tOnSegment: st.tOnSegment };
     }
@@ -1387,7 +1392,8 @@ export default function MapScreen() {
   }, [
     nav.isNavigating,
     polylineToRender,
-    smoothedFraction,
+    polylineToRenderLenMeters,
+    routeOverlayCumMeters,
     nav.navigationProgress?.routeSplitSnap?.segmentIndex,
     nav.navigationProgress?.routeSplitSnap?.t,
     nav.navigationProgress?.snapped?.segmentIndex,
@@ -1874,6 +1880,7 @@ export default function MapScreen() {
   /** Map camera bearing (° CW from north) — drives nav puck screen rotation vs absolute course. */
   const [mapCameraHeadingDeg, setMapCameraHeadingDeg] = useState(0);
   const mapZoomDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastMapCameraHeadingRef = useRef<{ value: number; at: number }>({ value: 0, at: 0 });
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
   const [nearbyOffersPickerOpen, setNearbyOffersPickerOpen] = useState(false);
   useEffect(() => {
@@ -3800,7 +3807,16 @@ export default function MapScreen() {
   const handleMapCameraChanged = useCallback((state: { properties?: { zoom?: number; heading?: number } }) => {
     const h = state?.properties?.heading;
     if (typeof h === 'number' && Number.isFinite(h)) {
-      setMapCameraHeadingDeg(h);
+      const headingDeg = ((h % 360) + 360) % 360;
+      const last = lastMapCameraHeadingRef.current;
+      const now = Date.now();
+      const delta = Math.abs(((headingDeg - last.value + 540) % 360) - 180);
+      const minDelta = nav.isNavigating ? 1.5 : 0.4;
+      const minIntervalMs = nav.isNavigating ? 220 : 80;
+      if (delta >= minDelta || now - last.at >= minIntervalMs) {
+        lastMapCameraHeadingRef.current = { value: headingDeg, at: now };
+        setMapCameraHeadingDeg(headingDeg);
+      }
     }
     const z = state?.properties?.zoom;
     if (typeof z !== 'number' || !isFinite(z)) return;
@@ -3809,7 +3825,7 @@ export default function MapScreen() {
       mapZoomDebounceRef.current = null;
       setMapZoomLevel(z);
     }, 120);
-  }, []);
+  }, [nav.isNavigating]);
 
   const autoRelockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleMapTouch = useCallback(() => {
@@ -4405,7 +4421,7 @@ export default function MapScreen() {
                     polyline={polylineToRender}
                     isNavigating={nav.isNavigating}
                     routeSplit={navigationRouteSplit}
-                    fractionTraveled={nav.isNavigating ? routeOverlayFraction : null}
+                    fractionTraveled={null}
                     routeColor={navRouteColors.routeColor}
                     casingColor={navRouteColors.routeCasing}
                     passedColor={navRouteColors.passedColor}
