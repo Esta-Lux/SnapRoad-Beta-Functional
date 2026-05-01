@@ -186,6 +186,17 @@ export interface GeocodeResult {
   /** When `open_now` was last observed (details API or search response); used for TTL in Recent list. */
   open_now_last_updated_at?: number;
   price_level?: number;
+  /**
+   * Server-supplied distance from the user's location (meters). Google
+   * autocomplete returns this on every prediction even when no `lat/lng`
+   * is included in the response. The mobile sort + row label fall back
+   * to it whenever the row's lat/lng is missing or set to (0, 0).
+   */
+  distance_meters?: number;
+  /** Google Places rating (0–5). Surfaced in card rows when present. */
+  rating?: number;
+  /** Total number of reviews backing `rating`. */
+  user_ratings_total?: number;
 }
 
 /** Parsed search box query: strips intent phrases and sets flags for local-first / open-now behavior. */

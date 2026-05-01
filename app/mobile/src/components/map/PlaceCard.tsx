@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, Dimensions, ScrollView } from 'react-native';
+import { View, Text, Pressable, TouchableOpacity, StyleSheet, Platform, Dimensions, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   SlideInDown, SlideOutDown,
@@ -7,6 +7,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 
 interface Props {
   name: string;
@@ -24,6 +25,16 @@ interface Props {
   onSave?: () => void;
   onDismiss: () => void;
   isLight?: boolean;
+  /**
+   * Optional theme-token palette so the card stays visually cohesive with
+   * the rest of the app (search bar, profile insights). When omitted the
+   * legacy slate/blue scheme is used as a safe default.
+   */
+  accent?: {
+    primary: string;
+    gradientStart: string;
+    gradientEnd: string;
+  };
 }
 
 function categoryIcon(maki?: string, category?: string): keyof typeof Ionicons.glyphMap {
@@ -66,8 +77,12 @@ export default function PlaceCard({
   onSave,
   onDismiss,
   isLight = false,
+  accent,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const accentPrimary = accent?.primary ?? '#3B82F6';
+  const ctaStart = accent?.gradientStart ?? '#1D4ED8';
+  const ctaEnd = accent?.gradientEnd ?? '#3B82F6';
   const bg = isLight ? '#ffffff' : '#111827';
   const nameColor = isLight ? '#111827' : '#f8fafc';
   const addrColor = isLight ? '#64748b' : '#94a3b8';
@@ -75,12 +90,16 @@ export default function PlaceCard({
   const borderColor = isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)';
   const chipBg = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.06)';
   const chipText = isLight ? '#334155' : '#cbd5e1';
-  const iconBg = isLight ? '#eff6ff' : 'rgba(59,130,246,0.15)';
+  const iconBg = isLight
+    ? `${accentPrimary}1A` // ~10% alpha
+    : `${accentPrimary}26`; // ~15% alpha
   const dist = formatDist(distanceMeters);
   const catLabel = categoryLabel(category);
   const icon = categoryIcon(maki, category);
 
   const translateY = useSharedValue(0);
+  const dirScale = useSharedValue(1);
+  const saveScale = useSharedValue(1);
 
   const panGesture = Gesture.Pan()
     .onUpdate((e) => {
@@ -97,6 +116,8 @@ export default function PlaceCard({
   const animStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
   }));
+  const dirAnim = useAnimatedStyle(() => ({ transform: [{ scale: dirScale.value }] }));
+  const saveAnim = useAnimatedStyle(() => ({ transform: [{ scale: saveScale.value }] }));
 
   return (
     <GestureDetector gesture={panGesture}>
@@ -116,7 +137,7 @@ export default function PlaceCard({
         >
           <View style={styles.row}>
             <View style={[styles.iconCircle, { backgroundColor: iconBg }]}>
-              <Ionicons name={icon} size={20} color="#3B82F6" />
+              <Ionicons name={icon} size={20} color={accentPrimary} />
             </View>
             <View style={styles.info}>
               <Text style={[styles.name, { color: nameColor }]} numberOfLines={4}>{name}</Text>
@@ -145,21 +166,56 @@ export default function PlaceCard({
         </ScrollView>
 
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.dirBtn} onPress={onDirections} activeOpacity={0.8}>
-            <Ionicons name="navigate" size={16} color="#fff" />
-            <Text style={styles.dirText}>Directions</Text>
-          </TouchableOpacity>
-          {(onToggleFavorite || onSave) ? (
-            <TouchableOpacity
-              style={[styles.saveBtn, { borderColor: isFavorite ? '#EF4444' : borderColor, backgroundColor: isFavorite ? 'rgba(239,68,68,0.12)' : 'rgba(59,130,246,0.08)' }]}
-              onPress={() => { void (onToggleFavorite?.() ?? onSave?.()); }}
-              activeOpacity={0.8}
+          <Animated.View style={[{ flex: 2 }, dirAnim]}>
+            <Pressable
+              onPressIn={() => {
+                dirScale.value = withSpring(0.97, { damping: 18, stiffness: 320 });
+              }}
+              onPressOut={() => {
+                dirScale.value = withSpring(1, { damping: 16, stiffness: 240 });
+              }}
+              onPress={onDirections}
+              style={styles.dirBtnWrap}
             >
-              <Ionicons name={isFavorite ? 'heart' : 'heart-outline'} size={16} color={isFavorite ? '#EF4444' : '#3B82F6'} />
-              <Text style={[styles.saveText, { color: isFavorite ? '#EF4444' : '#3B82F6' }]}>
-                {isFavorite ? 'Favorites' : 'Add to Favorites'}
-              </Text>
-            </TouchableOpacity>
+              <LinearGradient
+                colors={[ctaStart, ctaEnd]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.dirBtn}
+              >
+                <Ionicons name="navigate" size={16} color="#fff" />
+                <Text style={styles.dirText}>Directions</Text>
+              </LinearGradient>
+            </Pressable>
+          </Animated.View>
+          {(onToggleFavorite || onSave) ? (
+            <Animated.View style={[{ flex: 1 }, saveAnim]}>
+              <Pressable
+                onPressIn={() => {
+                  saveScale.value = withSpring(0.97, { damping: 18, stiffness: 320 });
+                }}
+                onPressOut={() => {
+                  saveScale.value = withSpring(1, { damping: 16, stiffness: 240 });
+                }}
+                onPress={() => { void (onToggleFavorite?.() ?? onSave?.()); }}
+                style={[
+                  styles.saveBtn,
+                  {
+                    borderColor: isFavorite ? '#EF4444' : borderColor,
+                    backgroundColor: isFavorite ? 'rgba(239,68,68,0.12)' : `${accentPrimary}14`,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={isFavorite ? 'heart' : 'heart-outline'}
+                  size={16}
+                  color={isFavorite ? '#EF4444' : accentPrimary}
+                />
+                <Text style={[styles.saveText, { color: isFavorite ? '#EF4444' : accentPrimary }]}>
+                  {isFavorite ? 'Saved' : 'Save'}
+                </Text>
+              </Pressable>
+            </Animated.View>
           ) : null}
         </View>
       </Animated.View>
@@ -201,16 +257,15 @@ const styles = StyleSheet.create({
   catText: { fontSize: 11, fontWeight: '600' },
   closeBtn: { width: 30, height: 30, borderRadius: 15, justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
   actions: { flexDirection: 'row', gap: 10, marginTop: 14, marginBottom: 4, flexShrink: 0 },
+  dirBtnWrap: { borderRadius: 14, overflow: 'hidden' },
   dirBtn: {
-    flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#2563EB', borderRadius: 14, paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: '#1D4ED8',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    borderRadius: 14, paddingVertical: 14,
   },
   dirText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   saveBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    backgroundColor: 'rgba(59,130,246,0.08)', borderRadius: 14, paddingVertical: 14, borderWidth: 1,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderRadius: 14, paddingVertical: 14, borderWidth: 1,
   },
-  saveText: { color: '#3B82F6', fontSize: 15, fontWeight: '700' },
+  saveText: { fontSize: 15, fontWeight: '700' },
 });

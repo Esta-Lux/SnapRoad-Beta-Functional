@@ -1,8 +1,19 @@
-import React from 'react';
-import { FlatList, Image, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { FlatList, Image, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeOutUp,
+  Layout,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 
 import type { GeocodeResult } from '../../lib/directions';
+import { formatRowDistance } from '../../lib/placeSearchRanking';
 import { formatOpenLabelForSearchRow } from '../../utils/placeHours';
 import type { SavedLocation } from '../../types';
 
@@ -11,6 +22,8 @@ type Chip = {
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
 };
+
+type SearchPanelTab = 'recent' | 'saved' | 'suggested';
 
 type Props = {
   visible: boolean;
@@ -43,6 +56,11 @@ type Props = {
   recentSearches: GeocodeResult[];
   location: { lat: number; lng: number };
   onSelectResult: (r: GeocodeResult) => void;
+  /**
+   * Kept for backwards compatibility with existing callers that supplied
+   * a haversine util. The component now sources distance via
+   * `formatRowDistance` which understands `distance_meters` as a fallback.
+   */
   haversineMeters: (lat1: number, lng1: number, lat2: number, lng2: number) => number;
   placePhotoThumbUri: (photoRef?: string, maxWidth?: number) => string | undefined;
   searchResultPriceHint: (item: GeocodeResult) => string | null;
@@ -59,9 +77,42 @@ const CATEGORY_CHIPS: Chip[] = [
   { key: 'grocery', label: 'Grocery', icon: 'cart-outline' },
 ];
 
+/**
+ * Premium search bar with animated dropdown and segmented tabs.
+ *
+ * Visual upgrades over the previous static panel:
+ *   - Spring-eased focus highlight on the search pill (border glow + lift).
+ *   - Slide+fade entry on the dropdown via `Reanimated.FadeInDown`.
+ *   - Segmented Recent / Saved / Suggested tabs when the query is empty so
+ *     the user has structured affordances instead of one collapsed list.
+ *   - Pressable rows that scale slightly on press, giving tactile feedback.
+ *   - Skeleton placeholder rows while autocomplete is in flight.
+ *   - Always-visible distance (uses `distance_meters` server fallback).
+ */
 export default function MapSearchTopBar(props: Props) {
   if (!props.visible) return null;
   const s = props.styles as Record<string, any>;
+
+  const focusGlow = useSharedValue(props.isSearchFocused ? 1 : 0);
+  React.useEffect(() => {
+    focusGlow.value = withTiming(props.isSearchFocused ? 1 : 0, { duration: 220 });
+  }, [props.isSearchFocused, focusGlow]);
+
+  const pillAnim = useAnimatedStyle(() => ({
+    borderColor: focusGlow.value > 0.5 ? props.colors.primary : props.colors.border,
+    shadowOpacity: 0.04 + focusGlow.value * 0.12,
+    transform: [{ translateY: -focusGlow.value * 1 }],
+  }));
+
+  const queryActive = props.searchQuery.trim().length > 0;
+  const favoritesAndQuick = useMemo(
+    () => props.savedPlaces.filter((p) => ['home', 'work', 'favorite'].includes(p.category)).slice(0, 8),
+    [props.savedPlaces],
+  );
+
+  // Tab state lives locally — only meaningful when the panel is open AND
+  // the query is empty (the active query branch shows a single results list).
+  const [activeTab, setActiveTab] = useState<SearchPanelTab>('recent');
 
   return (
     <View style={[s.topBar, { top: props.topInset + 8, zIndex: 15 }]} pointerEvents="box-none">
@@ -72,7 +123,13 @@ export default function MapSearchTopBar(props: Props) {
         >
           <Ionicons name="menu" size={18} color={props.colors.text} />
         </TouchableOpacity>
-        <View style={[s.searchPill, { backgroundColor: props.colors.surface, borderColor: props.colors.border }]}>
+        <Animated.View
+          style={[
+            s.searchPill,
+            { backgroundColor: props.colors.surface, borderColor: props.colors.border },
+            pillAnim,
+          ]}
+        >
           <Ionicons name="search-outline" size={15} color={props.colors.textTertiary} />
           <TextInput
             style={[s.searchInput, { color: props.colors.text }]}
@@ -100,7 +157,7 @@ export default function MapSearchTopBar(props: Props) {
               <Ionicons name="chatbubbles-outline" size={16} color={props.colors.textTertiary} />
             </TouchableOpacity>
           )}
-        </View>
+        </Animated.View>
       </View>
 
       {!props.isSearchFocused && (
@@ -125,12 +182,12 @@ export default function MapSearchTopBar(props: Props) {
         />
       )}
 
-      {!props.isSearchFocused && props.savedPlaces.length > 0 && (
+      {!props.isSearchFocused && favoritesAndQuick.length > 0 && (
         <FlatList
           horizontal
           showsHorizontalScrollIndicator={false}
           style={{ marginTop: 8 }}
-          data={props.savedPlaces.filter((p) => ['home', 'work', 'favorite'].includes(p.category)).slice(0, 5)}
+          data={favoritesAndQuick.slice(0, 5)}
           keyExtractor={(p) => String(p.id)}
           renderItem={({ item }) => (
             <TouchableOpacity
@@ -152,13 +209,31 @@ export default function MapSearchTopBar(props: Props) {
       )}
 
       {props.isSearchFocused && (
-        <View style={[s.results, { backgroundColor: props.colors.surface, borderColor: props.colors.border }]}>
-          {!props.searchQuery.trim() && props.recentSearches.length > 0 && <Text style={[s.recentHeader, { color: props.colors.textTertiary }]}>Recent</Text>}
-          {props.isSearching && props.searchQuery.trim() ? (
-            <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-              <Text style={{ color: props.colors.textTertiary, fontSize: 13 }}>Searching...</Text>
-            </View>
-          ) : props.searchQuery.trim() && props.searchResults.length === 0 ? (
+        <Animated.View
+          entering={FadeInDown.duration(180).damping(22).stiffness(220)}
+          exiting={FadeOutUp.duration(140)}
+          layout={Layout.springify().damping(20).stiffness(220)}
+          style={[
+            s.results,
+            premiumStyles.panel,
+            { backgroundColor: props.colors.surface, borderColor: props.colors.border },
+          ]}
+        >
+          {!queryActive && (
+            <SegmentedTabs
+              active={activeTab}
+              onChange={setActiveTab}
+              colors={props.colors}
+              counts={{
+                recent: props.recentSearches.length,
+                saved: props.savedPlaces.length,
+                suggested: 0,
+              }}
+            />
+          )}
+          {props.isSearching && queryActive ? (
+            <SkeletonResults colors={props.colors} />
+          ) : queryActive && props.searchResults.length === 0 ? (
             <View style={{ paddingVertical: 24, alignItems: 'center' }}>
               <Ionicons name="search-outline" size={22} color={props.colors.textTertiary} />
               <Text style={{ color: props.colors.textTertiary, fontSize: 13, marginTop: 6 }}>
@@ -167,55 +242,359 @@ export default function MapSearchTopBar(props: Props) {
             </View>
           ) : (
             <FlatList
-              data={props.searchQuery.trim() ? props.searchResults : props.recentSearches}
+              data={panelData(queryActive, activeTab, props)}
               keyExtractor={(item, i) => `${item.place_id || item.name}-${i}`}
               keyboardShouldPersistTaps="handled"
-              renderItem={({ item }) => {
-                const pt = item.placeType || '';
-                const icon: keyof typeof Ionicons.glyphMap =
-                  pt.includes('restaurant') || pt.includes('food') || pt.includes('cafe') ? 'restaurant-outline'
-                  : pt.includes('gas') || pt.includes('fuel') ? 'flash-outline'
-                  : pt.includes('lodging') || pt.includes('hotel') ? 'bed-outline'
-                  : pt.includes('store') || pt.includes('shop') || pt.includes('grocery') ? 'cart-outline'
-                  : pt.includes('park') ? 'leaf-outline'
-                  : pt.includes('hospital') || pt.includes('pharmacy') || pt.includes('health') ? 'medkit-outline'
-                  : pt.includes('school') || pt.includes('university') ? 'school-outline'
-                  : item.place_id ? 'business-outline'
-                  : 'location-outline';
-                const hasCoords = item.lat !== 0 && item.lng !== 0;
-                const dist = hasCoords ? props.haversineMeters(props.location.lat, props.location.lng, item.lat, item.lng) : null;
-                const distText = dist != null ? (dist < 160 ? `${Math.round(dist * 3.281)} ft` : `${(dist / 1609.344).toFixed(1)} mi`) : '';
-                const suri = props.placePhotoThumbUri(item.photo_reference, 128);
-                const priceHint = props.searchResultPriceHint(item);
-                const isRecentList = !props.searchQuery.trim();
-                const openRow = formatOpenLabelForSearchRow(item, isRecentList);
-                const openColor =
-                  openRow.variant === 'open'
-                    ? '#22C55E'
-                    : openRow.variant === 'closed'
-                      ? '#EF4444'
-                      : props.colors.textTertiary;
-                return (
-                  <TouchableOpacity style={[s.resultRow, { borderBottomColor: props.colors.border }]} onPress={() => props.onSelectResult(item)}>
-                    <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: props.colors.surfaceSecondary, justifyContent: 'center', alignItems: 'center', marginRight: 10, overflow: 'hidden' }}>
-                      {suri ? <Image source={{ uri: suri }} style={{ width: 44, height: 44 }} resizeMode="cover" /> : <Ionicons name={icon} size={18} color={props.colors.primary} />}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[s.resultName, { color: props.colors.text }]} numberOfLines={1}>{item.name}</Text>
-                      <Text style={[s.resultAddr, { color: props.colors.textSecondary }]} numberOfLines={1}>{item.address}</Text>
-                      {priceHint ? <Text style={{ color: props.colors.textTertiary, fontSize: 11, fontWeight: '600', marginTop: 2 }} numberOfLines={2}>{priceHint}</Text> : null}
-                      {openRow.label ? (
-                        <Text style={{ color: openColor, fontSize: 11, fontWeight: '600', marginTop: 2 }}>{openRow.label}</Text>
-                      ) : null}
-                    </View>
-                    {distText ? <Text style={{ color: props.colors.textTertiary, fontSize: 11, fontWeight: '600', marginLeft: 8 }}>{distText}</Text> : null}
-                  </TouchableOpacity>
-                );
-              }}
+              ListEmptyComponent={
+                <View style={{ paddingVertical: 22, alignItems: 'center' }}>
+                  <Ionicons
+                    name={
+                      activeTab === 'saved'
+                        ? 'star-outline'
+                        : activeTab === 'suggested'
+                          ? 'compass-outline'
+                          : 'time-outline'
+                    }
+                    size={20}
+                    color={props.colors.textTertiary}
+                  />
+                  <Text style={{ color: props.colors.textTertiary, fontSize: 12, marginTop: 6 }}>
+                    {activeTab === 'saved'
+                      ? 'No saved places yet — heart a card to add it.'
+                      : activeTab === 'suggested'
+                        ? 'Tap a category chip below to explore.'
+                        : 'No recent searches yet — find a place to get started.'}
+                  </Text>
+                </View>
+              }
+              renderItem={({ item }) => (
+                <PremiumResultRow
+                  item={item}
+                  colors={props.colors}
+                  styles={s}
+                  location={props.location}
+                  placePhotoThumbUri={props.placePhotoThumbUri}
+                  searchResultPriceHint={props.searchResultPriceHint}
+                  onPress={() => props.onSelectResult(item)}
+                  isRecentList={!queryActive}
+                />
+              )}
             />
           )}
-        </View>
+        </Animated.View>
       )}
     </View>
   );
 }
+
+function panelData(
+  queryActive: boolean,
+  tab: SearchPanelTab,
+  props: Props,
+): GeocodeResult[] {
+  if (queryActive) return props.searchResults;
+  if (tab === 'saved') {
+    return props.savedPlaces
+      .filter((p) => p.lat != null && p.lng != null)
+      .map<GeocodeResult>((p) => ({
+        name: p.name,
+        address: p.address ?? '',
+        lat: Number(p.lat),
+        lng: Number(p.lng),
+        placeType: p.category,
+      }));
+  }
+  if (tab === 'suggested') return [];
+  return props.recentSearches;
+}
+
+/* ─── Segmented tabs ──────────────────────────────────────────────────── */
+
+function SegmentedTabs({
+  active,
+  onChange,
+  colors,
+  counts,
+}: {
+  active: SearchPanelTab;
+  onChange: (next: SearchPanelTab) => void;
+  colors: Props['colors'];
+  counts: Record<SearchPanelTab, number>;
+}) {
+  const tabs: { key: SearchPanelTab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+    { key: 'recent', label: 'Recent', icon: 'time-outline' },
+    { key: 'saved', label: 'Saved', icon: 'star-outline' },
+    { key: 'suggested', label: 'Discover', icon: 'compass-outline' },
+  ];
+  return (
+    <View style={[premiumStyles.tabs, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+      {tabs.map((t) => {
+        const sel = active === t.key;
+        const count = counts[t.key];
+        return (
+          <Pressable
+            key={t.key}
+            onPress={() => onChange(t.key)}
+            style={({ pressed }) => [
+              premiumStyles.tab,
+              sel && { backgroundColor: colors.surface, borderColor: colors.primary },
+              pressed && !sel && { opacity: 0.65 },
+            ]}
+          >
+            <Ionicons
+              name={t.icon}
+              size={13}
+              color={sel ? colors.primary : colors.textSecondary}
+              style={{ marginRight: 5 }}
+            />
+            <Text
+              style={[
+                premiumStyles.tabLabel,
+                { color: sel ? colors.primary : colors.textSecondary },
+              ]}
+            >
+              {t.label}
+            </Text>
+            {count > 0 ? (
+              <Text style={[premiumStyles.tabCount, { color: sel ? colors.primary : colors.textTertiary }]}>
+                {count}
+              </Text>
+            ) : null}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/* ─── Premium row with pressable-scale + rich meta ───────────────────── */
+
+function PremiumResultRow({
+  item,
+  colors,
+  styles: s,
+  location,
+  placePhotoThumbUri,
+  searchResultPriceHint,
+  onPress,
+  isRecentList,
+}: {
+  item: GeocodeResult;
+  colors: Props['colors'];
+  styles: Record<string, any>;
+  location: { lat: number; lng: number };
+  placePhotoThumbUri: Props['placePhotoThumbUri'];
+  searchResultPriceHint: Props['searchResultPriceHint'];
+  onPress: () => void;
+  isRecentList: boolean;
+}) {
+  const scale = useSharedValue(1);
+  const pressedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
+  const pt = item.placeType || '';
+  const icon: keyof typeof Ionicons.glyphMap =
+    pt.includes('restaurant') || pt.includes('food') || pt.includes('cafe')
+      ? 'restaurant-outline'
+      : pt.includes('gas') || pt.includes('fuel')
+        ? 'flash-outline'
+        : pt.includes('lodging') || pt.includes('hotel')
+          ? 'bed-outline'
+          : pt.includes('store') || pt.includes('shop') || pt.includes('grocery')
+            ? 'cart-outline'
+            : pt.includes('park')
+              ? 'leaf-outline'
+              : pt.includes('hospital') || pt.includes('pharmacy') || pt.includes('health')
+                ? 'medkit-outline'
+                : pt.includes('school') || pt.includes('university')
+                  ? 'school-outline'
+                  : item.place_id
+                    ? 'business-outline'
+                    : 'location-outline';
+
+  const distText = formatRowDistance(item, location);
+  const suri = placePhotoThumbUri(item.photo_reference, 128);
+  const priceHint = searchResultPriceHint(item);
+  const openRow = formatOpenLabelForSearchRow(item, isRecentList);
+  const openColor =
+    openRow.variant === 'open'
+      ? '#22C55E'
+      : openRow.variant === 'closed'
+        ? '#EF4444'
+        : colors.textTertiary;
+  const ratingText =
+    typeof item.rating === 'number' && Number.isFinite(item.rating) && item.rating > 0
+      ? item.rating.toFixed(1)
+      : null;
+
+  return (
+    <Animated.View entering={FadeIn.duration(160)} style={pressedStyle}>
+      <Pressable
+        style={[s.resultRow, { borderBottomColor: colors.border }]}
+        onPressIn={() => {
+          scale.value = withSpring(0.97, { damping: 18, stiffness: 320 });
+        }}
+        onPressOut={() => {
+          scale.value = withSpring(1, { damping: 16, stiffness: 240 });
+        }}
+        onPress={onPress}
+      >
+        <View
+          style={[
+            premiumStyles.thumb,
+            { backgroundColor: colors.surfaceSecondary },
+          ]}
+        >
+          {suri ? (
+            <Image source={{ uri: suri }} style={premiumStyles.thumbImg} resizeMode="cover" />
+          ) : (
+            <Ionicons name={icon} size={18} color={colors.primary} />
+          )}
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={[s.resultName, { color: colors.text }]} numberOfLines={1}>
+            {item.name}
+          </Text>
+          <Text style={[s.resultAddr, { color: colors.textSecondary }]} numberOfLines={1}>
+            {item.address}
+          </Text>
+          <View style={premiumStyles.metaRow}>
+            {ratingText ? (
+              <View style={premiumStyles.metaPill}>
+                <Ionicons name="star" size={10} color="#FBBF24" />
+                <Text style={[premiumStyles.metaText, { color: colors.textSecondary }]}>
+                  {ratingText}
+                </Text>
+              </View>
+            ) : null}
+            {openRow.label ? (
+              <Text
+                style={[premiumStyles.metaText, { color: openColor }]}
+                numberOfLines={1}
+              >
+                {openRow.label}
+              </Text>
+            ) : null}
+            {priceHint ? (
+              <Text
+                style={[premiumStyles.metaText, { color: colors.textTertiary }]}
+                numberOfLines={1}
+              >
+                {priceHint}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+        {distText ? (
+          <View style={premiumStyles.distChip}>
+            <Ionicons name="navigate-outline" size={11} color={colors.textTertiary} />
+            <Text style={[premiumStyles.distText, { color: colors.textTertiary }]}>{distText}</Text>
+          </View>
+        ) : null}
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+/* ─── Skeleton placeholders during search ────────────────────────────── */
+
+function SkeletonResults({ colors }: { colors: Props['colors'] }) {
+  return (
+    <View style={{ paddingVertical: 6 }}>
+      {[0, 1, 2].map((i) => (
+        <SkeletonRow key={i} colors={colors} />
+      ))}
+    </View>
+  );
+}
+
+function SkeletonRow({ colors }: { colors: Props['colors'] }) {
+  const opacity = useSharedValue(0.3);
+  React.useEffect(() => {
+    opacity.value = withTiming(0.85, { duration: 700 });
+    const id = setInterval(() => {
+      opacity.value = withTiming(opacity.value > 0.5 ? 0.3 : 0.85, { duration: 700 });
+    }, 720);
+    return () => clearInterval(id);
+  }, [opacity]);
+  const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  return (
+    <Animated.View style={[premiumStyles.skelRow, animStyle]}>
+      <View style={[premiumStyles.thumb, { backgroundColor: colors.surfaceSecondary }]} />
+      <View style={{ flex: 1, gap: 6 }}>
+        <View style={[premiumStyles.skelLine, { backgroundColor: colors.surfaceSecondary, width: '70%' }]} />
+        <View style={[premiumStyles.skelLine, { backgroundColor: colors.surfaceSecondary, width: '45%' }]} />
+      </View>
+    </Animated.View>
+  );
+}
+
+const premiumStyles = StyleSheet.create({
+  panel: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 6,
+  },
+  tabs: {
+    flexDirection: 'row',
+    margin: 6,
+    padding: 4,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 4,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  tabLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 0.1 },
+  tabCount: { fontSize: 10, fontWeight: '700', marginLeft: 6 },
+  thumb: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+    overflow: 'hidden',
+  },
+  thumbImg: { width: 44, height: 44 },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+  },
+  metaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  metaText: { fontSize: 11, fontWeight: '600' },
+  distChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginLeft: 8,
+  },
+  distText: { fontSize: 11, fontWeight: '700' },
+  skelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+  },
+  skelLine: {
+    height: 10,
+    borderRadius: 6,
+  },
+});

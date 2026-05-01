@@ -206,7 +206,13 @@ import {
   mapFriendsApiToLocations,
   mergeLiveLocationUpdate,
 } from '../hooks/useMapFriendPresence';
-import { dedupeGeocodeResults, localMatchesForSearchQuery } from '../hooks/useMapSearchSession';
+import { localMatchesForSearchQuery } from '../hooks/useMapSearchSession';
+import {
+  dedupeGeocodeResults,
+  pickBestPlaceLocation,
+  pickNearestNearby,
+  sortGeocodeByEffectiveDistance,
+} from '../lib/placeSearchRanking';
 import { useNearbyOffersOnMap } from '../hooks/useNearbyOffersOnMap';
 import { usePublicAppConfig } from '../hooks/usePublicAppConfig';
 
@@ -2790,21 +2796,19 @@ export default function MapScreen() {
 
   // ─── Callbacks ─────────────────────────────────────────────────────────────
 
-  const sortGeocodeByProximity = useCallback((rows: GeocodeResult[], loc: { lat: number; lng: number }) => {
-    const hasLoc = Math.abs(loc.lat) > 1e-5 || Math.abs(loc.lng) > 1e-5;
-    if (!hasLoc) return rows;
-    return [...rows].sort((a, b) => {
-      const da =
-        a.lat !== 0 && a.lng !== 0
-          ? haversineMeters(loc.lat, loc.lng, a.lat, a.lng)
-          : Number.POSITIVE_INFINITY;
-      const db =
-        b.lat !== 0 && b.lng !== 0
-          ? haversineMeters(loc.lat, loc.lng, b.lat, b.lng)
-          : Number.POSITIVE_INFINITY;
-      return da - db;
-    });
-  }, []);
+  /**
+   * Distance-aware sort that prefers haversine when row coords are usable
+   * and falls back to server-supplied `distance_meters` (Google
+   * autocomplete returns this even when omitting lat/lng) — fixes the
+   * "closest result not surfaced" bug where (0, 0) rows landed in the
+   * infinite-distance bucket and were re-sorted behind farther local
+   * matches. See `placeSearchRanking.ts` for the full contract.
+   */
+  const sortGeocodeByProximity = useCallback(
+    (rows: GeocodeResult[], loc: { lat: number; lng: number }) =>
+      sortGeocodeByEffectiveDistance(rows, loc),
+    [],
+  );
 
   /** Re-align Recent open/closed with `/api/places/details` (same source as PlaceDetailSheet). */
   const refreshRecentOpenStatus = useCallback(async () => {
@@ -2903,6 +2907,13 @@ export default function MapScreen() {
               photo_reference: typeof p.photo_reference === 'string' ? p.photo_reference : undefined,
               open_now: typeof p.open_now === 'boolean' ? p.open_now : undefined,
               price_level: typeof p.price_level === 'number' ? p.price_level : undefined,
+              distance_meters:
+                typeof p.distance_meters === 'number' && Number.isFinite(p.distance_meters)
+                  ? p.distance_meters
+                  : undefined,
+              rating: typeof p.rating === 'number' && Number.isFinite(p.rating) ? p.rating : undefined,
+              user_ratings_total:
+                typeof p.user_ratings_total === 'number' ? p.user_ratings_total : undefined,
             }),
           );
           const merged = dedupeGeocodeResults([...localFirst, ...mapped]);
@@ -2955,6 +2966,13 @@ export default function MapScreen() {
         photo_reference: typeof p.photo_reference === 'string' ? p.photo_reference : undefined,
         open_now: typeof p.open_now === 'boolean' ? p.open_now : undefined,
         price_level: typeof p.price_level === 'number' ? p.price_level : undefined,
+        distance_meters:
+          typeof p.distance_meters === 'number' && Number.isFinite(p.distance_meters)
+            ? p.distance_meters
+            : undefined,
+        rating: typeof p.rating === 'number' && Number.isFinite(p.rating) ? p.rating : undefined,
+        user_ratings_total:
+          typeof p.user_ratings_total === 'number' ? p.user_ratings_total : undefined,
       });
 
     const bucket: GeocodeResult[] = [...localFirst];
@@ -3072,8 +3090,6 @@ export default function MapScreen() {
     };
 
     if (result.place_id) {
-      let lat = Number(result.lat);
-      let lng = Number(result.lng);
       let detailRecord: Record<string, unknown> | null = null;
       try {
         const details = await api.get<any>(`/api/places/details/${result.place_id}`);
@@ -3083,35 +3099,49 @@ export default function MapScreen() {
         detailRecord = null;
       }
 
-      const hasCoords = () =>
-        Number.isFinite(lat) &&
-        Number.isFinite(lng) &&
-        (Math.abs(lat) > 1e-6 || Math.abs(lng) > 1e-6);
+      const detailLat = detailRecord
+        ? Number(
+            detailRecord.lat ??
+              (detailRecord.geometry as { location?: { lat?: number } })?.location?.lat,
+          )
+        : NaN;
+      const detailLng = detailRecord
+        ? Number(
+            detailRecord.lng ??
+              (detailRecord.geometry as { location?: { lng?: number } })?.location?.lng,
+          )
+        : NaN;
 
-      if (detailRecord) {
-        const dlat = Number(
-          detailRecord.lat ?? (detailRecord.geometry as { location?: { lat?: number } })?.location?.lat,
-        );
-        const dlng = Number(
-          detailRecord.lng ?? (detailRecord.geometry as { location?: { lng?: number } })?.location?.lng,
-        );
-        if (!hasCoords() && Number.isFinite(dlat) && Number.isFinite(dlng)) {
-          lat = dlat;
-          lng = dlng;
-        }
-      } else if (!hasCoords()) {
-        lat = NaN;
-        lng = NaN;
-      }
+      /**
+       * Resolve the canonical map coordinate. `pickBestPlaceLocation` always
+       * prefers details geometry when valid — this fixes the
+       * "tap pulls up wrong things" bug where row coords (potentially stale
+       * or duplicated from another provider) used to override authoritative
+       * details geometry whenever `hasCoords()` was true on the row.
+       */
+      const best = pickBestPlaceLocation(
+        Number(result.lat),
+        Number(result.lng),
+        Number.isFinite(detailLat) ? detailLat : null,
+        Number.isFinite(detailLng) ? detailLng : null,
+      );
 
       const observedAt = Date.now();
       const recentRow = buildRecentRow(result, detailRecord, observedAt);
-      const updated = [recentRow, ...recentSearches.filter((r) => r.name !== result.name)].slice(0, 10);
-      setRecentSearches(updated);
-      storage.set('snaproad_recent_searches', JSON.stringify(updated));
+      // Functional updater so concurrent recent updates can't pin a stale snapshot.
+      setRecentSearches((prev) => {
+        const updated = [recentRow, ...prev.filter((r) => r.name !== result.name)].slice(0, 10);
+        storage.set('snaproad_recent_searches', JSON.stringify(updated));
+        return updated;
+      });
 
-      if (hasCoords()) {
-        cameraRef.current?.setCamera({ centerCoordinate: [lng, lat], zoomLevel: 16, pitch: 45, animationDuration: 800 });
+      if (best) {
+        cameraRef.current?.setCamera({
+          centerCoordinate: [best.lng, best.lat],
+          zoomLevel: 16,
+          pitch: 45,
+          animationDuration: 800,
+        });
       } else {
         Alert.alert(
           'Location unavailable',
@@ -3123,8 +3153,8 @@ export default function MapScreen() {
       setSelectedPlace({
         name: result.name,
         address: result.address,
-        lat: hasCoords() ? lat : 0,
-        lng: hasCoords() ? lng : 0,
+        lat: best ? best.lat : 0,
+        lng: best ? best.lng : 0,
         placeType: result.placeType,
         category: result.placeType ?? result.category,
         price_level: result.price_level,
@@ -3139,9 +3169,11 @@ export default function MapScreen() {
       open_now: undefined,
       open_now_last_updated_at: undefined,
     };
-    const updatedNo = [recentRowNoPid, ...recentSearches.filter((r) => r.name !== result.name)].slice(0, 10);
-    setRecentSearches(updatedNo);
-    storage.set('snaproad_recent_searches', JSON.stringify(updatedNo));
+    setRecentSearches((prev) => {
+      const updated = [recentRowNoPid, ...prev.filter((r) => r.name !== result.name)].slice(0, 10);
+      storage.set('snaproad_recent_searches', JSON.stringify(updated));
+      return updated;
+    });
 
     setSelectedPlace({
       name: result.name,
@@ -3160,7 +3192,7 @@ export default function MapScreen() {
       pitch: 45,
       animationDuration: 800,
     });
-  }, [recentSearches]);
+  }, []);
 
   const openCategoryExplore = useCallback((chipKey: string) => {
     setActiveChip(chipKey);
@@ -3839,20 +3871,30 @@ export default function MapScreen() {
         const res = await api.get<any>(`/api/places/nearby?lat=${tapLat}&lng=${tapLng}&radius=40`);
         const nearby = (res.data as any)?.data ?? res.data;
         if (Array.isArray(nearby) && nearby.length > 0) {
-          const p = nearby[0];
-          const pLat = p.lat ?? tapLat;
-          const pLng = p.lng ?? tapLng;
-          const dx = (pLat - tapLat) * 111320;
-          const dy = (pLng - tapLng) * 111320 * Math.cos(tapLat * Math.PI / 180);
-          const distM = Math.sqrt(dx * dx + dy * dy);
-          if (distM < 60) {
+          /**
+           * Pick the candidate **closest to the tap point** (was: first within
+           * 60m — which in dense areas often grabbed an adjacent business).
+           */
+          const candidates = nearby.map((p: any) => ({
+            name: String(p.name ?? ''),
+            address: p.address ?? p.vicinity ?? '',
+            lat: typeof p.lat === 'number' ? p.lat : Number(p.lat),
+            lng: typeof p.lng === 'number' ? p.lng : Number(p.lng),
+            place_id: typeof p.place_id === 'string' ? p.place_id : undefined,
+            placeType: Array.isArray(p.types) && p.types[0] ? String(p.types[0]) : undefined,
+            price_level: typeof p.price_level === 'number' ? p.price_level : undefined,
+            open_now: typeof p.open_now === 'boolean' ? p.open_now : undefined,
+          }));
+          const best = pickNearestNearby(candidates, { lat: tapLat, lng: tapLng }, 60);
+          if (best) {
+            const p = best.row;
             setSelectedPlace({
               name: p.name,
-              address: p.address ?? p.vicinity ?? '',
-              lat: pLat,
-              lng: pLng,
-              placeType: Array.isArray(p.types) && p.types[0] ? String(p.types[0]) : undefined,
-              price_level: typeof p.price_level === 'number' ? p.price_level : undefined,
+              address: p.address ?? '',
+              lat: p.lat,
+              lng: p.lng,
+              placeType: p.placeType,
+              price_level: p.price_level ?? undefined,
               open_now: typeof p.open_now === 'boolean' ? p.open_now : undefined,
             });
             if (p.place_id) setSelectedPlaceId(p.place_id);
@@ -4387,6 +4429,11 @@ export default function MapScreen() {
           detailHint={placeCardFuelHint(selectedPlace)}
           distanceMeters={placeCardDistanceMeters}
           isLight={isLight}
+          accent={{
+            primary: colors.primary,
+            gradientStart: colors.ctaGradientStart,
+            gradientEnd: colors.ctaGradientEnd,
+          }}
           isFavorite={selectedPlaceFavoriteMatch.isFavorite}
           onDirections={() => handleStartDirections(selectedPlace)}
           onToggleFavorite={async () => {
@@ -5824,11 +5871,14 @@ export default function MapScreen() {
         userLng={location.lng}
         colors={{
           surface: colors.surfaceSecondary,
+          surfaceSecondary: colors.surfaceSecondary,
           text: colors.text,
           textSecondary: colors.textSecondary,
           textTertiary: colors.textTertiary,
           border: colors.border,
           primary: colors.primary,
+          rewardsGradientStart: colors.rewardsGradientStart,
+          rewardsGradientEnd: colors.rewardsGradientEnd,
         }}
         onPick={(row) => {
           if (categoryExplore) exploreRestoreRef.current = categoryExplore;
