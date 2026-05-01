@@ -96,7 +96,7 @@ export default function FriendDetailModalContent({
       const routes = await getMapboxRouteOptions(
         { lat: myLocation.lat, lng: myLocation.lng },
         { lat: friend.lat!, lng: friend.lng! },
-        { mode: 'adaptive' },
+        { mode: 'adaptive', fastSingleRoute: true },
       );
       const min = routes.length ? Math.max(1, Math.round(routes[0].duration / 60)) : null;
       if (min != null) etaCacheRef.current.set(key, { at: now, minutes: min });

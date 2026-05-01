@@ -7,6 +7,7 @@ import type {
   GeocodeResult,
   RawRoute,
   RouteKind,
+  TravelProfile,
 } from '../lib/directions';
 import {
   getMapboxRouteOptions,
@@ -235,6 +236,8 @@ export function useDriveNavigation(params: {
   const [lastTripEndedAtMs, setLastTripEndedAtMs] = useState(0);
   const [tripSummary, setTripSummary] = useState<TripSummary | null>(null);
   const [selectedDestination, setSelectedDestination] = useState<GeocodeResult | null>(null);
+  /** Driving vs walking — walking uses Mapbox `walking` profile and skips native car Navigation UI. */
+  const [travelProfile, setTravelProfile] = useState<TravelProfile>('driving-traffic');
   const [isRerouting, setIsRerouting] = useState(false);
   const sdkActive = navSdkHeadless && isNavigating;
   const navSdkSnapshot = useSyncExternalStore(subscribeNavSdk, getNavSdkState, getNavSdkState);
@@ -646,6 +649,7 @@ export function useDriveNavigation(params: {
         mode: drivingMode,
         maxHeightMeters: opts?.maxHeightMeters,
         fastSingleRoute: opts?.fastSingleRoute,
+        travelProfile,
       });
       if (!options.length || !options[0].polyline.length) {
         return {
@@ -745,7 +749,7 @@ export function useDriveNavigation(params: {
       console.warn('fetchDirections error:', e);
       return { ok: false, reason: 'route_failed', message: msg };
     }
-  }, [userLocation, drivingMode, gpsAccuracy, speed, dynamicDestinationFollow]);
+  }, [userLocation, drivingMode, gpsAccuracy, speed, dynamicDestinationFollow, travelProfile]);
 
   const fetchDirectionsRef = useRef(fetchDirections);
   useEffect(() => {
@@ -2077,6 +2081,8 @@ export function useDriveNavigation(params: {
     selectedDestination,
     setSelectedDestination,
     fetchDirections,
+    travelProfile,
+    setTravelProfile,
     handleRouteSelect,
     applySdkRouteGeometry,
     updateNavigationDestination,

@@ -58,7 +58,10 @@ class MapboxRoutesBody(BaseModel):
     origin_lng: float = Field(..., ge=-180, le=180)
     dest_lat: float = Field(..., ge=-90, le=90)
     dest_lng: float = Field(..., ge=-180, le=180)
-    profile: str = Field(default="driving-traffic", description="driving-traffic or driving")
+    profile: str = Field(
+        default="driving-traffic",
+        description="driving-traffic, driving, or walking (Mapbox Directions v5)",
+    )
     exclude: Optional[str] = None
     max_height_m: Optional[float] = Field(default=None, ge=0, le=10)
     alternatives: bool = True
@@ -84,19 +87,28 @@ async def post_mapbox_routes(
             detail="Mapbox token not configured on server (set MAPBOX_ACCESS_TOKEN or MAPBOX_TOKEN)",
         )
 
-    prof = body.profile if body.profile in ("driving-traffic", "driving") else "driving-traffic"
+    prof = body.profile if body.profile in ("driving-traffic", "driving", "walking") else "driving-traffic"
     coords_path = f"{body.origin_lng},{body.origin_lat};{body.dest_lng},{body.dest_lat}"
-    max_h = ""
-    if body.max_height_m is not None and body.max_height_m > 0:
-        max_h = f"&max_height={min(10.0, float(body.max_height_m))}"
-    excl = f"&exclude={body.exclude}" if body.exclude else ""
-    alt = "true" if body.alternatives else "false"
     token_qs = f"access_token={quote(token, safe='')}"
-    common = (
-        f"{token_qs}&geometries=geojson&overview=full&steps=true&language=en"
-        f"&annotations=congestion,maxspeed,speed,duration&{BANNER_VOICE_QS}{max_h}{excl}"
-    )
-    url = f"{DIRECTIONS_BASE}/{prof}/{coords_path}?{common}&alternatives={alt}"
+    alt = "true" if body.alternatives else "false"
+
+    if prof == "walking":
+        # Pedestrian graph: no vehicle height / toll exclusions; lighter annotations for reliability on slow links.
+        common = (
+            f"{token_qs}&geometries=geojson&overview=full&steps=true&language=en"
+            f"&annotations=duration,distance&{BANNER_VOICE_QS}"
+        )
+        url = f"{DIRECTIONS_BASE}/walking/{coords_path}?{common}&alternatives=false"
+    else:
+        max_h = ""
+        if body.max_height_m is not None and body.max_height_m > 0:
+            max_h = f"&max_height={min(10.0, float(body.max_height_m))}"
+        excl = f"&exclude={body.exclude}" if body.exclude else ""
+        common = (
+            f"{token_qs}&geometries=geojson&overview=full&steps=true&language=en"
+            f"&annotations=congestion,maxspeed,speed,duration&{BANNER_VOICE_QS}{max_h}{excl}"
+        )
+        url = f"{DIRECTIONS_BASE}/{prof}/{coords_path}?{common}&alternatives={alt}"
 
     client = _get_http()
     try:

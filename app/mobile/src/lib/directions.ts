@@ -10,7 +10,10 @@ export function isMapboxDirectionsConfigured(): boolean {
 const DIRECTIONS_BASE = 'https://api.mapbox.com/directions/v5/mapbox';
 const GEOCODING_BASE = 'https://api.mapbox.com/geocoding/v5/mapbox.places';
 
-export type DirectionsProfile = 'driving' | 'driving-traffic';
+export type DirectionsProfile = 'driving' | 'driving-traffic' | 'walking';
+
+/** Preview / navigation travel mode for Mapbox Directions (driving with traffic vs pedestrian). */
+export type TravelProfile = 'driving-traffic' | 'walking';
 
 export interface StepIntersection {
   classes?: string[];
@@ -650,28 +653,31 @@ const ROUTE_STRATEGIES: RouteStrategy[] = [
 function buildClientDirectionsUrl(
   origin: Coordinate,
   destination: Coordinate,
-  opts: { exclude?: string; alternatives: boolean; maxHeightMeters?: number },
+  opts: { exclude?: string; alternatives: boolean; maxHeightMeters?: number; profile?: DirectionsProfile },
 ): string {
   const MAPBOX_TOKEN = getMapboxPublicToken();
+  const profile = opts.profile ?? 'driving-traffic';
   const coords = `${origin.lng},${origin.lat};${destination.lng},${destination.lat}`;
+  const annotations =
+    profile === 'walking' ? 'duration,distance' : 'congestion,maxspeed,speed,duration';
   const params = new URLSearchParams({
     access_token: MAPBOX_TOKEN,
     geometries: 'geojson',
     overview: 'full',
     steps: 'true',
     language: 'en',
-    annotations: 'congestion,maxspeed,speed,duration',
+    annotations,
     banner_instructions: 'true',
     voice_instructions: 'true',
     voice_units: 'imperial',
     roundabout_exits: 'true',
-    alternatives: String(opts.alternatives),
+    alternatives: profile === 'walking' ? 'false' : String(opts.alternatives),
   });
-  if (opts.exclude) params.set('exclude', opts.exclude);
-  if (typeof opts.maxHeightMeters === 'number' && Number.isFinite(opts.maxHeightMeters)) {
+  if (opts.exclude && profile !== 'walking') params.set('exclude', opts.exclude);
+  if (typeof opts.maxHeightMeters === 'number' && Number.isFinite(opts.maxHeightMeters) && profile !== 'walking') {
     params.set('max_height', String(Math.max(0, Math.min(10, opts.maxHeightMeters))));
   }
-  return `${DIRECTIONS_BASE}/driving-traffic/${coords}?${params.toString()}`;
+  return `${DIRECTIONS_BASE}/${profile}/${coords}?${params.toString()}`;
 }
 
 /** Prefer backend proxy (MAPBOX_ACCESS_TOKEN on API) so preview + active nav share identical geometry. */
@@ -684,33 +690,46 @@ async function fetchMapboxTrafficRoutesFromBackend(
     fastSingleRoute?: boolean;
     exclude?: string | null;
     alternatives?: boolean;
+    /** When set, overrides {@link getModeDirectionsConfig} profile (e.g. `walking`). */
+    profile?: DirectionsProfile;
   },
 ): Promise<RawRoute[] | null> {
-  try {
-    const modeConfig = getModeDirectionsConfig(options?.mode ?? 'adaptive');
-    const alt =
-      options?.alternatives !== undefined ? options.alternatives : !options?.fastSingleRoute;
-    const excl = options?.exclude !== undefined ? options.exclude : modeConfig.exclude;
-    const res = await api.post<MapboxDirectionsJson>('/api/navigation/mapbox-routes', {
-      origin_lat: origin.lat,
-      origin_lng: origin.lng,
-      dest_lat: destination.lat,
-      dest_lng: destination.lng,
-      profile: modeConfig.profile,
-      exclude: excl || undefined,
-      max_height_m:
-        typeof options?.maxHeightMeters === 'number' && Number.isFinite(options.maxHeightMeters)
+  const modeConfig = getModeDirectionsConfig(options?.mode ?? 'adaptive');
+  const profile = options?.profile ?? modeConfig.profile;
+  const alt =
+    profile === 'walking'
+      ? false
+      : options?.alternatives !== undefined
+        ? options.alternatives
+        : !options?.fastSingleRoute;
+  const excl = profile === 'walking' ? undefined : options?.exclude !== undefined ? options.exclude : modeConfig.exclude;
+  const postBody = () => ({
+    origin_lat: origin.lat,
+    origin_lng: origin.lng,
+    dest_lat: destination.lat,
+    dest_lng: destination.lng,
+    profile,
+    exclude: excl || undefined,
+    max_height_m:
+      profile === 'walking'
+        ? undefined
+        : typeof options?.maxHeightMeters === 'number' && Number.isFinite(options.maxHeightMeters)
           ? Math.max(0, Math.min(10, options.maxHeightMeters))
           : undefined,
-      alternatives: alt,
-      cache_bust_ms: Date.now(),
-    });
-    const routes = res.success && res.data && Array.isArray(res.data.routes) ? res.data.routes : null;
-    if (!routes?.length) return null;
-    return routes as RawRoute[];
-  } catch {
-    return null;
+    alternatives: alt,
+    cache_bust_ms: Date.now(),
+  });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await api.post<MapboxDirectionsJson>('/api/navigation/mapbox-routes', postBody());
+      const routes = res.success && res.data && Array.isArray(res.data.routes) ? res.data.routes : null;
+      if (routes?.length) return routes as RawRoute[];
+    } catch {
+      /* try client fallback */
+    }
+    if (attempt === 0) await new Promise((r) => setTimeout(r, 280));
   }
+  return null;
 }
 
 async function fetchMapboxTrafficRoutesRaw(
@@ -722,14 +741,17 @@ async function fetchMapboxTrafficRoutesRaw(
     maxHeightMeters?: number;
     mode?: DrivingMode;
     timeoutMs?: number;
+    profile?: DirectionsProfile;
   },
 ): Promise<RawRoute[]> {
+  const profile = options.profile ?? 'driving-traffic';
   const backend = await fetchMapboxTrafficRoutesFromBackend(origin, destination, {
     maxHeightMeters: options.maxHeightMeters,
     mode: options.mode,
     exclude: options.exclude,
     alternatives: options.alternatives,
     fastSingleRoute: !options.alternatives,
+    profile,
   });
   if (backend?.length) return backend;
   if (!isMapboxDirectionsConfigured()) return [];
@@ -737,9 +759,10 @@ async function fetchMapboxTrafficRoutesRaw(
     exclude: options.exclude,
     alternatives: options.alternatives,
     maxHeightMeters: options.maxHeightMeters,
+    profile,
   });
   const controller = new AbortController();
-  const timeoutMs = options.timeoutMs ?? 12000;
+  const timeoutMs = options.timeoutMs ?? (profile === 'walking' ? 22000 : 18000);
   const t = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, { signal: controller.signal, cache: 'no-store' });
@@ -787,7 +810,8 @@ async function executeRouteStrategy(
     alternatives: strategy.alternatives,
     maxHeightMeters,
     mode,
-    timeoutMs: 10000,
+    timeoutMs: 16000,
+    profile: 'driving-traffic',
   });
   if (!rawRoutes.length) return [];
   const parsedRoutes = rawRoutes.map((raw, idx) =>
@@ -926,12 +950,30 @@ function enrichRouteReasons(routes: DirectionsResult[]): DirectionsResult[] {
 export async function getMapboxRouteOptions(
   origin: Coordinate,
   destination: Coordinate,
-  options?: { maxHeightMeters?: number; mode?: DrivingMode; fastSingleRoute?: boolean },
+  options?: { maxHeightMeters?: number; mode?: DrivingMode; fastSingleRoute?: boolean; travelProfile?: TravelProfile },
 ): Promise<DirectionsResult[]> {
   const maxH =
     typeof options?.maxHeightMeters === 'number' && Number.isFinite(options.maxHeightMeters)
       ? options.maxHeightMeters
       : undefined;
+
+  if (options?.travelProfile === 'walking') {
+    const raw = await fetchMapboxTrafficRoutesRaw(origin, destination, {
+      exclude: undefined,
+      alternatives: false,
+      maxHeightMeters: undefined,
+      mode: options?.mode,
+      timeoutMs: 26000,
+      profile: 'walking',
+    });
+    if (!raw.length) return [];
+    const r = parseMapboxDirectionsRoute(raw[0]!, {
+      routeType: 'fastest',
+      routeLabel: 'Walking',
+      routeReason: 'Pedestrian route',
+    });
+    return enrichRouteReasons(scoreAndRankRoutes([r]));
+  }
 
   if (options?.fastSingleRoute) {
     const raw = await fetchMapboxTrafficRoutesRaw(origin, destination, {
@@ -939,7 +981,8 @@ export async function getMapboxRouteOptions(
       alternatives: false,
       maxHeightMeters: maxH,
       mode: options?.mode,
-      timeoutMs: 8000,
+      timeoutMs: 18000,
+      profile: 'driving-traffic',
     });
     if (!raw.length) return [];
     const r = parseMapboxDirectionsRoute(raw[0]!, 'fastest');

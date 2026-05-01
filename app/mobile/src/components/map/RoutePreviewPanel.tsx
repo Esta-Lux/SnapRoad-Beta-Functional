@@ -4,7 +4,7 @@ import Animated, { Easing, SlideInDown, SlideOutDown } from 'react-native-reanim
 import { GestureDetector } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import type { RouteKind } from '../../lib/directions';
+import type { RouteKind, TravelProfile } from '../../lib/directions';
 
 type TrafficSummary = { level: 'heavy' | 'moderate' | 'low'; delayMin: number } | null;
 
@@ -44,6 +44,9 @@ type Props = {
   isLight: boolean;
   drivingMode: 'calm' | 'adaptive' | 'sport';
   modeConfig: { showTrafficBadge?: boolean };
+  /** Driving (traffic-aware) vs walking directions. */
+  travelProfile: TravelProfile;
+  onTravelProfileChange: (p: TravelProfile) => void;
   currentAddress: string;
   selectedDestinationAddress?: string;
   hasTallVehicle: boolean;
@@ -93,15 +96,17 @@ export default function RoutePreviewPanel(props: Props) {
   };
 
   const startGrad: [string, string] =
-    selType === 'eco'
-      ? ['#14B8A6', '#0D9488']
-      : selType === 'fastest'
-        ? ['#2563EB', '#1D4ED8']
-        : selType === 'no_highways'
-          ? ['#16A34A', '#15803D']
-          : selType === 'avoid_tolls'
-            ? ['#D4A843', '#B8860B']
-            : ['#7C3AED', '#6D28D9'];
+    props.travelProfile === 'walking'
+      ? ['#059669', '#047857']
+      : selType === 'eco'
+        ? ['#14B8A6', '#0D9488']
+        : selType === 'fastest'
+          ? ['#2563EB', '#1D4ED8']
+          : selType === 'no_highways'
+            ? ['#16A34A', '#15803D']
+            : selType === 'avoid_tolls'
+              ? ['#D4A843', '#B8860B']
+              : ['#7C3AED', '#6D28D9'];
 
   return (
     <Animated.View
@@ -145,6 +150,34 @@ export default function RoutePreviewPanel(props: Props) {
       <Text style={[s.previewTitle, { color: props.colors.text, marginBottom: props.drivingMode === 'calm' ? 4 : 8 }]} numberOfLines={1}>
         {props.navData.destination.name ?? 'Destination'}
       </Text>
+      <View style={{ flexDirection: 'row', marginBottom: 10, gap: 8 }}>
+        {(['driving-traffic', 'walking'] as const).map((mode) => {
+          const active = props.travelProfile === mode;
+          return (
+            <Pressable
+              key={mode}
+              onPress={() => props.onTravelProfileChange(mode)}
+              style={{
+                flex: 1,
+                paddingVertical: 10,
+                borderRadius: 12,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderWidth: 1,
+                borderColor: active ? props.colors.primary : props.colors.border,
+                backgroundColor: active ? `${props.colors.primary}18` : props.colors.surfaceSecondary,
+              }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: '800', color: active ? props.colors.primary : props.colors.textSecondary }}>
+                {mode === 'walking' ? 'Walk' : 'Drive'}
+              </Text>
+              <Text style={{ fontSize: 10, fontWeight: '600', color: props.colors.textTertiary, marginTop: 2 }}>
+                {mode === 'walking' ? 'Foot paths · steps' : 'Traffic-aware'}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
       {!previewCompact ? (
         <View style={{ marginBottom: 14, gap: 6 }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
@@ -179,7 +212,12 @@ export default function RoutePreviewPanel(props: Props) {
         renderItem={({ item: route, index: idx }) => {
           const isSel = idx === props.selectedRouteIndex;
           const accent = routeAccent(route.routeType);
-          const traffic = props.modeConfig.showTrafficBadge ? props.analyzeCongestion(route.congestion) : null;
+          const traffic =
+            props.travelProfile === 'walking'
+              ? null
+              : props.modeConfig.showTrafficBadge
+                ? props.analyzeCongestion(route.congestion)
+                : null;
           return (
             <TouchableOpacity
               style={[
@@ -229,7 +267,7 @@ export default function RoutePreviewPanel(props: Props) {
         }}
       />
 
-      {props.hasTallVehicle && (
+      {props.hasTallVehicle && props.travelProfile !== 'walking' && (
         <View style={s.truckRow}>
           <Ionicons name="car-outline" size={16} color={props.colors.primary} />
           <Text style={[s.truckLbl, { color: props.colors.primary }]}>
@@ -256,7 +294,9 @@ export default function RoutePreviewPanel(props: Props) {
             color="#fff"
           />
           <Text style={s.startBtnT}>
-            Start {selectedRoute?.routeLabel ?? routeLabel(selType, props.selectedRouteIndex)}
+            {props.travelProfile === 'walking'
+              ? 'Start walking'
+              : `Start ${selectedRoute?.routeLabel ?? routeLabel(selType, props.selectedRouteIndex)}`}
           </Text>
         </LinearGradient>
       </TouchableOpacity>

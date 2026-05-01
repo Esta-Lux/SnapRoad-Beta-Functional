@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { api } from '../../api/client';
-import { getMapboxRouteOptions } from '../../lib/directions';
+import { getMapboxRouteOptions, type TravelProfile } from '../../lib/directions';
 import { parseOpenNowBooleanFromDetailsPayload } from '../../utils/placeHours';
 import { formatTime } from '../../utils/format';
 import { routeSummaryFromMapboxMetersSeconds } from '../../utils/routeDisplay';
@@ -97,6 +97,24 @@ interface Props {
   savedPlaces?: SavedLocation[];
   onFavoritesChange?: () => void;
   isLight?: boolean;
+  /**
+   * Theme accent palette — when provided the sheet's primary CTAs and
+   * highlights use these tokens instead of the legacy hard-coded blues.
+   */
+  accent?: {
+    primary: string;
+    gradientStart: string;
+    gradientEnd: string;
+  };
+  /**
+   * Optional Google Places `photo_reference` to render a hero photo
+   * **instantly** while the full details fetch is in flight. Avoids the
+   * "spinner-then-photo" flash when the user already has a usable thumb
+   * from the nearby/text-search payload.
+   */
+  initialPhotoRef?: string | null;
+  travelProfile?: TravelProfile;
+  onTravelProfileChange?: (p: TravelProfile) => void;
 }
 
 const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
@@ -276,6 +294,10 @@ export default function PlaceDetailSheet({
   savedPlaces = [],
   onFavoritesChange,
   isLight = false,
+  accent,
+  initialPhotoRef,
+  travelProfile = 'driving-traffic',
+  onTravelProfileChange,
 }: Props) {
   const insets = useSafeAreaInsets();
   const [data, setData] = useState<PlaceDetailData | null>(null);
@@ -295,9 +317,21 @@ export default function PlaceDetailSheet({
   const text2 = isLight ? '#6B7280' : '#94A3B8';
   const text3 = isLight ? '#9CA3AF' : '#64748B';
   const border = isLight ? '#E5E7EB' : '#1E2030';
-  const accent = '#3B82F6';
+  const accentColor = accent?.primary ?? '#3B82F6';
+  const ctaStart = accent?.gradientStart ?? '#1D4ED8';
+  const ctaEnd = accent?.gradientEnd ?? '#3B82F6';
   const green = '#22C55E';
   const handleColor = isLight ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.2)';
+
+  /** Hero photo we can paint **before** the /api/places/details fetch resolves. */
+  const initialPhotoUrl = useMemo<string | null>(() => {
+    if (!initialPhotoRef) return null;
+    try {
+      return `${api.getBaseUrl()}/api/places/photo?ref=${encodeURIComponent(initialPhotoRef)}&maxwidth=800`;
+    } catch {
+      return null;
+    }
+  }, [initialPhotoRef]);
 
   /**
    * translateY pushes the full-height sheet down. Smaller translateY = more sheet visible (expanded).
@@ -581,7 +615,7 @@ export default function PlaceDetailSheet({
         const routes = await getMapboxRouteOptions(
           { lat: userLocation.lat, lng: userLocation.lng },
           { lat, lng },
-          { mode: drivingMode, maxHeightMeters },
+          { mode: drivingMode, maxHeightMeters, fastSingleRoute: true, travelProfile },
         );
         if (cancelled) return;
         if (!routes.length) {
@@ -607,7 +641,7 @@ export default function PlaceDetailSheet({
     return () => {
       cancelled = true;
     };
-  }, [placeId, lat, lng, userOriginKey, drivingMode, maxHeightMeters, userLocation]);
+  }, [placeId, lat, lng, userOriginKey, drivingMode, maxHeightMeters, userLocation, travelProfile]);
 
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 50 }]} pointerEvents="box-none">
@@ -622,61 +656,90 @@ export default function PlaceDetailSheet({
             </View>
           </GestureDetector>
 
-          {loading ? (
-            <View style={S.loadingWrap}>
-              <ActivityIndicator size="large" color={accent} />
-              <Text style={[S.loadingText, { color: text3 }]}>Loading place details...</Text>
-            </View>
-          ) : !place ? (
-            <View style={S.loadingWrap}>
-              <Ionicons name="alert-circle-outline" size={28} color={text3} />
-              <Text style={[S.loadingText, { color: text3 }]}>Could not load details</Text>
-              <TouchableOpacity onPress={onClose} style={{ marginTop: 16 }}>
-                <Text style={{ color: accent, fontWeight: '700' }}>Close</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <>
-            <View style={S.bodyFlex}>
-              {photoUrls.length > 0 ? (
-                <View style={S.photoWrap}>
-                  <FlatList
-                    horizontal
-                    pagingEnabled
-                    showsHorizontalScrollIndicator={false}
-                    data={photoUrls}
-                    keyExtractor={(_, i) => `photo-${i}`}
-                    onMomentumScrollEnd={(e) => {
-                      const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
-                      setPhotoIndex(idx);
-                    }}
-                    renderItem={({ item }) => (
-                      <Image source={{ uri: item }} style={{ width: SCREEN_W, height: PHOTO_HEIGHT }} resizeMode="cover" />
-                    )}
-                  />
-                  {photoUrls.length > 1 ? (
-                    <View style={S.photoDots}>
-                      {photoUrls.map((_, i) => (
-                        <View
-                          key={i}
-                          style={[
-                            S.photoDot,
-                            { backgroundColor: i === photoIndex ? '#fff' : 'rgba(255,255,255,0.4)' },
-                          ]}
-                        />
-                      ))}
-                    </View>
-                  ) : null}
-                  <LinearGradient
-                    colors={['transparent', isLight ? 'rgba(255,255,255,0.85)' : 'rgba(15,17,24,0.85)']}
-                    style={S.photoGradient}
-                  />
-                </View>
-              ) : null}
+          {(() => {
+            // Use the fetched photo set when available; otherwise fall back to the
+            // pre-fetch hero so the user never sees an empty top while loading.
+            const displayPhotoUrls = photoUrls.length > 0
+              ? photoUrls
+              : initialPhotoUrl
+                ? [initialPhotoUrl]
+                : [];
+            const showError = !loading && !place;
 
-              <TouchableOpacity style={[S.closeBtn, { backgroundColor: surface }]} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">
-                <Ionicons name="close" size={18} color={text2} />
-              </TouchableOpacity>
+            return (
+              <>
+              <View style={S.bodyFlex}>
+                {displayPhotoUrls.length > 0 ? (
+                  <View style={S.photoWrap}>
+                    <FlatList
+                      horizontal
+                      pagingEnabled
+                      showsHorizontalScrollIndicator={false}
+                      data={displayPhotoUrls}
+                      keyExtractor={(_, i) => `photo-${i}`}
+                      onMomentumScrollEnd={(e) => {
+                        const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
+                        setPhotoIndex(idx);
+                      }}
+                      renderItem={({ item }) => (
+                        <View style={{ width: SCREEN_W, height: PHOTO_HEIGHT, backgroundColor: surface }}>
+                          <Image source={{ uri: item }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+                        </View>
+                      )}
+                    />
+                    {displayPhotoUrls.length > 1 ? (
+                      <View style={S.photoDots}>
+                        {displayPhotoUrls.map((_, i) => {
+                          const active = i === photoIndex;
+                          return (
+                            <View
+                              key={i}
+                              style={[
+                                S.photoDot,
+                                active && S.photoDotActive,
+                                { backgroundColor: active ? '#fff' : 'rgba(255,255,255,0.45)' },
+                              ]}
+                            />
+                          );
+                        })}
+                      </View>
+                    ) : null}
+                    <LinearGradient
+                      colors={['transparent', isLight ? 'rgba(255,255,255,0.85)' : 'rgba(15,17,24,0.85)']}
+                      style={S.photoGradient}
+                    />
+                  </View>
+                ) : loading ? (
+                  <View style={[S.photoWrap, { height: PHOTO_HEIGHT, backgroundColor: surface }]} />
+                ) : null}
+
+                <TouchableOpacity style={[S.closeBtn, { backgroundColor: surface }]} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">
+                  <Ionicons name="close" size={18} color={text2} />
+                </TouchableOpacity>
+
+                {loading || showError ? (
+                  <View style={S.scrollFlex}>
+                    {showError ? (
+                      <View style={S.loadingWrap}>
+                        <Ionicons name="alert-circle-outline" size={28} color={text3} />
+                        <Text style={[S.loadingText, { color: text3 }]}>Could not load details</Text>
+                        <TouchableOpacity onPress={onClose} style={{ marginTop: 16 }}>
+                          <Text style={{ color: accentColor, fontWeight: '700' }}>Close</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <View style={S.skeletonWrap}>
+                        <View style={[S.skeletonLine, { width: '70%', height: 22, backgroundColor: surface }]} />
+                        <View style={[S.skeletonLine, { width: '46%', height: 14, backgroundColor: surface, marginTop: 10 }]} />
+                        <View style={[S.skeletonLine, { width: '90%', height: 12, backgroundColor: surface, marginTop: 16 }]} />
+                        <View style={[S.skeletonLine, { width: '64%', height: 12, backgroundColor: surface, marginTop: 6 }]} />
+                        <View style={[S.skeletonStats, { backgroundColor: surface, borderColor: border }]} />
+                        <View style={[S.skeletonLine, { width: '40%', height: 16, backgroundColor: surface, marginTop: 22 }]} />
+                        <View style={[S.skeletonBlock, { backgroundColor: surface, borderColor: border }]} />
+                      </View>
+                    )}
+                  </View>
+                ) : !place ? null : (
 
               <ScrollView
                 style={S.scrollFlex}
@@ -727,36 +790,78 @@ export default function PlaceDetailSheet({
                   ) : null}
                 </View>
 
+                {onTravelProfileChange ? (
+                  <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 20, marginTop: 4, marginBottom: 4 }}>
+                    {(['driving-traffic', 'walking'] as const).map((m) => {
+                      const on = travelProfile === m;
+                      return (
+                        <TouchableOpacity
+                          key={m}
+                          onPress={() => {
+                            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            onTravelProfileChange(m);
+                          }}
+                          style={{
+                            flex: 1,
+                            paddingVertical: 9,
+                            borderRadius: 12,
+                            alignItems: 'center',
+                            borderWidth: 1,
+                            borderColor: on ? accentColor : border,
+                            backgroundColor: on ? `${accentColor}14` : surface,
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: '800', color: on ? accentColor : text2 }}>
+                            {m === 'walking' ? 'Walk' : 'Drive'}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ) : null}
+
                 <View style={S.actionsRow}>
                   <TouchableOpacity
-                    style={[S.actionBtn, S.actionPrimary, { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }]}
+                    style={[S.actionBtn, { padding: 0, borderWidth: 0, overflow: 'hidden' }]}
                     onPress={handleDirections}
                     activeOpacity={0.85}
                   >
-                    <Ionicons name="navigate" size={18} color="#fff" />
-                    {routeLoading ? <ActivityIndicator size="small" color="#fff" /> : null}
-                    <Text style={S.actionPrimaryText}>
-                      {routeSummary?.durationText ?? (routeLoading ? 'Drive time…' : 'Directions')}
-                    </Text>
+                    <LinearGradient
+                      colors={[ctaStart, ctaEnd]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={[StyleSheet.absoluteFillObject]}
+                    />
+                    {routeLoading ? (
+                      <View style={S.actionSpinnerBackdrop} pointerEvents="none">
+                        <ActivityIndicator size="large" color="#fff" />
+                      </View>
+                    ) : null}
+                    <View style={S.actionPrimaryInner}>
+                      <Ionicons name={travelProfile === 'walking' ? 'walk' : 'navigate'} size={18} color="#fff" />
+                      <Text style={S.actionPrimaryText}>
+                        {routeSummary?.durationText ?? 'Directions'}
+                      </Text>
+                    </View>
                   </TouchableOpacity>
 
                   {place.phone ? (
                     <TouchableOpacity style={[S.actionBtn, { backgroundColor: surface, borderColor: border }]} onPress={handleCall}>
-                      <Ionicons name="call-outline" size={18} color={accent} />
+                      <Ionicons name="call-outline" size={18} color={accentColor} />
                       <Text style={[S.actionText, { color: text1 }]}>Call</Text>
                     </TouchableOpacity>
                   ) : null}
 
                   {place.website ? (
                     <TouchableOpacity style={[S.actionBtn, { backgroundColor: surface, borderColor: border }]} onPress={handleWeb}>
-                      <Ionicons name="globe-outline" size={18} color={accent} />
+                      <Ionicons name="globe-outline" size={18} color={accentColor} />
                       <Text style={[S.actionText, { color: text1 }]}>Website</Text>
                     </TouchableOpacity>
                   ) : null}
 
                   {showOrder ? (
                     <TouchableOpacity style={[S.actionBtn, { backgroundColor: surface, borderColor: border }]} onPress={handleOrder}>
-                      <Ionicons name="bag-outline" size={18} color={accent} />
+                      <Ionicons name="bag-outline" size={18} color={accentColor} />
                       <Text style={[S.actionText, { color: text1 }]}>Order</Text>
                     </TouchableOpacity>
                   ) : null}
@@ -830,7 +935,7 @@ export default function PlaceDetailSheet({
                     <View style={S.sectionHeader}>
                       <Text style={[S.sectionTitle, { color: text1 }]}>Hours</Text>
                       <TouchableOpacity onPress={() => setShowAllHours(!showAllHours)} hitSlop={8}>
-                        <Text style={[S.sectionAction, { color: accent }]}>{showAllHours ? 'Less' : 'Show all'}</Text>
+                        <Text style={[S.sectionAction, { color: accentColor }]}>{showAllHours ? 'Less' : 'Show all'}</Text>
                       </TouchableOpacity>
                     </View>
 
@@ -867,7 +972,7 @@ export default function PlaceDetailSheet({
                                   isToday && { backgroundColor: isLight ? '#EFF6FF' : '#172554' },
                                 ]}
                               >
-                                <Text style={[S.hourDay, { color: isToday ? accent : text2 }]}>{parts[0]}</Text>
+                                <Text style={[S.hourDay, { color: isToday ? accentColor : text2 }]}>{parts[0]}</Text>
                                 <Text style={[S.hourTime, { color: isToday ? text1 : text2 }]}>{parts[1] ?? '—'}</Text>
                               </View>
                             );
@@ -884,13 +989,13 @@ export default function PlaceDetailSheet({
                     {place.phone ? (
                       <TouchableOpacity style={[S.detailRow, { borderBottomColor: border }]} onPress={handleCall}>
                         <Text style={[S.detailLabel, { color: text3 }]}>Phone</Text>
-                        <Text style={[S.detailValue, { color: accent }]}>{place.phone}</Text>
+                        <Text style={[S.detailValue, { color: accentColor }]}>{place.phone}</Text>
                       </TouchableOpacity>
                     ) : null}
                     {place.website ? (
                       <TouchableOpacity style={[S.detailRow, { borderBottomColor: border }]} onPress={handleWeb}>
                         <Text style={[S.detailLabel, { color: text3 }]}>Website</Text>
-                        <Text style={[S.detailValue, { color: accent }]} numberOfLines={1}>
+                        <Text style={[S.detailValue, { color: accentColor }]} numberOfLines={1}>
                           {place.website.replace(/^https?:\/\/(www\.)?/, '')}
                         </Text>
                       </TouchableOpacity>
@@ -956,7 +1061,7 @@ export default function PlaceDetailSheet({
                         style={[S.showMoreBtn, { borderColor: border }]}
                         onPress={() => setShowAllReviews(!showAllReviews)}
                       >
-                        <Text style={[S.showMoreText, { color: accent }]}>
+                        <Text style={[S.showMoreText, { color: accentColor }]}>
                           {showAllReviews ? 'Show less' : `Show all ${place.reviews.length} reviews`}
                         </Text>
                       </TouchableOpacity>
@@ -985,24 +1090,36 @@ export default function PlaceDetailSheet({
                   </TouchableOpacity>
                 </View>
               </ScrollView>
-            </View>
-            <View style={[S.stickyBottom, { paddingBottom: Math.max(insets.bottom, 8), backgroundColor: bg, borderTopColor: border }]}>
-              <TouchableOpacity
-                style={[S.directionsBtnFlat, { backgroundColor: '#2563EB', borderColor: '#1D4ED8' }]}
-                onPress={handleDirections}
-                activeOpacity={0.85}
-              >
-                <View style={S.directionsBtnGrad}>
-                  <Ionicons name="navigate" size={18} color="#fff" />
-                  <Text style={S.directionsBtnText}>Directions</Text>
-                  {distMeters != null ? (
-                    <Text style={S.directionsBtnDist}>· {formatDistanceMeters(distMeters)}</Text>
-                  ) : null}
-                </View>
-              </TouchableOpacity>
-            </View>
-            </>
-          )}
+                )}
+              </View>
+              <View style={[S.stickyBottom, { paddingBottom: Math.max(insets.bottom, 8), backgroundColor: bg, borderTopColor: border }]}>
+                <TouchableOpacity
+                  onPress={handleDirections}
+                  activeOpacity={0.9}
+                  style={S.directionsBtnWrap}
+                  disabled={loading || !place}
+                >
+                  <LinearGradient
+                    colors={[ctaStart, ctaEnd]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={S.directionsBtnGrad}
+                  >
+                    <Ionicons name="navigate" size={18} color="#fff" />
+                    <Text style={S.directionsBtnText}>
+                      {routeSummary?.durationText ?? 'Directions'}
+                    </Text>
+                    {(routeSummary?.distanceText || distMeters != null) ? (
+                      <Text style={S.directionsBtnDist}>
+                        · {routeSummary?.distanceText ?? formatDistanceMeters(distMeters!)}
+                      </Text>
+                    ) : null}
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+              </>
+            );
+          })()}
       </Animated.View>
     </View>
   );
@@ -1032,9 +1149,18 @@ const S = StyleSheet.create({
   loadingText: { fontSize: 14, fontWeight: '500' },
 
   photoWrap: { position: 'relative' },
-  photoDots: { position: 'absolute', bottom: 12, alignSelf: 'center', flexDirection: 'row', gap: 5 },
+  photoDots: {
+    position: 'absolute', bottom: 12, alignSelf: 'center',
+    flexDirection: 'row', gap: 6, alignItems: 'center',
+  },
   photoDot: { width: 6, height: 6, borderRadius: 3 },
-  photoGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 48 },
+  photoDotActive: { width: 18, borderRadius: 4 },
+  photoGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 56 },
+
+  skeletonWrap: { paddingHorizontal: 20, paddingTop: 16 },
+  skeletonLine: { borderRadius: 8 },
+  skeletonStats: { height: 64, borderRadius: 16, borderWidth: 1, marginTop: 18 },
+  skeletonBlock: { height: 140, borderRadius: 14, borderWidth: 1, marginTop: 10 },
 
   closeBtn: {
     position: 'absolute', top: 12, right: 16, zIndex: 12,
@@ -1064,7 +1190,16 @@ const S = StyleSheet.create({
     borderRadius: 14, paddingVertical: 12, alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, gap: 4,
   },
-  actionPrimary: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
+  actionPrimaryInner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 12, paddingHorizontal: 8,
+  },
+  actionSpinnerBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.22,
+  },
   actionPrimaryText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   actionText: { fontSize: 12, fontWeight: '600' },
 
@@ -1121,12 +1256,11 @@ const S = StyleSheet.create({
     paddingHorizontal: 20, paddingTop: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
-  directionsBtn: { borderRadius: 16, overflow: 'hidden' },
-  directionsBtnFlat: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
+  directionsBtnWrap: { borderRadius: 18, overflow: 'hidden' },
   directionsBtnGrad: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, paddingVertical: 15,
+    gap: 8, paddingVertical: 16, borderRadius: 18,
   },
-  directionsBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
-  directionsBtnDist: { color: 'rgba(255,255,255,0.75)', fontSize: 14, fontWeight: '600' },
+  directionsBtnText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
+  directionsBtnDist: { color: 'rgba(255,255,255,0.78)', fontSize: 14, fontWeight: '600' },
 });

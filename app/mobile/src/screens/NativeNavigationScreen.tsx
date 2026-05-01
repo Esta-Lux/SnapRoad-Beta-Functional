@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   Text,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
 import { MapboxNavigationView, type MapboxNavigationViewRef } from '@badatgil/expo-mapbox-navigation';
 import type { RouteProp } from '@react-navigation/native';
@@ -560,17 +559,6 @@ export default function NativeNavigationScreen() {
         <Text style={styles.recenterText}>Recenter</Text>
       </TouchableOpacity>
 
-      {!routeReady && (
-        <View
-          style={styles.routeLoadingOverlay}
-          pointerEvents="none"
-        >
-          <View style={styles.routeLoadingCard}>
-            <ActivityIndicator size="large" color="#fff" />
-            <Text style={styles.routeLoadingText}>Calculating route…</Text>
-          </View>
-        </View>
-      )}
     </View>
   );
 }
@@ -682,23 +670,4 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   recenterText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  routeLoadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 24,
-  },
-  routeLoadingCard: {
-    paddingHorizontal: 28,
-    paddingVertical: 22,
-    borderRadius: 16,
-    backgroundColor: 'rgba(0,0,0,0.58)',
-    alignItems: 'center',
-  },
-  routeLoadingText: {
-    color: '#fff',
-    marginTop: 12,
-    fontSize: 15,
-    fontWeight: '700',
-  },
 });

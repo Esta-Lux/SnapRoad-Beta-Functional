@@ -21,6 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useLocation } from '../hooks/useLocation';
 import { useDriveNavigation } from '../hooks/useDriveNavigation';
+import { useOfflineMaps } from '../hooks/useOfflineMaps';
 import { useSdkStepGapDisplay } from '../hooks/useSdkStepGapDisplay';
 import { usePassiveDriveGems } from '../hooks/usePassiveDriveGems';
 import { useTheme } from '../contexts/ThemeContext';
@@ -571,6 +572,45 @@ export default function MapScreen() {
     dynamicDestinationFollow: friendFollowSession?.mode === 'live',
     navSdkHeadless: navLogicEffective,
   });
+  const offlineMaps = useOfflineMaps();
+
+  const promptOfflineMapDownload = useCallback(() => {
+    if (!isMapAvailable()) {
+      Alert.alert('Offline maps', 'Downloads need the native Mapbox build (not Expo Go).');
+      return;
+    }
+    const loc = locationRef.current;
+    if (!isUsableCoordinate(loc)) {
+      Alert.alert('Location needed', 'Wait until your position appears on the map, then try again.');
+      return;
+    }
+    const pad = 0.07;
+    Alert.alert(
+      'Save this area for offline',
+      'Downloads street tiles around your current view (~6 km). Use Wi‑Fi when possible. Open the map once while online before going offline.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Download',
+          onPress: () => {
+            const name = `snaproad-${Date.now()}`;
+            void offlineMaps
+              .downloadRegion(name, {
+                ne: [loc.lng + pad, loc.lat + pad],
+                sw: [loc.lng - pad, loc.lat - pad],
+              })
+              .then(() => {
+                void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                Alert.alert('Offline map', 'This area is saved on device.');
+              })
+              .catch((e: unknown) => {
+                Alert.alert('Download failed', e instanceof Error ? e.message : 'Try again on Wi‑Fi.');
+              });
+          },
+        },
+      ],
+    );
+  }, [offlineMaps]);
   useNavigationSpeech({
     progress: nav.navigationProgress,
     enabled: !navVoiceMuted && nav.isNavigating && !navLogicEffective,
@@ -1742,6 +1782,9 @@ export default function MapScreen() {
     placeType?: string;
     price_level?: number;
     open_now?: boolean;
+    rating?: number;
+    /** Google Places `photo_reference` — used to render the place card hero photo before details load. */
+    photo_reference?: string;
     lat: number;
     lng: number;
   } | null>(null);
@@ -2611,6 +2654,14 @@ export default function MapScreen() {
     );
   }, [nav.showRoutePreview, nav.navigationData?.polyline, routePreviewHeight, insets.top, insets.bottom]);
 
+  useEffect(() => {
+    if (!nav.showRoutePreview || !nav.selectedDestination) return;
+    void nav.fetchDirections(nav.selectedDestination, undefined, {
+      maxHeightMeters: avoidLowClearances ? vehicleHeight : undefined,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only refetch when switching travel mode during preview
+  }, [nav.travelProfile]);
+
   // Fix 5: Reroute when driving mode changes during active nav
   useEffect(() => {
     if (!nav.isNavigating || !nav.selectedDestination) return;
@@ -3150,6 +3201,10 @@ export default function MapScreen() {
       }
 
       const summaryOpen = detailRecord ? parseOpenNowBooleanFromDetailsPayload(detailRecord) : null;
+      // When the upstream search row already has a Google `photo_reference`
+      // (text-search / category explore), keep it on the selected place so the
+      // detail sheet renders an instant hero before /api/places/details lands.
+      const carriedPhotoRef = (result as { photo_reference?: unknown }).photo_reference;
       setSelectedPlace({
         name: result.name,
         address: result.address,
@@ -3159,6 +3214,10 @@ export default function MapScreen() {
         category: result.placeType ?? result.category,
         price_level: result.price_level,
         open_now: summaryOpen === null ? undefined : summaryOpen,
+        rating: typeof (result as { rating?: number }).rating === 'number'
+          ? (result as { rating?: number }).rating
+          : undefined,
+        photo_reference: typeof carriedPhotoRef === 'string' ? carriedPhotoRef : undefined,
       });
       setSelectedPlaceId(result.place_id);
       return;
@@ -3175,17 +3234,24 @@ export default function MapScreen() {
       return updated;
     });
 
-    setSelectedPlace({
-      name: result.name,
-      address: result.address,
-      category: result.category,
-      maki: result.maki,
-      placeType: result.placeType,
-      price_level: result.price_level,
-      open_now: undefined,
-      lat: result.lat,
-      lng: result.lng,
-    });
+    {
+      const carriedPhotoRef = (result as { photo_reference?: unknown }).photo_reference;
+      setSelectedPlace({
+        name: result.name,
+        address: result.address,
+        category: result.category,
+        maki: result.maki,
+        placeType: result.placeType,
+        price_level: result.price_level,
+        open_now: undefined,
+        rating: typeof (result as { rating?: number }).rating === 'number'
+          ? (result as { rating?: number }).rating
+          : undefined,
+        photo_reference: typeof carriedPhotoRef === 'string' ? carriedPhotoRef : undefined,
+        lat: result.lat,
+        lng: result.lng,
+      });
+    }
     cameraRef.current?.setCamera({
       centerCoordinate: [result.lng, result.lat],
       zoomLevel: 16,
@@ -3430,7 +3496,7 @@ export default function MapScreen() {
       nav.resetRoutePlanningState();
       const tripJustEnded = nav.lastTripEndedAtMs > 0 && Date.now() - nav.lastTripEndedAtMs < 120_000;
       if (tripJustEnded) {
-        await new Promise<void>((r) => setTimeout(r, 1500));
+        await new Promise<void>((r) => setTimeout(r, 400));
       }
       const routeResult = await nav.fetchDirections(
         { name: place.name, address: place.address ?? '', lat: place.lat, lng: place.lng },
@@ -3884,6 +3950,8 @@ export default function MapScreen() {
             placeType: Array.isArray(p.types) && p.types[0] ? String(p.types[0]) : undefined,
             price_level: typeof p.price_level === 'number' ? p.price_level : undefined,
             open_now: typeof p.open_now === 'boolean' ? p.open_now : undefined,
+            rating: typeof p.rating === 'number' ? p.rating : undefined,
+            photo_reference: typeof p.photo_reference === 'string' ? p.photo_reference : undefined,
           }));
           const best = pickNearestNearby(candidates, { lat: tapLat, lng: tapLng }, 60);
           if (best) {
@@ -3896,6 +3964,8 @@ export default function MapScreen() {
               placeType: p.placeType,
               price_level: p.price_level ?? undefined,
               open_now: typeof p.open_now === 'boolean' ? p.open_now : undefined,
+              rating: p.rating ?? undefined,
+              photo_reference: p.photo_reference ?? undefined,
             });
             if (p.place_id) setSelectedPlaceId(p.place_id);
             return;
@@ -4419,6 +4489,30 @@ export default function MapScreen() {
         isDay={mapWeather.isDay}
       />
 
+      {!nav.isNavigating && !nav.showRoutePreview && isMapAvailable() ? (
+        <Pressable
+          onPress={promptOfflineMapDownload}
+          style={{
+            position: 'absolute',
+            left: 12,
+            top: insets.top + 108,
+            zIndex: 24,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            borderRadius: 999,
+            backgroundColor: isLight ? 'rgba(255,255,255,0.92)' : 'rgba(15,23,42,0.88)',
+            borderWidth: StyleSheet.hairlineWidth,
+            borderColor: colors.border,
+          }}
+        >
+          <Ionicons name="cloud-download-outline" size={16} color={colors.primary} />
+          <Text style={{ fontSize: 12, fontWeight: '800', color: colors.text }}>Offline</Text>
+        </Pressable>
+      ) : null}
+
       {/* ═══ PLACE CARD (simple card for Mapbox results / map taps) ═══════ */}
       {selectedPlace && !selectedPlaceId && !nav.isNavigating && !nav.showRoutePreview && (
         <PlaceCard
@@ -4428,6 +4522,10 @@ export default function MapScreen() {
           maki={selectedPlace.maki}
           detailHint={placeCardFuelHint(selectedPlace)}
           distanceMeters={placeCardDistanceMeters}
+          photoRef={selectedPlace.photo_reference ?? null}
+          rating={selectedPlace.rating ?? null}
+          priceLevel={selectedPlace.price_level ?? null}
+          openNow={selectedPlace.open_now ?? null}
           isLight={isLight}
           accent={{
             primary: colors.primary,
@@ -4481,6 +4579,14 @@ export default function MapScreen() {
           drivingMode={drivingMode}
           maxHeightMeters={avoidLowClearances ? vehicleHeight : undefined}
           isLight={isLight}
+          accent={{
+            primary: colors.primary,
+            gradientStart: colors.ctaGradientStart,
+            gradientEnd: colors.ctaGradientEnd,
+          }}
+          initialPhotoRef={selectedPlace?.photo_reference ?? null}
+          travelProfile={nav.travelProfile}
+          onTravelProfileChange={nav.setTravelProfile}
           savedPlaces={savedPlaces}
           onFavoritesChange={refreshSavedPlaces}
           onClose={() => {
@@ -5102,6 +5208,8 @@ export default function MapScreen() {
         colors={colors}
         isLight={isLight}
         drivingMode={drivingMode}
+        travelProfile={nav.travelProfile}
+        onTravelProfileChange={nav.setTravelProfile}
         modeConfig={modeConfig}
         currentAddress={currentAddress}
         selectedDestinationAddress={nav.selectedDestination?.address}
@@ -5136,7 +5244,12 @@ export default function MapScreen() {
               }
             }
           }
-          if (navNativeFullScreenEnabled() && nav.navigationData && location) {
+          if (
+            navNativeFullScreenEnabled() &&
+            nav.navigationData &&
+            location &&
+            nav.travelProfile !== 'walking'
+          ) {
             const nearestIncident = nearbyIncidents.reduce<Incident | null>((best, inc) => {
               const liveOrigin = locationRef.current;
               const incDist = haversineMeters(liveOrigin.lat, liveOrigin.lng, inc.lat, inc.lng);

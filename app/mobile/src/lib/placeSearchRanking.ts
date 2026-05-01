@@ -191,6 +191,8 @@ export type NearbyCandidate = {
   placeType?: string;
   price_level?: number | null;
   open_now?: boolean | null;
+  rating?: number | null;
+  photo_reference?: string | null;
 };
 
 /**
@@ -201,13 +203,16 @@ export type NearbyCandidate = {
  * The previous logic took `candidates[0]` (server's own ordering) and
  * accepted it iff within 60 m — which can attach the wrong POI in dense
  * downtowns where a small business lists *near* (but not *at*) the tap.
+ *
+ * Generic in `T` so the caller's extra fields (e.g. richer payload props)
+ * flow through to the returned row.
  */
-export function pickNearestNearby(
-  candidates: NearbyCandidate[],
+export function pickNearestNearby<T extends NearbyCandidate>(
+  candidates: T[],
   tap: { lat: number; lng: number },
   maxMeters: number,
-): { row: NearbyCandidate; distanceMeters: number } | null {
-  let best: { row: NearbyCandidate; distanceMeters: number } | null = null;
+): { row: T; distanceMeters: number } | null {
+  let best: { row: T; distanceMeters: number } | null = null;
   for (const c of candidates) {
     if (
       !Number.isFinite(c.lat) ||
