@@ -166,7 +166,6 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
       setIsListening(false);
       setPartialTranscript('');
       Speech.stop();
-      stopSpeaking();
       orionSpeakingRef.current = true;
       speakOrionReply(reply, finish, normalizeDrivingMode(context?.drivingMode));
     } catch {

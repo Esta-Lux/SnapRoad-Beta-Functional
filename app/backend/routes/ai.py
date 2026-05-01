@@ -113,6 +113,30 @@ async def _navigation_actions_from_message(ctx: dict, last_raw: str) -> List[dic
     return actions
 
 
+def _app_control_actions_from_message(last_raw: str) -> List[dict]:
+    """Small, safe app-control intents Orion can execute through the mobile action bridge."""
+    text = _strip_orion_wake_phrase(last_raw).lower().strip()
+    actions: List[dict] = []
+
+    if re.search(r"\b(switch|change|set|use)\b.*\b(calm|adaptive|sport)\b.*\b(mode|driving mode)\b", text):
+        for mode in ("calm", "adaptive", "sport"):
+            if re.search(rf"\b{mode}\b", text):
+                actions.append({"type": "mode", "name": mode})
+                break
+    elif re.search(r"\b(calm|adaptive|sport)\b\s+(mode|driving mode)\b", text):
+        for mode in ("calm", "adaptive", "sport"):
+            if re.search(rf"\b{mode}\b", text):
+                actions.append({"type": "mode", "name": mode})
+                break
+
+    if re.search(r"\b(unmute|turn voice on|voice on|enable voice)\b", text):
+        actions.append({"type": "unmute_voice"})
+    elif re.search(r"\b(mute|turn voice off|voice off|disable voice)\b", text):
+        actions.append({"type": "mute_voice"})
+
+    return actions
+
+
 _SUGGEST_INTENT_RE = re.compile(
     r"\b(suggest|recommend|recommendation|options|ideas|what should|where should|where can i|"
     r"good place|best place|somewhere to|any good|show me places|places to eat|place to eat|"
@@ -240,6 +264,7 @@ async def orion_completions(
     ctx = body.context or {}
     last_raw = body.messages[-1].content if body.messages else ""
     actions = await _navigation_actions_from_message(ctx, last_raw)
+    actions.extend(_app_control_actions_from_message(last_raw))
     take_me = await _take_me_from_pending(ctx, last_raw)
     if take_me:
         actions = take_me + actions

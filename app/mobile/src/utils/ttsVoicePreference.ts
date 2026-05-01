@@ -10,10 +10,10 @@ import * as Speech from 'expo-speech';
  */
 
 const MALE_NAME_HINTS = [
-  'alex',
   'evan',
   'nathan',
   'aaron',
+  'alex',
   'josh',
   'justin',
   'tyler',
@@ -41,16 +41,17 @@ const MALE_NAME_HINTS = [
 ];
 
 const CLEAR_DEFAULT_NAME_PRIORITY = [
-  'alex',
   'evan',
   'nathan',
-  'tom',
-  'daniel',
+  'aaron',
+  'alex',
+  'josh',
+  'justin',
+  'tyler',
+  'ryan',
   'oliver',
   'james',
-  'david',
-  'mark',
-  'aaron',
+  'daniel',
 ] as const;
 
 const YOUNG_ADULT_NAME_HINTS = [
@@ -67,7 +68,7 @@ const YOUNG_ADULT_NAME_HINTS = [
   'james',
 ];
 
-const OLDER_NAME_HINTS = ['fred', 'ralph', 'grandpa', 'albert', 'arthur'];
+const OLDER_NAME_HINTS = ['fred', 'ralph', 'grandpa', 'albert', 'arthur', 'rocko', 'eddy', 'tom'];
 
 const ACCENTED_OR_HARD_TO_HEAR_HINTS = [
   // Common non-US English voices exposed by iOS / Android engines.
@@ -108,20 +109,22 @@ let voiceLoadPromise: Promise<string | undefined> | null = null;
 function scoreVoice(v: Voice): number {
   const n = `${v.name || ''} ${v.identifier || ''}`.toLowerCase();
   const language = (v.language || '').toLowerCase();
+  const quality = String(v.quality || '').toLowerCase();
   let s = 0;
-  if (language === 'en-us') s += 80;
-  else if (language.startsWith('en-us')) s += 70;
-  else if (language.startsWith('en')) s -= 25;
+  if (language === 'en-us') s += 120;
+  else if (language.startsWith('en-us')) s += 95;
+  else if (language.startsWith('en')) s -= 45;
   else s -= 80;
-  if (String(v.quality).toLowerCase().includes('enhanced')) s += 14;
-  if (String(v.quality).toLowerCase().includes('premium')) s += 18;
+  if (quality.includes('enhanced')) s += 22;
+  if (quality.includes('premium')) s += 28;
   const priorityIndex = CLEAR_DEFAULT_NAME_PRIORITY.findIndex((h) => n.includes(h));
-  if (priorityIndex >= 0) s += 42 - priorityIndex * 3;
-  for (const h of MALE_NAME_HINTS) if (n.includes(h)) s += 10;
-  for (const h of YOUNG_ADULT_NAME_HINTS) if (n.includes(h)) s += 7;
-  for (const h of OLDER_NAME_HINTS) if (n.includes(h)) s -= 5;
+  if (priorityIndex >= 0) s += 80 - priorityIndex * 4;
+  for (const h of MALE_NAME_HINTS) if (n.includes(h)) s += 18;
+  for (const h of YOUNG_ADULT_NAME_HINTS) if (n.includes(h)) s += 16;
+  for (const h of OLDER_NAME_HINTS) if (n.includes(h)) s -= 34;
   for (const h of ACCENTED_OR_HARD_TO_HEAR_HINTS) if (n.includes(h) && language !== 'en-us') s -= 45;
-  for (const f of FEMALE_NAME_HINTS) if (n.includes(f)) s -= 10;
+  for (const f of FEMALE_NAME_HINTS) if (n.includes(f)) s -= 55;
+  if (n.includes('compact')) s -= 20;
   return s;
 }
 

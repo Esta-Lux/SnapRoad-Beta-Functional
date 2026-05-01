@@ -93,7 +93,6 @@ export default function OrionQuickMic({
       setIsListening(false);
       setPartialTranscript('');
       Speech.stop();
-      stopSpeaking();
       orionSpeakingRef.current = true;
       speakOrionReply(reply, finish, normalizeDrivingMode(context?.drivingMode));
     } catch {

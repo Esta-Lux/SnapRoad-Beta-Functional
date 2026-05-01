@@ -33,6 +33,7 @@ import {
   mergeNativeNavMapPois,
 } from '../lib/nativeNavHelpers';
 import { isTrafficSafetyLayerEnabled, trafficSafetyRegionQuery } from '../config/restrictedRegions';
+import { speak } from '../utils/voice';
 
 /**
  * Mapbox **Standard** is required for the native module’s `basemap` StyleImport
@@ -73,6 +74,7 @@ export default function NativeNavigationScreen() {
   const didExitRef = useRef(false);
   const didHandleInvalidParamsRef = useRef(false);
   const navRef = useRef<MapboxNavigationViewRef | null>(null);
+  const lastNativeVoiceSpeakRef = useRef<{ text: string; at: number }>({ text: '', at: 0 });
   /** Gated so async fetches that resolve after unmount don't call setState. */
   const isMountedRef = useRef(true);
   const lastIncidentFetchCoordRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -327,6 +329,22 @@ export default function NativeNavigationScreen() {
     setRouteReady(true);
   }, []);
 
+  const handleVoiceInstruction = useCallback(
+    (event: { nativeEvent: { text?: string } }) => {
+      const text = event.nativeEvent?.text?.trim();
+      if (!text || voiceMuted) return;
+      const now = Date.now();
+      const last = lastNativeVoiceSpeakRef.current;
+      if (last.text === text && now - last.at < 6500) return;
+      lastNativeVoiceSpeakRef.current = { text, at: now };
+      speak(text, 'high', drivingMode, {
+        rateSource: 'navigation_fixed',
+        forceAllowDuringSdk: true,
+      });
+    },
+    [drivingMode, voiceMuted],
+  );
+
   const handleRouteFailedToLoad = useCallback(
     (event: { nativeEvent: { errorMessage: string } }) => {
       const errorMessage = event?.nativeEvent?.errorMessage || 'Unknown route-load error';
@@ -449,7 +467,7 @@ export default function NativeNavigationScreen() {
         ref={navRef}
         style={styles.nav}
         coordinates={coordinates}
-        mute={voiceMuted}
+        mute
         locale="en-US"
         routeProfile={bridge.routeProfile}
         mapStyle={resolvedMapStyleUrl}
@@ -469,6 +487,7 @@ export default function NativeNavigationScreen() {
         onUserOffRoute={() => {}}
         onRoutesLoaded={handleRoutesLoaded}
         onRouteFailedToLoad={handleRouteFailedToLoad}
+        onVoiceInstruction={handleVoiceInstruction}
       />
       {activeIncident ? (
         <View

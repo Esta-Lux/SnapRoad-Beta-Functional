@@ -625,6 +625,7 @@ export default function MapScreen() {
   const sdkStepGap = useSdkStepGapDisplay(nav.isNavigating, nav.navigationProgress);
 
   const navLogicRef = useRef<MapboxNavigationViewRef | null>(null);
+  const lastSdkVoiceSpeakRef = useRef<{ text: string; at: number }>({ text: '', at: 0 });
   const [navLogicCoords, setNavLogicCoords] = useState<Array<{ latitude: number; longitude: number }>>([]);
   const handleNavLogicFailure = useCallback((message?: string) => {
     console.warn('[NavLogicSDK] disabling hidden navigation engine for this trip', message ?? 'unknown error');
@@ -712,6 +713,24 @@ export default function MapScreen() {
       }
     },
     [nav.applySdkRouteGeometry],
+  );
+
+  const handleSdkVoiceInstruction = useCallback(
+    (text?: string) => {
+      const t = (text ?? '').trim();
+      if (!t) return;
+      ingestSdkVoiceSubtitle(t);
+      if (navVoiceMuted) return;
+      const now = Date.now();
+      const last = lastSdkVoiceSpeakRef.current;
+      if (last.text === t && now - last.at < 6500) return;
+      lastSdkVoiceSpeakRef.current = { text: t, at: now };
+      speak(t, 'high', drivingMode, {
+        rateSource: 'navigation_fixed',
+        forceAllowDuringSdk: true,
+      });
+    },
+    [drivingMode, navVoiceMuted],
   );
 
   const sdkRouteHandoffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -4066,7 +4085,7 @@ export default function MapScreen() {
           pointerEvents="none"
           navigationLogicOnly
           coordinates={navLogicCoords}
-          mute={navVoiceMuted}
+          mute
           locale="en-US"
           routeProfile={routeProfileForPlatform()}
           drivingMode={drivingMode}
@@ -4087,7 +4106,7 @@ export default function MapScreen() {
             ingestSdkLaneAssets(e.nativeEvent?.lanes ?? null)
           }
           onVoiceInstruction={(e: { nativeEvent: { text?: string } }) =>
-            ingestSdkVoiceSubtitle(e.nativeEvent.text)
+            handleSdkVoiceInstruction(e.nativeEvent.text)
           }
           onNavigationLocationUpdate={(e: { nativeEvent: SdkLocationPayload }) =>
             ingestSdkLocation(e.nativeEvent)
@@ -5603,6 +5622,11 @@ export default function MapScreen() {
               } else if (action.type === 'mode' && action.name) {
                 const m = action.name.toLowerCase();
                 if (m === 'calm' || m === 'adaptive' || m === 'sport') setDrivingMode(m as DrivingMode);
+              } else if (action.type === 'mute_voice') {
+                setNavVoiceMuted(true);
+                stopSpeaking();
+              } else if (action.type === 'unmute_voice') {
+                setNavVoiceMuted(false);
               }
             }}
           />

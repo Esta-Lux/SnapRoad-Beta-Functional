@@ -98,10 +98,21 @@ export type TtsSpeechProfile = {
   language: 'en-US';
 };
 
+/**
+ * One house voice for navigation + Orion: calm, clear, young-adult male when
+ * the device exposes a matching voice. Keep the profile steady across driving
+ * modes so HUD mic replies and turn cues sound like the same assistant.
+ */
+const CALM_MALE_SPEECH_PROFILE: TtsSpeechProfile = {
+  rate: 0.86,
+  pitch: 0.88,
+  language: 'en-US',
+};
+
 const MODE_SPEECH_PROFILE: Record<DrivingMode, TtsSpeechProfile> = {
-  calm: { rate: 0.88, pitch: 0.9, language: 'en-US' },
-  adaptive: { rate: 0.91, pitch: 0.91, language: 'en-US' },
-  sport: { rate: 0.94, pitch: 0.92, language: 'en-US' },
+  calm: CALM_MALE_SPEECH_PROFILE,
+  adaptive: CALM_MALE_SPEECH_PROFILE,
+  sport: CALM_MALE_SPEECH_PROFILE,
 };
 
 export type SpeakRateSource = 'driving' | 'navigation_fixed' | 'advisory';
