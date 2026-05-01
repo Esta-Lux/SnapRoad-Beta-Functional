@@ -82,6 +82,8 @@ export interface Trip {
   xp_earned: number;
   fuel_used_gallons?: number;
   avg_speed_mph?: number;
+  fuel_cost_estimate?: number;
+  mileage_value_estimate?: number;
   route_coordinates?: { lat: number; lng: number }[];
 }
 

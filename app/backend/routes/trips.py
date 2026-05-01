@@ -89,13 +89,15 @@ def _trip_row_to_client_shape(r: dict) -> dict:
         "id": str(r.get("id")),
         "date": date_part,
         "time": time_part,
-        "origin": "Start",
-        "destination": "End",
+        "origin": r.get("origin") or "Start",
+        "destination": r.get("destination") or "End",
         "distance_miles": float(r.get("distance_miles") or 0),
         "duration_minutes": max(0, dur_sec // 60),
         "safety_score": float(r.get("safety_score") or 0),
         "gems_earned": int(r.get("gems_earned") or 0),
         "xp_earned": int(r.get("xp_earned") or 0),
+        "avg_speed_mph": float(r.get("avg_speed_mph") or r.get("avg_speed") or 0),
+        "fuel_used_gallons": float(r.get("fuel_used_gallons") or 0),
     }
 
 
@@ -320,7 +322,7 @@ def get_recent_trips_mobile(
         sb = get_supabase()
         res = (
             sb.table("trips")
-            .select("id,started_at,ended_at,distance_miles,duration_seconds,safety_score")
+            .select("*")
             .eq("user_id", user_id)
             .order("ended_at", desc=True)
             .limit(limit)
@@ -335,11 +337,17 @@ def get_recent_trips_mobile(
             out.append({
                 "id": str(r.get("id")),
                 "date": r.get("ended_at") or r.get("started_at") or "",
-                "origin": "Start",
-                "destination": "End",
+                "origin": r.get("origin") or "Start",
+                "destination": r.get("destination") or "End",
                 "distance": float(r.get("distance_miles") or 0),
+                "distance_miles": float(r.get("distance_miles") or 0),
                 "duration": dur_sec,
+                "duration_minutes": max(0, dur_sec // 60),
                 "safety_score": float(r.get("safety_score") or 0),
+                "gems_earned": int(r.get("gems_earned") or 0),
+                "xp_earned": int(r.get("xp_earned") or 0),
+                "avg_speed_mph": float(r.get("avg_speed_mph") or r.get("avg_speed") or 0),
+                "fuel_used_gallons": float(r.get("fuel_used_gallons") or 0),
             })
         return {"success": True, "data": out}
     except Exception as exc:
@@ -427,6 +435,10 @@ class TripCompleteBody(BaseModel):
     safety_score: float = 85
     started_at: Optional[str] = None
     ended_at: Optional[str] = None
+    origin: Optional[str] = None
+    destination: Optional[str] = None
+    avg_speed_mph: Optional[float] = None
+    fuel_used_gallons: Optional[float] = None
     hard_braking_events: int = 0
     speeding_events: int = 0
     incidents_reported: int = 0
@@ -491,16 +503,32 @@ def _build_trip_row(
     distance: float, safety: float, gems: int, xp: int,
 ) -> dict:
     now_iso = datetime.now(timezone.utc).isoformat()
+    duration_seconds = _int_for_pg(body.duration_seconds)
+    avg_speed = (
+        float(body.avg_speed_mph)
+        if body.avg_speed_mph is not None and math.isfinite(float(body.avg_speed_mph))
+        else (float(distance) / (duration_seconds / 3600.0) if duration_seconds > 0 else 0.0)
+    )
+    fuel_used = (
+        float(body.fuel_used_gallons)
+        if body.fuel_used_gallons is not None and math.isfinite(float(body.fuel_used_gallons))
+        else (float(distance) / 25.0 if distance > 0 else 0.0)
+    )
     # INTEGER columns: use real Python int so JSON is 85 not 85.0 (invalid input for integer in Postgres).
     return {
         "id": trip_id,
         "user_id": user_id,
         "profile_id": user_id,
         "distance_miles": round(float(distance), 2),
-        "duration_seconds": _int_for_pg(body.duration_seconds),
+        "duration_seconds": duration_seconds,
+        "duration_minutes": max(1, int(round(duration_seconds / 60))) if duration_seconds > 0 else 0,
         "safety_score": _int_for_pg(safety, lo=0, hi=100),
         "gems_earned": _int_for_pg(gems),
         "xp_earned": _int_for_pg(xp),
+        "origin": (body.origin or "Start")[:160],
+        "destination": (body.destination or "End")[:160],
+        "avg_speed_mph": round(max(0.0, avg_speed), 1),
+        "fuel_used_gallons": round(max(0.0, fuel_used), 3),
         "started_at": body.started_at or now_iso,
         "ended_at": body.ended_at or now_iso,
         "hard_braking_events": _int_for_pg(body.hard_braking_events),
@@ -520,6 +548,33 @@ def _is_duplicate_key_error(exc: BaseException) -> bool:
     return "duplicate key" in msg or "unique constraint" in msg or "already exists" in msg
 
 
+def _is_missing_trip_column_error(exc: BaseException, column: str) -> bool:
+    msg = str(exc).lower()
+    col = column.lower()
+    return (
+        "trips" in msg
+        and col in msg
+        and "column" in msg
+        and ("does not exist" in msg or "could not find" in msg or "schema cache" in msg)
+    )
+
+
+def _strip_missing_trip_optional_column(trip_row: dict, exc: BaseException) -> bool:
+    optional_columns = (
+        "origin",
+        "destination",
+        "duration_minutes",
+        "avg_speed_mph",
+        "fuel_used_gallons",
+    )
+    for col in optional_columns:
+        if col in trip_row and _is_missing_trip_column_error(exc, col):
+            _trips_log.warning("trips.%s missing; retrying trip insert without it", col)
+            trip_row.pop(col, None)
+            return True
+    return False
+
+
 def _persist_trip_and_update_profile(
     trip_row: dict, user_id: str, gems: int, xp: int, distance: float,
 ) -> bool:
@@ -528,7 +583,7 @@ def _persist_trip_and_update_profile(
 
     inserted = False
     last_exc: Exception | None = None
-    for attempt in range(3):
+    for attempt in range(8):
         try:
             sb = get_supabase()
             sb.table("trips").insert(trip_row).execute()
@@ -539,7 +594,9 @@ def _persist_trip_and_update_profile(
             if _is_duplicate_key_error(exc):
                 _trips_log.warning("Trip insert idempotent skip (duplicate id=%s): %s", trip_row.get("id"), exc)
                 return False
-            if attempt < 2:
+            if _strip_missing_trip_optional_column(trip_row, exc):
+                continue
+            if attempt < 7:
                 _trips_log.warning("Trip insert attempt %s failed (%s), resetting client and retrying", attempt + 1, exc)
                 reset_supabase_client()
                 time.sleep(0.08 * (attempt + 1))
@@ -708,6 +765,11 @@ def complete_trip(request: Request, body: TripCompleteBody, user: CurrentUser):
         "xp_earned": xp_earned,
         "safety_score": round(safety, 1),
         "distance_miles": round(distance, 2),
+        "duration_seconds": _int_for_pg(body.duration_seconds),
+        "origin": body.origin or "Start",
+        "destination": body.destination or "End",
+        "avg_speed_mph": trip_row.get("avg_speed_mph"),
+        "fuel_used_gallons": trip_row.get("fuel_used_gallons"),
     }
     if profile_totals is not None:
         payload["profile"] = profile_totals

@@ -5,6 +5,7 @@ import * as Sharing from 'expo-sharing';
 import { Ionicons } from '@expo/vector-icons';
 import Modal from '../common/Modal';
 import { formatDuration } from '../../utils/format';
+import { formatUsd } from '../../utils/driveMetrics';
 
 interface TripData {
   distance: number;
@@ -14,6 +15,9 @@ interface TripData {
   gems_earned: number;
   origin: string;
   destination: string;
+  avg_speed_mph?: number;
+  fuel_used_gallons?: number;
+  mileage_value_estimate?: number;
 }
 
 interface Props {
@@ -31,6 +35,7 @@ export default function TripShare({ visible, onClose, trip }: Props) {
     `🚗 SnapRoad Trip Complete!`,
     `📍 ${trip.origin} → ${trip.destination}`,
     `📏 ${trip.distance.toFixed(1)} mi · ${formatDuration(trip.duration)}`,
+    `⛽ ${Number(trip.fuel_used_gallons ?? 0).toFixed(2)} gal est. · ${Math.round(trip.avg_speed_mph ?? 0)} mph avg`,
     `🛡️ Safety Score: ${trip.safety_score}/100`,
     `💎 Gems Earned: ${trip.gems_earned}`,
     `\nDrive smarter with SnapRoad!`,
@@ -56,8 +61,8 @@ export default function TripShare({ visible, onClose, trip }: Props) {
   const stats: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string; color: string }[] = [
     { icon: 'navigate-outline', label: 'Distance', value: `${trip.distance.toFixed(1)} mi`, color: '#3B82F6' },
     { icon: 'time-outline', label: 'Duration', value: formatDuration(trip.duration), color: '#8B5CF6' },
-    { icon: 'shield-checkmark-outline', label: 'Safety', value: `${trip.safety_score}/100`, color: '#22C55E' },
-    { icon: 'diamond-outline', label: 'Gems', value: `+${trip.gems_earned}`, color: '#F59E0B' },
+    { icon: 'speedometer-outline', label: 'Avg speed', value: `${Math.round(trip.avg_speed_mph ?? 0)} mph`, color: '#14B8A6' },
+    { icon: 'receipt-outline', label: 'Mileage', value: formatUsd(trip.mileage_value_estimate ?? 0), color: '#22C55E' },
   ];
 
   return (

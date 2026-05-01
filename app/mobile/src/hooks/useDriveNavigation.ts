@@ -32,6 +32,12 @@ import { primaryInstructionText, primaryVoiceAnnouncement } from '../lib/navigat
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { tripGemsFromDurationMinutes } from '../utils/tripGems';
+import {
+  avgSpeedMph,
+  estimateFuelCostUsd,
+  estimateFuelGallons,
+  estimateMileageDeductionUsd,
+} from '../utils/driveMetrics';
 import type { User } from '../types';
 import {
   bucketAccuracyBand,
@@ -131,12 +137,19 @@ export interface TripSummary {
   distance: number;
   /** Minutes */
   duration: number;
+  duration_seconds?: number;
   safety_score: number;
   gems_earned: number;
   xp_earned: number;
   origin: string;
   destination: string;
   date: string;
+  started_at?: string;
+  ended_at?: string;
+  avg_speed_mph?: number;
+  fuel_used_gallons?: number;
+  fuel_cost_estimate?: number;
+  mileage_value_estimate?: number;
   /** False = trip sheet still shows, but drive did not meet min distance/time for rewards. */
   counted?: boolean;
   /** Auto-ended at destination — show “You’ve arrived” hero in trip sheet. */
@@ -1144,6 +1157,10 @@ export function useDriveNavigation(params: {
     const originName = navigationData?.origin?.name ?? 'Start';
     const destName = navigationData?.destination?.name ?? 'End';
     const tripStartMs = tripStartTimeRef.current;
+    const startedAtIso = tripStartMs ? new Date(tripStartMs).toISOString() : undefined;
+    const endedAtIso = new Date(now).toISOString();
+    const avgSpeed = Math.round(avgSpeedMph(roundedDist, durationSec) * 10) / 10;
+    const fuelGallons = Math.round(estimateFuelGallons(roundedDist) * 100) / 100;
     const dynamicDest = navigationData?.dynamicDestination === true;
 
     setNavigationData(null);
@@ -1176,6 +1193,7 @@ export function useDriveNavigation(params: {
     const summaryPayload: TripSummary = {
       distance: roundedDist,
       duration: Math.max(1, durationMin || 1),
+      duration_seconds: durationSec,
       safety_score: 85,
       gems_earned: qualifiesTrip
         ? tripGemsFromDurationMinutes(Math.max(1, durationMin || 1), Boolean(user?.isPremium))
@@ -1184,6 +1202,12 @@ export function useDriveNavigation(params: {
       origin: originName,
       destination: destName,
       date: new Date().toLocaleDateString(),
+      started_at: startedAtIso,
+      ended_at: endedAtIso,
+      avg_speed_mph: avgSpeed,
+      fuel_used_gallons: fuelGallons,
+      fuel_cost_estimate: Math.round(estimateFuelCostUsd(roundedDist) * 100) / 100,
+      mileage_value_estimate: Math.round(estimateMileageDeductionUsd(roundedDist) * 100) / 100,
       counted: qualifiesTrip,
       arrivedAtDestination,
     };
@@ -1207,7 +1231,11 @@ export function useDriveNavigation(params: {
       duration_seconds: durationSec,
       safety_score: 85,
       started_at: startedAt,
-      ended_at: new Date(now).toISOString(),
+      ended_at: endedAtIso,
+      origin: originName,
+      destination: destName,
+      avg_speed_mph: avgSpeed,
+      fuel_used_gallons: Math.round(estimateFuelGallons(roundedDist) * 1000) / 1000,
       hard_braking_events: 0,
       speeding_events: 0,
       incidents_reported: 0,

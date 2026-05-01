@@ -41,6 +41,8 @@ export type ProfileTripHistoryItem = {
   duration_minutes?: number;
   gems_earned?: number;
   safety_score?: number;
+  avg_speed_mph?: number;
+  fuel_used_gallons?: number;
   tripEndedAtIso?: string;
 };
 

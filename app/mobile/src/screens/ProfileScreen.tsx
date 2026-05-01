@@ -356,6 +356,8 @@ export default function ProfileScreen() {
             duration_minutes: durMin,
             gems_earned: Number(t.gems_earned ?? 0),
             safety_score: Number(t.safety_score ?? 0),
+            avg_speed_mph: Number(t.avg_speed_mph ?? 0),
+            fuel_used_gallons: Number(t.fuel_used_gallons ?? 0),
             tripEndedAtIso,
           };
         }),

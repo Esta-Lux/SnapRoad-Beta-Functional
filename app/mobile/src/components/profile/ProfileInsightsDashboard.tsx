@@ -743,15 +743,21 @@ export default function ProfileInsightsDashboard({
                 </Text>
               </View>
               <View style={styles.tripStatCell}>
-                <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Safety</Text>
-                <Text style={{ color: colors.success, fontSize: 18, fontWeight: '900' }}>
-                  {tripDetail.safety_score ?? 0}
+                <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Avg speed</Text>
+                <Text style={{ color: colors.primary, fontSize: 18, fontWeight: '900' }}>
+                  {Math.round(tripDetail.avg_speed_mph ?? 0)} mph
                 </Text>
               </View>
               <View style={styles.tripStatCell}>
-                <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Gems</Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Fuel est.</Text>
+                <Text style={{ color: colors.success, fontSize: 18, fontWeight: '900' }}>
+                  {(tripDetail.fuel_used_gallons ?? 0).toFixed(2)} gal
+                </Text>
+              </View>
+              <View style={styles.tripStatCell}>
+                <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Safety</Text>
                 <Text style={{ color: colors.text, fontSize: 18, fontWeight: '900' }}>
-                  {tripDetail.gems_earned ?? 0}
+                  {tripDetail.safety_score ?? 0}
                 </Text>
               </View>
             </View>

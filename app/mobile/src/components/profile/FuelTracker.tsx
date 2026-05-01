@@ -335,8 +335,8 @@ export default function FuelTracker({ visible, onClose }: Props) {
       </View>
 
       <Text style={[typography.caption, { color: colors.textSecondary, marginBottom: spacing.sm, lineHeight: 18 }]}>
-        SnapRoad can add trip miles since your last fill to suggest odometer (on-app miles). Use your real dash for taxes;
-        adjust if you drove off-app.
+        Fast log: enter gallons and price, then use SnapRoad miles to fill the odometer estimate. Use your real dash reading
+        when you drove off-app or need tax-grade records.
       </Text>
 
       <View style={[styles.segment, { backgroundColor: colors.surfaceSecondary }]}>
@@ -407,7 +407,7 @@ export default function FuelTracker({ visible, onClose }: Props) {
                 },
               ]}
             >
-              <Text style={[typography.caption, { color: colors.text, fontWeight: '700', marginBottom: 6 }]}>Trip estimate</Text>
+              <Text style={[typography.caption, { color: colors.text, fontWeight: '800', marginBottom: 6 }]}>Fast odometer from trips</Text>
               <Text style={[typography.caption, { color: colors.textSecondary, lineHeight: 18 }]}>
                 SnapRoad trips since last fill:{' '}
                 <Text style={{ fontWeight: '800', color: colors.text }}>
@@ -431,7 +431,8 @@ export default function FuelTracker({ visible, onClose }: Props) {
                   style={[styles.secondaryBtn, { borderColor: colors.border, marginTop: spacing.sm }]}
                   onPress={() => setOdometer(String(Math.round(sug.suggested!)))}
                 >
-                  <Text style={[typography.body, { fontWeight: '700', color: colors.primary }]}>Apply to field</Text>
+                  <Ionicons name="sparkles-outline" size={18} color={colors.primary} />
+                  <Text style={[typography.body, { fontWeight: '800', color: colors.primary }]}>Use this estimate</Text>
                 </TouchableOpacity>
               ) : null}
             </View>
@@ -523,7 +524,7 @@ export default function FuelTracker({ visible, onClose }: Props) {
                 disabled={submitting}
               >
                 <Ionicons name="navigate-outline" size={18} color={colors.primary} />
-                <Text style={[typography.body, { fontWeight: '700', color: colors.primary }]}>Log with SnapRoad miles only</Text>
+                <Text style={[typography.body, { fontWeight: '800', color: colors.primary }]}>Skip dash reading and use SnapRoad miles</Text>
               </TouchableOpacity>
             ) : null}
           </View>

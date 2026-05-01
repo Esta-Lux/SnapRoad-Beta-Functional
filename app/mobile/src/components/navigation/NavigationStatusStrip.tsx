@@ -265,6 +265,11 @@ export default React.memo(function NavigationStatusStrip({
           </Text>
         </View>
         <View style={styles.secondaryRow}>{secondaryWrap}</View>
+        {drivenMiles != null && Number.isFinite(drivenMiles) && drivenMiles > 0.02 ? (
+          <Text style={[styles.drivenLine, { color: textSec }]} numberOfLines={1}>
+            Logged {drivenMiles.toFixed(drivenMiles < 10 ? 2 : 1)} mi this drive
+          </Text>
+        ) : null}
       </View>
 
       <TouchableOpacity

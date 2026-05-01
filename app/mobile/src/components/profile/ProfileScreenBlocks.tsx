@@ -23,6 +23,7 @@ type StatsProps = {
 };
 
 export const ProfileStatsStrip = React.memo(function ProfileStatsStrip({ cardBg, text, sub, gems, safetyScore, trips, miles }: StatsProps) {
+  const avgMiles = trips > 0 ? miles / trips : 0;
   const cols = [
     { icon: 'diamond-outline' as const, val: formatGemsCompact(gems), lbl: 'Gems' },
     {
@@ -31,7 +32,7 @@ export const ProfileStatsStrip = React.memo(function ProfileStatsStrip({ cardBg,
       lbl: 'Safety',
     },
     { icon: 'car-outline' as const, val: String(trips), lbl: 'Trips' },
-    { icon: 'location-outline' as const, val: `${formatMilesCompact(miles)}`, lbl: 'Miles' },
+    { icon: 'briefcase-outline' as const, val: `${formatMilesCompact(miles)}`, lbl: 'Logged mi', sub: trips > 0 ? `${avgMiles.toFixed(1)} avg` : 'Ready' },
   ];
   return (
     <View style={[styles.statsRow, { backgroundColor: cardBg }]}>
@@ -40,6 +41,7 @@ export const ProfileStatsStrip = React.memo(function ProfileStatsStrip({ cardBg,
           <Ionicons name={c.icon} size={14} color={sub} style={styles.statIcon} />
           <Text style={[styles.statVal, { color: text }]}>{c.val}</Text>
           <Text style={[styles.statLbl, { color: sub }]}>{c.lbl}</Text>
+          {'sub' in c && c.sub ? <Text style={[styles.statSub, { color: sub }]}>{c.sub}</Text> : null}
         </View>
       ))}
     </View>
@@ -80,9 +82,10 @@ const styles = StyleSheet.create({
   tabBtn: { flex: 1, alignItems: 'center', paddingVertical: 10, borderBottomWidth: 2, borderBottomColor: 'transparent' },
   tabBtnActive: { borderBottomColor: '#3B82F6' },
   tabBtnText: { fontSize: 12, fontWeight: '700' },
-  statsRow: { marginHorizontal: 16, marginBottom: 2, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 8, flexDirection: 'row' },
+  statsRow: { marginHorizontal: 16, marginBottom: 2, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 8, flexDirection: 'row', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(148,163,184,0.22)' },
   statCol: { flex: 1, alignItems: 'center' },
   statIcon: { marginBottom: 2 },
   statVal: { fontSize: 17, fontWeight: '800' },
   statLbl: { fontSize: 10, marginTop: 2, fontWeight: '600' },
+  statSub: { fontSize: 9, marginTop: 1, fontWeight: '700', opacity: 0.82 },
 });

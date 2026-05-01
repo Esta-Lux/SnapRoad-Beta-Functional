@@ -141,6 +141,7 @@ import {
 } from '../utils/distance';
 import { useSmoothedNavFraction } from '../hooks/useSmoothedNavFraction';
 import { formatDuration } from '../utils/format';
+import { formatUsd } from '../utils/driveMetrics';
 import { speak, stopSpeaking } from '../utils/voice';
 import { api, API_BASE_URL } from '../api/client';
 import {
@@ -4951,17 +4952,30 @@ export default function MapScreen() {
             )}
             <View style={s.tripGrid}>
               {[
-                { l: 'Distance', v: `${(activeTripSummary.distance ?? 0).toFixed(1)} mi`, c: colors.text },
-                { l: 'Time', v: formatDuration(activeTripSummary.duration), c: colors.text },
-                { l: 'Safety', v: String(activeTripSummary.safety_score), c: colors.success },
-                { l: 'Gems', v: `+${activeTripSummary.gems_earned}`, c: colors.warning },
-                { l: 'XP', v: `+${activeTripSummary.xp_earned}`, c: '#4f46e5' },
+                { l: 'Miles logged', v: `${(activeTripSummary.distance ?? 0).toFixed(2)} mi`, c: colors.text, i: 'navigate-outline' as const },
+                { l: 'Drive time', v: formatDuration(activeTripSummary.duration), c: colors.text, i: 'time-outline' as const },
+                { l: 'Avg speed', v: `${Math.round(activeTripSummary.avg_speed_mph ?? 0)} mph`, c: colors.primary, i: 'speedometer-outline' as const },
+                { l: 'Fuel est.', v: `${(activeTripSummary.fuel_used_gallons ?? 0).toFixed(2)} gal`, c: colors.warning, i: 'flash-outline' as const },
+                { l: 'Mileage value', v: formatUsd(activeTripSummary.mileage_value_estimate ?? 0), c: colors.success, i: 'receipt-outline' as const },
+                { l: 'Rewards', v: `+${activeTripSummary.gems_earned} gems`, c: colors.warning, i: 'diamond-outline' as const },
               ].map((stat) => (
                 <View key={stat.l} style={[s.tripStat, { backgroundColor: colors.surfaceSecondary }]}>
-                  <Text style={[s.tripStatL, { color: colors.textTertiary }]}>{stat.l}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Ionicons name={stat.i} size={14} color={stat.c} />
+                    <Text style={[s.tripStatL, { color: colors.textTertiary }]}>{stat.l}</Text>
+                  </View>
                   <Text style={[s.tripStatV, { color: stat.c }]}>{stat.v}</Text>
                 </View>
               ))}
+            </View>
+            <View style={[s.tripServiceCard, { backgroundColor: isLight ? 'rgba(37,99,235,0.08)' : 'rgba(96,165,250,0.12)', borderColor: colors.border }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.tripServiceTitle, { color: colors.text }]}>Service-driver log</Text>
+                <Text style={[s.tripServiceSub, { color: colors.textSecondary }]}>
+                  HUD miles, elapsed time, fuel estimate, and route names were saved from the same navigation session for profile history.
+                </Text>
+              </View>
+              <Ionicons name="briefcase-outline" size={22} color={colors.primary} />
             </View>
             {activeTripSummary.profile_totals &&
             (activeTripSummary.profile_totals.total_miles != null ||
@@ -5836,10 +5850,13 @@ const s = StyleSheet.create({
   tripCard: { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24 },
   tripTitle: { fontSize: 22, fontWeight: '800', marginBottom: 4, letterSpacing: -0.3 },
   tripRoute: { fontSize: 13, marginBottom: 18 },
-  tripGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 22 },
-  tripStat: { width: '47%' as any, borderRadius: 16, padding: 16 },
+  tripGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 12 },
+  tripStat: { width: '47%' as any, borderRadius: 14, padding: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(148,163,184,0.22)' },
   tripStatL: { fontSize: 13, fontWeight: '600' },
-  tripStatV: { fontSize: 22, fontWeight: '800', marginTop: 4 },
+  tripStatV: { fontSize: 20, fontWeight: '900', marginTop: 6 },
+  tripServiceCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, padding: 14, marginBottom: 12 },
+  tripServiceTitle: { fontSize: 14, fontWeight: '900' },
+  tripServiceSub: { fontSize: 12, lineHeight: 17, marginTop: 3, fontWeight: '600' },
   tripDone: { borderRadius: 16, paddingVertical: 16, alignItems: 'center', ...shadow(12, 0.3) },
   tripDoneT: { color: '#fff', fontSize: 16, fontWeight: '800' },
 

@@ -14,6 +14,11 @@ export interface TripCompleteApiData {
   xp_earned?: number;
   safety_score?: number;
   distance_miles?: number;
+  duration_seconds?: number;
+  avg_speed_mph?: number;
+  fuel_used_gallons?: number;
+  origin?: string;
+  destination?: string;
   profile?: {
     total_miles?: number;
     total_trips?: number;
@@ -59,6 +64,12 @@ export function mergeTripCompleteResponse(base: TripSummary, body: unknown): Tri
     gems_earned: Number(d.gems_earned ?? base.gems_earned),
     xp_earned: Number(d.xp_earned ?? base.xp_earned),
     safety_score: Number(d.safety_score ?? base.safety_score),
+    distance: Number(d.distance_miles ?? base.distance),
+    origin: typeof d.origin === 'string' && d.origin.trim() ? d.origin : base.origin,
+    destination: typeof d.destination === 'string' && d.destination.trim() ? d.destination : base.destination,
+    duration_seconds: d.duration_seconds != null ? Number(d.duration_seconds) : base.duration_seconds,
+    avg_speed_mph: d.avg_speed_mph != null ? Number(d.avg_speed_mph) : base.avg_speed_mph,
+    fuel_used_gallons: d.fuel_used_gallons != null ? Number(d.fuel_used_gallons) : base.fuel_used_gallons,
     counted: apiCounted,
     profile_totals: profileSnap ?? base.profile_totals,
   };

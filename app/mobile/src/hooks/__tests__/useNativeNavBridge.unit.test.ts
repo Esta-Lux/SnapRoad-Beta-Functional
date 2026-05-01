@@ -54,6 +54,28 @@ test('mergeTripCompleteResponse: bare body (no outer data) still works', () => {
   assert.equal(merged.counted, true);
 });
 
+test('mergeTripCompleteResponse: merges tracking metrics used by trip summary', () => {
+  const body = {
+    data: {
+      trip_id: 'trip-metrics',
+      counted: true,
+      distance_miles: 12.45,
+      duration_seconds: 1840,
+      avg_speed_mph: 24.36,
+      fuel_used_gallons: 0.5,
+      origin: 'Downtown pickup',
+      destination: 'Airport dropoff',
+    },
+  };
+  const merged = mergeTripCompleteResponse(baseSummary(), body);
+  assert.equal(merged.distance, 12.45);
+  assert.equal(merged.duration_seconds, 1840);
+  assert.equal(merged.avg_speed_mph, 24.36);
+  assert.equal(merged.fuel_used_gallons, 0.5);
+  assert.equal(merged.origin, 'Downtown pickup');
+  assert.equal(merged.destination, 'Airport dropoff');
+});
+
 test('mergeTripCompleteResponse: counted=false when trip_id is null', () => {
   const body = {
     data: {
