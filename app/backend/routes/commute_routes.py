@@ -252,6 +252,17 @@ def _can_send_window_push(route: dict, now_utc: datetime, day_key: str) -> bool:
     return now_utc - last.astimezone(timezone.utc) >= timedelta(minutes=interval_min)
 
 
+def _traffic_push_cooldown_elapsed(last_push_at: object, cooldown_seconds: int) -> bool:
+    last = _iso_dt(last_push_at)
+    if not last:
+        return True
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - last.astimezone(timezone.utc) >= timedelta(
+        seconds=max(0, int(cooldown_seconds or 0)),
+    )
+
+
 def _mark_window_push_sent(sb, route_id: str, now_utc: datetime, day_key: str, route: dict) -> None:
     sent = _window_push_count(route, day_key) + 1
     sb.table("commute_routes").update(

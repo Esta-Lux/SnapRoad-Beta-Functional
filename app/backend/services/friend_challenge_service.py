@@ -18,6 +18,37 @@ from services.supabase_service import (
 logger = logging.getLogger(__name__)
 
 
+def settle_friend_challenge_pot(
+    challenger_id: str,
+    opponent_id: str,
+    winner_id: Optional[str],
+    stake_gems: int,
+) -> None:
+    """Settle already-deducted challenge stakes: winner gets pot, draw refunds both."""
+    stake = max(0, int(stake_gems or 0))
+    if stake <= 0:
+        return
+    challenger = str(challenger_id or "").strip()
+    opponent = str(opponent_id or "").strip()
+    winner = str(winner_id or "").strip() if winner_id else ""
+
+    if not winner:
+        for uid in (challenger, opponent):
+            if not uid:
+                continue
+            profile = sb_get_profile(uid) or {}
+            gems = int(profile.get("gems") or 0)
+            sb_update_profile(uid, {"gems": gems + stake})
+        return
+
+    if winner not in {challenger, opponent}:
+        logger.warning("winner_id=%s is not part of friend challenge", winner)
+        return
+    profile = sb_get_profile(winner) or {}
+    gems = int(profile.get("gems") or 0)
+    sb_update_profile(winner, {"gems": gems + stake * 2})
+
+
 def _parse_ends_at(raw: Any) -> Optional[datetime]:
     if raw is None:
         return None

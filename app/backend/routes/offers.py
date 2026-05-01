@@ -122,6 +122,30 @@ def _next_gem_total(user_id: str) -> int:
     return int(row.get("gems") or 0)
 
 
+def _try_redeem_offer_atomic(sb, *, user_id: str, offer: dict, fee_preview: dict) -> Optional[dict]:
+    """Use the DB atomic redemption RPC when present; fall back to legacy writes otherwise."""
+    offer_id = offer.get("id")
+    if not offer_id:
+        return None
+    payload = {
+        "p_user_id": user_id,
+        "p_offer_id": offer_id,
+        "p_fee_amount": float(fee_preview.get("fee_amount") or 0),
+        "p_fee_cents": int(fee_preview.get("fee_cents") or 0),
+        "p_fee_tier": int(fee_preview.get("fee_tier") or 1),
+    }
+    try:
+        res = sb.rpc("redeem_offer_atomic", payload).execute()
+        data = getattr(res, "data", None)
+    except Exception as exc:
+        logger.debug("redeem_offer_atomic unavailable; using legacy redemption path: %s", exc)
+        return None
+    if isinstance(data, list):
+        first = data[0] if data else None
+        return first if isinstance(first, dict) else None
+    return data if isinstance(data, dict) else None
+
+
 def _favorited_offer_ids(user_id: str) -> set[str]:
     if not user_id:
         return set()
