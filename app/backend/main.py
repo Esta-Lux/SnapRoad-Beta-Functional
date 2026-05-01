@@ -4,6 +4,7 @@ All routes are organized in modular files under /routes.
 Mock data is used as fallback; Supabase is the target database.
 """
 import os
+import logging
 import traceback
 from pathlib import Path
 from typing import Optional
@@ -11,6 +12,8 @@ from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
+
+logger = logging.getLogger(__name__)
 
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -138,8 +141,8 @@ def _register_exception_handlers(app: FastAPI) -> None:
         # Ensure unhandled errors reach Sentry even though we return a generic 500 to clients.
         try:
             sentry_sdk.capture_exception(exc)
-        except Exception:
-            pass
+        except Exception as sentry_error:
+            logger.debug("Sentry capture failed in global exception handler: %s", sentry_error)
         telemetry_service.publish_fire_and_forget(
             {
                 "id": f"err_{telemetry_service.now_iso()}_{request.method}_{request.url.path}",
