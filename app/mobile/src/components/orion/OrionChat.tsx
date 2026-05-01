@@ -24,7 +24,6 @@ import {
   configureAudioSessionForVoiceInput,
   restoreDefaultAudioSession,
   speakOrionReply,
-  stopSpeaking,
 } from '../../utils/voice';
 import type { DrivingMode } from '../../types';
 
@@ -149,6 +148,7 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
   const listRef = useRef<FlatList>(null);
   const messagesRef = useRef(messages);
   const sendInFlightRef = useRef(false);
+  const transcriptRef = useRef('');
   /** Ignore stale STT results while Orion TTS is playing (avoids nav/Orion speech feeding the mic). */
   const orionSpeakingRef = useRef(false);
 
@@ -184,6 +184,7 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
       setMessages((prev) => [...prev, userMsg]);
       setInput('');
       setPartialTranscript('');
+      transcriptRef.current = '';
       setIsTyping(true);
       try {
         await Voice?.stop().catch(() => {});
@@ -267,6 +268,7 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
       void Voice.cancel().catch(() => {});
       setIsListening(false);
       setPartialTranscript('');
+      transcriptRef.current = '';
       orionSpeakingRef.current = false;
       setSuggestionChips([]);
     }
@@ -276,25 +278,34 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
     if (!Voice) return;
     Voice.onSpeechStart = () => {
       setPartialTranscript('');
+      transcriptRef.current = '';
     };
     Voice.onSpeechPartialResults = (e) => {
       if (orionSpeakingRef.current) return;
       const t = e?.value?.[0];
-      if (t) setPartialTranscript(t);
+      if (t) {
+        transcriptRef.current = t;
+        setPartialTranscript(t);
+      }
     };
     Voice.onSpeechResults = (e) => {
       if (orionSpeakingRef.current) return;
       const t = e?.value?.[0]?.trim();
       if (t) {
+        transcriptRef.current = t;
         setInput(t);
         setPartialTranscript('');
       }
     };
     Voice.onSpeechEnd = () => {
+      const t = transcriptRef.current.trim();
+      if (t) setInput(t);
       setIsListening(false);
     };
     Voice.onSpeechError = () => {
       setIsListening(false);
+      const t = transcriptRef.current.trim();
+      if (t) setInput(t);
       setPartialTranscript('');
     };
     return () => {
@@ -338,8 +349,8 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
       /* continue anyway */
     }
     setPartialTranscript('');
+    transcriptRef.current = '';
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    stopSpeaking();
     Speech.stop();
     await configureAudioSessionForVoiceInput();
     setIsListening(true);
@@ -354,8 +365,9 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
     if (!Voice) return;
     if (isListening) {
       await stopListening();
-      const combined = (partialTranscript.trim() || input.trim());
+      const combined = transcriptRef.current.trim() || partialTranscript.trim() || input.trim();
       if (combined) setInput(combined);
+      transcriptRef.current = '';
       setPartialTranscript('');
       return;
     }

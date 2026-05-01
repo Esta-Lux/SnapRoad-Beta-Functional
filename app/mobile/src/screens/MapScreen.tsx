@@ -5620,7 +5620,7 @@ export default function MapScreen() {
           style={[s.orionFab, { top: insets.top + 236, right: 20 }]}
         >
           <OrionQuickMic
-            visible
+            visible={!showOrion}
             interactionMode={nav.isNavigating ? 'navigation' : 'explore'}
             isPremium={Boolean(user?.isPremium)}
             context={orionContext}

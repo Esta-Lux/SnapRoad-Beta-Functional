@@ -183,8 +183,8 @@ test('HUD and Orion speech profiles use the same calm US male-style settings', (
   assert.equal(sport.language, 'en-US');
   assert.deepEqual(adaptive, calm);
   assert.deepEqual(sport, calm);
-  assert.equal(calm.rate, 0.86);
-  assert.ok(calm.pitch < 1);
-  assert.ok(adaptive.pitch < 1);
-  assert.ok(sport.pitch < 1);
+  assert.equal(calm.rate, 0.96);
+  assert.equal(calm.pitch, 0.96);
+  assert.ok(calm.rate <= 1);
+  assert.ok(calm.pitch <= 1);
 });

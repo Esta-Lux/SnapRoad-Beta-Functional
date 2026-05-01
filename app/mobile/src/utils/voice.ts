@@ -104,8 +104,8 @@ export type TtsSpeechProfile = {
  * modes so HUD mic replies and turn cues sound like the same assistant.
  */
 const CALM_MALE_SPEECH_PROFILE: TtsSpeechProfile = {
-  rate: 0.86,
-  pitch: 0.88,
+  rate: 0.96,
+  pitch: 0.96,
   language: 'en-US',
 };
 
@@ -286,20 +286,27 @@ export function speakGuidance(
  * (CarPlay-friendly mixing) like the previous Orion inline `Speech.speak`.
  */
 export function speakOrionReply(text: string, onFinish?: () => void, mode: DrivingMode = 'adaptive') {
-  if (!text.trim()) return;
+  if (!text.trim()) {
+    onFinish?.();
+    return;
+  }
   void (async () => {
-    await configureAudioSessionForSpeechOutput();
-    const voiceId = await getPreferredTtsVoiceIdentifier();
-    const profile = getTtsSpeechProfile(mode);
-    Speech.speak(text.trim(), {
-      rate: profile.rate,
-      pitch: profile.pitch,
-      language: profile.language,
-      ...(voiceId ? { voice: voiceId } : {}),
-      onDone: onFinish,
-      onStopped: onFinish,
-      onError: onFinish,
-    });
+    try {
+      await configureAudioSessionForSpeechOutput();
+      const voiceId = await getPreferredTtsVoiceIdentifier();
+      const profile = getTtsSpeechProfile(mode);
+      Speech.speak(text.trim(), {
+        rate: profile.rate,
+        pitch: profile.pitch,
+        language: profile.language,
+        ...(voiceId ? { voice: voiceId } : {}),
+        onDone: onFinish,
+        onStopped: onFinish,
+        onError: onFinish,
+      });
+    } catch {
+      onFinish?.();
+    }
   })();
 }
 

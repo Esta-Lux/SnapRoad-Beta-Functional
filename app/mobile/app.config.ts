@@ -225,6 +225,15 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
             "SnapRoad needs camera access to capture road conditions and incidents.",
         },
       ],
+      [
+        "@react-native-voice/voice",
+        {
+          microphonePermission:
+            "SnapRoad uses your microphone for voice commands with the Orion driving assistant.",
+          speechRecognitionPermission:
+            "SnapRoad uses speech recognition to understand your voice commands during navigation.",
+        },
+      ],
       "expo-location",
       "expo-font",
       "expo-sensors",

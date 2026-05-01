@@ -9,7 +9,6 @@ import {
   configureAudioSessionForVoiceInput,
   restoreDefaultAudioSession,
   speakOrionReply,
-  stopSpeaking,
 } from '../../utils/voice';
 import type { OrionContext, OrionPlaceSuggestion } from './OrionChat';
 import type { DrivingMode } from '../../types';
@@ -195,7 +194,6 @@ export default function OrionQuickMic({
     transcriptRef.current = '';
     setPartialTranscript('');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    stopSpeaking();
     Speech.stop();
     await configureAudioSessionForVoiceInput();
     setIsListening(true);
