@@ -23,6 +23,7 @@ import {
   computeNavigationRouteProgress,
   currentStepIndexAlongRoute,
   haversineMeters,
+  projectOntoPolyline,
   remainingDistanceOnPolyline,
   type NavigationRouteProgress,
 } from '../utils/distance';
@@ -147,9 +148,15 @@ export interface TripSummary {
   started_at?: string;
   ended_at?: string;
   avg_speed_mph?: number;
+  /** Smoothed peak speed observed during the trip (mph). */
+  max_speed_mph?: number;
   fuel_used_gallons?: number;
   fuel_cost_estimate?: number;
   mileage_value_estimate?: number;
+  /** Real safety-event counts forwarded to backend; 0 when not tracked. */
+  hard_braking_events?: number;
+  speeding_events?: number;
+  incidents_reported?: number;
   /** False = trip sheet still shows, but drive did not meet min distance/time for rewards. */
   counted?: boolean;
   /** Auto-ended at destination — show “You’ve arrived” hero in trip sheet. */
@@ -247,6 +254,13 @@ export function useDriveNavigation(params: {
 
   const isNavigatingRef = useRef(false);
   const traveledRef = useRef(0);
+  /**
+   * Smoothed peak speed (mph) observed during the active trip. Updated by the
+   * effect below as `speed` (already EMA-smoothed in `useLocation`) ticks.
+   * Reset on `startNavigation`. Sent with `/api/trips/complete` so the
+   * backend/profile can show "Max speed" in the trip summary + Insights.
+   */
+  const maxSpeedMphRef = useRef(0);
   const prevLocationRef = useRef<Coordinate | null>(null);
   /** Latest route progress (for trip-end distance; avoids stale useCallback closure). */
   const routeProgressRef = useRef<NavigationRouteProgress | null>(null);
@@ -290,6 +304,16 @@ export function useDriveNavigation(params: {
   }, [sdkActive, navigationData?.steps, navigationData?.polyline]);
 
   const routeModelRefreshedAtRef = useRef(Date.now());
+  /**
+   * Wall-clock time the native SDK last successfully applied a route
+   * (initial load OR reroute via `onRouteChanged` → {@link applySdkRouteGeometry}).
+   * Read by the headless-mode JS reroute backstop so it doesn't double-fire
+   * when the SDK has just rerouted on its own.
+   */
+  const lastSdkRouteAppliedAtRef = useRef(0);
+  /** Sustained-off-route streak for the SDK-mode JS backstop. */
+  const sdkBackstopOffStreakRef = useRef(0);
+  const sdkBackstopInFlightRef = useRef(false);
   const [routeModelRefreshKey, setRouteModelRefreshKey] = useState(0);
   /** JS-only: periodic tick so `useNavigationProgress` recomputes distance/voice when GPS rounds to the same lat/lng. */
   const [jsNavProgressTick, setJsNavProgressTick] = useState(0);
@@ -545,11 +569,47 @@ export function useDriveNavigation(params: {
     navigationProgressRef.current = navigationProgress;
   }, [navigationProgress]);
 
+  /**
+   * Track the smoothed peak speed across the trip. We accept *either* the
+   * smoothed `useLocation` speed (mph) OR the SDK matched speed (m/s →
+   * mph), but cap at a sane highway ceiling so a single GPS spike during
+   * tunnel exit / poor accuracy can't inflate the recorded max. Resets in
+   * `startNavigation`; the value is read on `stopNavigation`.
+   */
+  useEffect(() => {
+    if (!isNavigating) return;
+    const sdkSpeedMps =
+      typeof navSdkSnapshot.location?.speed === 'number' && Number.isFinite(navSdkSnapshot.location.speed)
+        ? navSdkSnapshot.location.speed
+        : -1;
+    const sdkMph = sdkSpeedMps >= 0 ? sdkSpeedMps * 2.237 : -1;
+    const smoothedMph = Number.isFinite(speed) ? speed : 0;
+    const candidate = Math.max(smoothedMph, sdkMph);
+    if (!Number.isFinite(candidate) || candidate <= 0) return;
+    const accuracyM =
+      typeof gpsAccuracy === 'number' && Number.isFinite(gpsAccuracy) ? gpsAccuracy : null;
+    if (accuracyM !== null && accuracyM > 75) return;
+    if (candidate > 160) return;
+    if (candidate > maxSpeedMphRef.current) {
+      maxSpeedMphRef.current = candidate;
+    }
+  }, [isNavigating, speed, navSdkSnapshot.location, gpsAccuracy]);
+
   // --- Fetch directions ---
   const fetchDirections = useCallback(async (
     destination: Coordinate & { name?: string; address?: string },
     origin?: Coordinate,
-    opts?: { maxHeightMeters?: number; fastSingleRoute?: boolean },
+    opts?: {
+      maxHeightMeters?: number;
+      fastSingleRoute?: boolean;
+      /**
+       * Backstop opt-in: when the JS reroute safety net detects sustained
+       * off-route in headless SDK mode and the native side has not
+       * fired `onRouteChanged` recently, the caller can pass this to
+       * bypass the "SDK owns routing" guard and force a JS reroute.
+       */
+      forceWhileSdkOwnsRouting?: boolean;
+    },
   ): Promise<FetchDirectionsResult> => {
     const o = origin ?? userLocation;
     const destOk =
@@ -570,7 +630,7 @@ export function useDriveNavigation(params: {
       congestionBeforeDirectionsRef.current = null;
     }
 
-    if (navSdkHeadlessRef.current && isNavigatingRef.current) {
+    if (navSdkHeadlessRef.current && isNavigatingRef.current && !opts?.forceWhileSdkOwnsRouting) {
       if (typeof __DEV__ !== 'undefined' && __DEV__) {
         console.warn('[Nav] fetchDirections skipped: Logic SDK owns routing during active navigation.');
       }
@@ -1029,6 +1089,8 @@ export function useDriveNavigation(params: {
         };
       });
       routeModelRefreshedAtRef.current = Date.now();
+      lastSdkRouteAppliedAtRef.current = Date.now();
+      sdkBackstopOffStreakRef.current = 0;
       setRouteModelRefreshKey((k) => k + 1);
     },
     [drivingMode],
@@ -1047,6 +1109,7 @@ export function useDriveNavigation(params: {
     isNavigatingRef.current = true;
     traveledRef.current = 0;
     cumAlongHighWaterRef.current = 0;
+    maxSpeedMphRef.current = 0;
     setTraveledDistanceMeters(0);
     prevLocationRef.current = null;
     setCurrentStepIndex(0);
@@ -1105,6 +1168,7 @@ export function useDriveNavigation(params: {
       setLastTripEndedAtMs(Date.now());
       tripStartTimeRef.current = null;
       prevLocationRef.current = null;
+      maxSpeedMphRef.current = 0;
       hasAnnouncedArrivalRef.current = false;
       autoEndNavTriggeredRef.current = false;
       autoEndFromArrivalRef.current = false;
@@ -1160,6 +1224,9 @@ export function useDriveNavigation(params: {
     const startedAtIso = tripStartMs ? new Date(tripStartMs).toISOString() : undefined;
     const endedAtIso = new Date(now).toISOString();
     const avgSpeed = Math.round(avgSpeedMph(roundedDist, durationSec) * 10) / 10;
+    const maxSpeedRaw = Math.max(0, maxSpeedMphRef.current);
+    /** Floor max at avg so a quirky ref reset can't make max < avg in the row. */
+    const maxSpeed = Math.round(Math.max(avgSpeed, maxSpeedRaw) * 10) / 10;
     const fuelGallons = Math.round(estimateFuelGallons(roundedDist) * 100) / 100;
     const dynamicDest = navigationData?.dynamicDestination === true;
 
@@ -1205,9 +1272,13 @@ export function useDriveNavigation(params: {
       started_at: startedAtIso,
       ended_at: endedAtIso,
       avg_speed_mph: avgSpeed,
+      max_speed_mph: maxSpeed,
       fuel_used_gallons: fuelGallons,
       fuel_cost_estimate: Math.round(estimateFuelCostUsd(roundedDist) * 100) / 100,
       mileage_value_estimate: Math.round(estimateMileageDeductionUsd(roundedDist) * 100) / 100,
+      hard_braking_events: 0,
+      speeding_events: 0,
+      incidents_reported: 0,
       counted: qualifiesTrip,
       arrivedAtDestination,
     };
@@ -1235,6 +1306,7 @@ export function useDriveNavigation(params: {
       origin: originName,
       destination: destName,
       avg_speed_mph: avgSpeed,
+      max_speed_mph: maxSpeed,
       fuel_used_gallons: Math.round(estimateFuelGallons(roundedDist) * 1000) / 1000,
       hard_braking_events: 0,
       speeding_events: 0,
@@ -1732,6 +1804,123 @@ export function useDriveNavigation(params: {
     navSpeak,
     navModeProfile.offRoute,
     navSdkHeadless,
+  ]);
+
+  /**
+   * SDK-mode reroute backstop. With `navSdkHeadless` on, the JS off-route
+   * effect above bails out — Mapbox's native Navigation SDK is supposed
+   * to call `onRouteChanged` and we apply the new geometry via
+   * {@link applySdkRouteGeometry}. In practice that fires reliably most
+   * of the time, but if the native side stays silent while the user is
+   * clearly off the corridor, the puck just sits on a stale route. This
+   * effect monitors the **lateral distance** from the user's GPS to the
+   * route polyline and, when sustained beyond an accuracy-aware
+   * threshold AND the SDK has not refreshed routing for a while, fires
+   * a JS reroute (with `forceWhileSdkOwnsRouting: true`) and swaps the
+   * new route in via `setNavigationData`.
+   *
+   * Tuning notes:
+   *   - We only count consecutive samples (streak), not absolute time,
+   *     so brief GPS jitter doesn't trip the backstop.
+   *   - We require ≥ ~3 m/s motion — at standstill there's no useful
+   *     "off-route" signal and the user might just be at a complex
+   *     intersection waiting for the matcher to catch up.
+   *   - We refuse to fire within 5 s of a successful native route apply
+   *     and within 8 s of any prior backstop reroute; this gives the
+   *     SDK its full chance to recover on its own.
+   */
+  useEffect(() => {
+    if (!navSdkHeadless) {
+      sdkBackstopOffStreakRef.current = 0;
+      return;
+    }
+    if (!isNavigating || !navigationData?.destination || !navigationData?.polyline?.length) {
+      sdkBackstopOffStreakRef.current = 0;
+      return;
+    }
+
+    const speedMps = speed * 0.44704;
+    if (speedMps < 3) {
+      // Too slow to confidently detect off-route; reset streak.
+      sdkBackstopOffStreakRef.current = 0;
+      return;
+    }
+
+    const truth: Coordinate = userLocation;
+    const proj = projectOntoPolyline(truth, navigationData.polyline);
+    if (!proj) {
+      sdkBackstopOffStreakRef.current = 0;
+      return;
+    }
+
+    const accuracyM = typeof gpsAccuracy === 'number' && Number.isFinite(gpsAccuracy)
+      ? Math.max(0, gpsAccuracy)
+      : 12;
+    /**
+     * Threshold scales with GPS accuracy. ~80m base + half of HAcc means a
+     * 50m fix needs ~105m, while a tight 5m fix triggers at ~83m.
+     */
+    const offThresholdM = 80 + Math.min(80, accuracyM * 0.5);
+    const lateralM = proj.distanceToRouteMeters;
+
+    if (lateralM >= offThresholdM) {
+      sdkBackstopOffStreakRef.current += 1;
+    } else {
+      sdkBackstopOffStreakRef.current = 0;
+    }
+
+    const STREAK_REQUIRED = 5; // ~5 consecutive ticks at the off-route distance.
+    if (sdkBackstopOffStreakRef.current < STREAK_REQUIRED) return;
+    if (sdkBackstopInFlightRef.current) return;
+
+    const now = Date.now();
+    const sinceSdkApply = now - lastSdkRouteAppliedAtRef.current;
+    if (lastSdkRouteAppliedAtRef.current > 0 && sinceSdkApply < 5000) return;
+    if (lastRerouteAtRef.current && now - lastRerouteAtRef.current < 8000) return;
+
+    sdkBackstopOffStreakRef.current = 0;
+    sdkBackstopInFlightRef.current = true;
+    setIsRerouting(true);
+    const rerouteMsg = drivingMode === 'calm' ? 'Let me find you a new route.' : 'Rerouting.';
+    navSpeak(rerouteMsg, 'high', drivingMode);
+
+    void (async () => {
+      try {
+        const dest = navigationData.destination;
+        const timeout = new Promise<FetchDirectionsResult>((resolve) =>
+          setTimeout(
+            () => resolve({ ok: false, reason: 'route_failed', message: 'Reroute timed out.' }),
+            8000,
+          ),
+        );
+        const res = await Promise.race([
+          fetchDirections(dest, userLocation, {
+            fastSingleRoute: true,
+            forceWhileSdkOwnsRouting: true,
+          }),
+          timeout,
+        ]);
+        if (res.ok) {
+          lastRerouteAtRef.current = Date.now();
+          lastTrafficRefreshAtRef.current = Date.now();
+        }
+      } finally {
+        sdkBackstopInFlightRef.current = false;
+        setIsRerouting(false);
+      }
+    })();
+  }, [
+    navSdkHeadless,
+    isNavigating,
+    navigationData?.destination,
+    navigationData?.polyline,
+    userLocation.lat,
+    userLocation.lng,
+    speed,
+    gpsAccuracy,
+    drivingMode,
+    fetchDirections,
+    navSpeak,
   ]);
 
   const addWaypoint = useCallback(async (waypoint: Coordinate & { name?: string }) => {

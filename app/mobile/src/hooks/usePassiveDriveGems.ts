@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { api } from '../api/client';
+import { estimateFuelGallons } from '../utils/driveMetrics';
 import type { Coordinate } from '../types';
 
 const MIN_SPEED_MPH = 4;
@@ -8,6 +9,8 @@ const MIN_ODOM_M = 200;
 const MIN_DURATION_SEC = 45;
 const COOLDOWN_AFTER_NAV_MS = 90_000;
 const SUBMIT_COOLDOWN_MS = 15_000;
+/** Above this we ignore the speed sample as a likely GPS outlier. */
+const MAX_PLAUSIBLE_SPEED_MPH = 160;
 
 function haversineMeters(a: Coordinate, b: Coordinate): number {
   const R = 6371000;
@@ -82,6 +85,8 @@ export function usePassiveDriveGems(opts: {
   const passiveCooldownUntil = useRef(0);
   const lastSubmitAt = useRef(0);
   const wasNavigating = useRef(false);
+  /** Smoothed peak speed across the passive segment. Sent as `max_speed_mph`. */
+  const maxSpeedMphRef = useRef(0);
 
   const finalizeSegment = useCallback(async () => {
     const start = segmentStartMs.current;
@@ -89,10 +94,12 @@ export function usePassiveDriveGems(opts: {
     const now = Date.now();
     const odom = odomRef.current;
     const durationSec = Math.round((now - start) / 1000);
+    const maxSpeedSeen = maxSpeedMphRef.current;
 
     segmentStartMs.current = null;
     odomRef.current = 0;
     prevLl.current = null;
+    maxSpeedMphRef.current = 0;
 
     if (durationSec < MIN_DURATION_SEC || odom < MIN_ODOM_M) return;
     if (now < passiveCooldownUntil.current) return;
@@ -102,6 +109,12 @@ export function usePassiveDriveGems(opts: {
     const distMi = odom / 1609.34;
     const roundedDist = Math.max(0, Math.round(distMi * 100) / 100);
     const durationMin = Math.max(0, Math.round(durationSec / 60));
+    const avgSpeed =
+      durationSec > 0
+        ? Math.round((roundedDist / (durationSec / 3600)) * 10) / 10
+        : 0;
+    const maxSpeed = Math.round(Math.max(avgSpeed, maxSpeedSeen) * 10) / 10;
+    const fuelGal = Math.round(estimateFuelGallons(roundedDist) * 1000) / 1000;
 
     try {
       const res = await api.post<Record<string, unknown>>('/api/trips/complete', {
@@ -110,6 +123,9 @@ export function usePassiveDriveGems(opts: {
         safety_score: 85,
         started_at: new Date(start).toISOString(),
         ended_at: new Date(now).toISOString(),
+        avg_speed_mph: avgSpeed,
+        max_speed_mph: maxSpeed,
+        fuel_used_gallons: fuelGal,
         hard_braking_events: 0,
         speeding_events: 0,
         incidents_reported: 0,
@@ -162,6 +178,14 @@ export function usePassiveDriveGems(opts: {
         if (d > 0 && d < 500) odomRef.current += d;
       }
       prevLl.current = location;
+      if (
+        Number.isFinite(speedMph) &&
+        speedMph > 0 &&
+        speedMph <= MAX_PLAUSIBLE_SPEED_MPH &&
+        speedMph > maxSpeedMphRef.current
+      ) {
+        maxSpeedMphRef.current = speedMph;
+      }
     } else {
       prevLl.current = location;
       if (segmentStartMs.current != null && now - lastMoveMs.current > STATIONARY_MS) {

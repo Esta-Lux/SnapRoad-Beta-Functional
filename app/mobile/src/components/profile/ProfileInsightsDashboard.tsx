@@ -15,6 +15,17 @@ import { Ionicons } from '@expo/vector-icons';
 import SheetModal from '../common/Modal';
 import { useTheme } from '../../contexts/ThemeContext';
 import { api } from '../../api/client';
+import {
+  bucketizeDaily,
+  computeDeltas,
+  computeKpis,
+  filterGemTxInRange,
+  filterTripsInRange,
+  formatPctDelta,
+  getPresetRange,
+  getPreviousRange,
+  type TimeRangePreset,
+} from './insightsAggregations';
 import type {
   ProfileBadgeItem,
   ProfileGemTxItem,
@@ -22,7 +33,7 @@ import type {
   ProfileWeeklyRecap,
 } from './types';
 
-export type TimeRangePreset = 'day' | 'week' | 'month' | 'custom';
+export type { TimeRangePreset };
 
 type FuelSummary = {
   monthlyEstimate: number | null;
@@ -41,48 +52,6 @@ type DrivingMetric = {
 };
 
 type OrionTip = { id: string; metric: string; tip: string; priority: string };
-
-function startOfDayMs(d: Date): number {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x.getTime();
-}
-
-function getPresetRange(
-  preset: TimeRangePreset,
-  customStart: string,
-  customEnd: string,
-): { start: number; end: number } {
-  const now = Date.now();
-  if (preset === 'day') {
-    return { start: startOfDayMs(new Date()), end: now };
-  }
-  if (preset === 'week') {
-    return { start: now - 7 * 24 * 60 * 60 * 1000, end: now };
-  }
-  if (preset === 'month') {
-    return { start: now - 30 * 24 * 60 * 60 * 1000, end: now };
-  }
-  const s = Date.parse(`${customStart}T00:00:00`);
-  const e = Date.parse(`${customEnd}T23:59:59.999`);
-  if (!Number.isFinite(s) || !Number.isFinite(e) || s > e) {
-    return { start: now - 7 * 24 * 60 * 60 * 1000, end: now };
-  }
-  return { start: s, end: e };
-}
-
-function tripTimeMs(t: ProfileTripHistoryItem): number {
-  if (t.tripEndedAtIso) {
-    const ms = Date.parse(t.tripEndedAtIso);
-    if (Number.isFinite(ms)) return ms;
-  }
-  return 0;
-}
-
-function txTimeMs(dateStr: string): number {
-  const ms = Date.parse(dateStr);
-  return Number.isFinite(ms) ? ms : 0;
-}
 
 function categoryIcon(cat: string): keyof typeof Ionicons.glyphMap {
   const c = (cat || '').toLowerCase();
@@ -139,36 +108,43 @@ export default function ProfileInsightsDashboard({
   const [orionTips, setOrionTips] = useState<OrionTip[]>([]);
   const [drivingError, setDrivingError] = useState<string | null>(null);
 
-  const range = useMemo(() => getPresetRange(preset, customStart, customEnd), [preset, customStart, customEnd]);
+  const range = useMemo(
+    () => getPresetRange(preset, customStart, customEnd),
+    [preset, customStart, customEnd],
+  );
+  const previousRange = useMemo(() => getPreviousRange(range), [range.startMs, range.endMs]);
 
-  const filteredTrips = useMemo(() => {
-    return tripHistoryRows.filter((t) => {
-      const ms = tripTimeMs(t);
-      if (ms <= 0) return false;
-      return ms >= range.start && ms <= range.end;
-    });
-  }, [tripHistoryRows, range.start, range.end]);
+  const filteredTrips = useMemo(
+    () => filterTripsInRange(tripHistoryRows, range),
+    [tripHistoryRows, range.startMs, range.endMs],
+  );
+  const previousTrips = useMemo(
+    () => filterTripsInRange(tripHistoryRows, previousRange),
+    [tripHistoryRows, previousRange.startMs, previousRange.endMs],
+  );
+  const filteredGemTx = useMemo(
+    () => filterGemTxInRange(gemTxRows, range),
+    [gemTxRows, range.startMs, range.endMs],
+  );
 
-  const filteredGemTx = useMemo(() => {
-    return gemTxRows.filter((g) => {
-      const ms = txTimeMs(g.date);
-      return ms >= range.start && ms <= range.end;
-    });
-  }, [gemTxRows, range.start, range.end]);
+  const kpis = useMemo(() => computeKpis(filteredTrips), [filteredTrips]);
+  const previousKpis = useMemo(() => computeKpis(previousTrips), [previousTrips]);
+  const deltas = useMemo(() => computeDeltas(kpis, previousKpis), [kpis, previousKpis]);
 
-  const kpis = useMemo(() => {
-    const n = filteredTrips.length;
-    const miles = filteredTrips.reduce((s, t) => s + Number(t.distance_miles ?? 0), 0);
-    const gemsTrip = filteredTrips.reduce((s, t) => s + Number(t.gems_earned ?? 0), 0);
-    const avg =
-      n > 0 ? filteredTrips.reduce((s, t) => s + Number(t.safety_score ?? 0), 0) / n : 0;
-    return {
-      trips: n,
-      miles,
-      avgSafety: avg,
-      gemsFromTrips: gemsTrip,
-    };
-  }, [filteredTrips]);
+  /**
+   * Sparkline buckets — one point per day. Cap at 31 buckets so wide custom
+   * ranges don't drown the strip; the math is in `insightsAggregations`.
+   */
+  const dailyMilesPoints = useMemo(() => bucketizeDaily(filteredTrips, range, 31), [
+    filteredTrips,
+    range.startMs,
+    range.endMs,
+  ]);
+  const sparklineMaxMiles = useMemo(() => {
+    let m = 0;
+    for (const p of dailyMilesPoints) if (p.miles > m) m = p.miles;
+    return m;
+  }, [dailyMilesPoints]);
 
   /** Week view: server weekly total can include trips not yet in the recent-history list. */
   const kpiMilesDisplay = useMemo(() => {
@@ -178,6 +154,15 @@ export default function ProfileInsightsDashboard({
     }
     return m;
   }, [kpis.miles, preset, isPremium, weeklyRecap.totalMiles]);
+
+  /** Top speed display — prefer in-range max; fall back to server recap when the range is "week". */
+  const topSpeedDisplay = useMemo(() => {
+    let v = kpis.topSpeedMph;
+    if (preset === 'week' && weeklyRecap.topSpeedMph && weeklyRecap.topSpeedMph > v) {
+      v = weeklyRecap.topSpeedMph;
+    }
+    return v;
+  }, [kpis.topSpeedMph, preset, weeklyRecap.topSpeedMph]);
 
   const badgesByCategory = useMemo(() => {
     const m = new Map<string, ProfileBadgeItem[]>();
@@ -303,19 +288,88 @@ export default function ProfileInsightsDashboard({
     );
   }
 
-  const kpiTile = (icon: keyof typeof Ionicons.glyphMap, val: string, lbl: string) => (
-    <View
-      key={lbl}
-      style={[
-        styles.kpiTile,
-        { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
-      ]}
-    >
-      <Ionicons name={icon} size={18} color={colors.primary} />
-      <Text style={[styles.kpiVal, { color: colors.text }]}>{val}</Text>
-      <Text style={[styles.kpiLbl, { color: colors.textSecondary }]}>{lbl}</Text>
-    </View>
-  );
+  const kpiTile = (
+    icon: keyof typeof Ionicons.glyphMap,
+    val: string,
+    lbl: string,
+    delta: number | null = null,
+    accent: string = colors.primary,
+  ) => {
+    const showDelta = delta != null && Number.isFinite(delta);
+    const deltaUp = showDelta && (delta as number) > 0;
+    const deltaDown = showDelta && (delta as number) < 0;
+    const deltaColor = deltaUp ? colors.success : deltaDown ? colors.danger : colors.textTertiary;
+    return (
+      <View
+        key={lbl}
+        style={[
+          styles.kpiTile,
+          { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
+        ]}
+      >
+        <View style={styles.kpiTopRow}>
+          <View style={[styles.kpiIconWrap, { backgroundColor: `${accent}1A` }]}>
+            <Ionicons name={icon} size={14} color={accent} />
+          </View>
+          {showDelta ? (
+            <View style={[styles.kpiDeltaPill, { backgroundColor: `${deltaColor}1A` }]}>
+              <Ionicons
+                name={deltaUp ? 'arrow-up' : deltaDown ? 'arrow-down' : 'remove'}
+                size={10}
+                color={deltaColor}
+              />
+              <Text style={[styles.kpiDeltaText, { color: deltaColor }]}>
+                {formatPctDelta(delta)}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+        <Text style={[styles.kpiVal, { color: colors.text }]}>{val}</Text>
+        <Text style={[styles.kpiLbl, { color: colors.textSecondary }]}>{lbl}</Text>
+      </View>
+    );
+  };
+
+  const sparkline = () => {
+    if (dailyMilesPoints.length === 0) return null;
+    const max = Math.max(0.5, sparklineMaxMiles);
+    return (
+      <View
+        style={[
+          styles.sparkCard,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+      >
+        <View style={styles.sparkHeader}>
+          <Text style={{ color: colors.text, fontSize: 12, fontWeight: '800' }}>
+            Daily miles
+          </Text>
+          <Text style={{ color: colors.textSecondary, fontSize: 11, fontWeight: '600' }}>
+            {dailyMilesPoints.length}-day strip · peak {sparklineMaxMiles.toFixed(1)} mi
+          </Text>
+        </View>
+        <View style={styles.sparkBars}>
+          {dailyMilesPoints.map((p) => {
+            const ratio = max > 0 ? p.miles / max : 0;
+            const heightPct = Math.max(2, Math.round(ratio * 100));
+            const filled = p.miles > 0;
+            return (
+              <View
+                key={p.isoDate}
+                style={[
+                  styles.sparkBar,
+                  {
+                    backgroundColor: filled ? colors.primary : `${colors.border}cc`,
+                    height: `${heightPct}%`,
+                  },
+                ]}
+              />
+            );
+          })}
+        </View>
+      </View>
+    );
+  };
 
   return (
     <SheetModal visible={visible} onClose={onClose} scrollable={false}>
@@ -336,22 +390,34 @@ export default function ProfileInsightsDashboard({
         </View>
 
         <LinearGradient
-          colors={['#1D4ED8', '#3B82F6']}
+          colors={[colors.rewardsGradientStart, colors.rewardsGradientEnd]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.hero}
         >
-          <Text style={styles.heroEyebrow}>TRACKING</Text>
-          <Text style={styles.heroTitle}>Trips · Safety · Gems · Fuel</Text>
-          <Text style={styles.heroSub}>
-            {preset === 'day'
-              ? 'Today'
-              : preset === 'week'
-                ? 'Last 7 days'
-                : preset === 'month'
-                  ? 'Last 30 days'
-                  : 'Custom range'}
-          </Text>
+          <View style={styles.heroRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.heroEyebrow}>YOUR TRACKING</Text>
+              <Text style={styles.heroTitle}>
+                {kpis.trips} {kpis.trips === 1 ? 'trip' : 'trips'} · {kpiMilesDisplay.toFixed(1)} mi
+              </Text>
+              <Text style={styles.heroSub}>
+                {preset === 'day'
+                  ? 'Today'
+                  : preset === 'week'
+                    ? 'Last 7 days'
+                    : preset === 'month'
+                      ? 'Last 30 days'
+                      : 'Custom range'}
+              </Text>
+            </View>
+            <View style={styles.heroBadge}>
+              <Ionicons name="speedometer-outline" size={14} color="#fff" />
+              <Text style={styles.heroBadgeText}>
+                {topSpeedDisplay > 0 ? `${Math.round(topSpeedDisplay)} mph top` : '—'}
+              </Text>
+            </View>
+          </View>
         </LinearGradient>
 
         <Text style={[typography.caption, { color: colors.textSecondary, marginBottom: spacing.sm }]}>
@@ -404,15 +470,52 @@ export default function ProfileInsightsDashboard({
         ) : null}
 
         <View style={styles.kpiGrid}>
-          {kpiTile('car-outline', String(kpis.trips), 'Trips')}
-          {kpiTile('location-outline', kpiMilesDisplay.toFixed(1), 'Miles')}
-          {kpiTile('shield-checkmark-outline', kpis.trips > 0 ? kpis.avgSafety.toFixed(0) : '—', 'Avg safety')}
-          {kpiTile('diamond-outline', String(kpis.gemsFromTrips), 'Gems (trips)')}
+          {kpiTile('car-outline', String(kpis.trips), 'Trips', deltas.trips, colors.primary)}
+          {kpiTile(
+            'location-outline',
+            kpiMilesDisplay.toFixed(1),
+            'Miles',
+            deltas.miles,
+            colors.primary,
+          )}
+          {kpiTile(
+            'shield-checkmark-outline',
+            kpis.trips > 0 ? kpis.avgSafety.toFixed(0) : '—',
+            'Avg safety',
+            deltas.avgSafety,
+            colors.success,
+          )}
+          {kpiTile(
+            'diamond-outline',
+            String(kpis.gemsFromTrips),
+            'Gems (trips)',
+            deltas.gems,
+            colors.warning,
+          )}
+          {topSpeedDisplay > 0
+            ? kpiTile(
+                'flash-off-outline',
+                `${Math.round(topSpeedDisplay)} mph`,
+                'Top speed',
+                deltas.topSpeedMph,
+                colors.danger,
+              )
+            : null}
+          {kpis.avgSpeedMph > 0
+            ? kpiTile(
+                'speedometer-outline',
+                `${Math.round(kpis.avgSpeedMph)} mph`,
+                'Avg speed',
+                null,
+                colors.primary,
+              )
+            : null}
         </View>
+        {sparkline()}
         <Text
           style={[typography.caption, { color: colors.textTertiary, marginTop: 6, marginBottom: spacing.sm, lineHeight: 18 }]}
         >
-          Miles and trips reflect qualifying drives in this range. Totals align with your profile as trips finish syncing.
+          Miles and trips reflect qualifying drives in this range. Deltas compare to the same length window before it.
         </Text>
 
         {weeklyRecap.highlights && weeklyRecap.highlights.length > 0 ? (
@@ -449,10 +552,10 @@ export default function ProfileInsightsDashboard({
             <>
               {weeklyRecap.orionCommentary ? (
                 <LinearGradient
-                  colors={['#1E3A8A', '#312E81']}
+                  colors={[colors.rewardsGradientStart, colors.rewardsGradientEnd]}
                   style={{ borderRadius: radius.md, padding: 12, marginBottom: spacing.sm }}
                 >
-                  <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 10, fontWeight: '800', marginBottom: 6 }}>
+                  <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 10, fontWeight: '800', marginBottom: 6, letterSpacing: 0.6 }}>
                     ORION RECAP
                   </Text>
                   <Text style={{ color: '#fff', fontSize: 14, lineHeight: 20 }}>{weeklyRecap.orionCommentary}</Text>
@@ -748,6 +851,14 @@ export default function ProfileInsightsDashboard({
                   {Math.round(tripDetail.avg_speed_mph ?? 0)} mph
                 </Text>
               </View>
+              {(tripDetail.max_speed_mph ?? 0) > 0 ? (
+                <View style={styles.tripStatCell}>
+                  <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Top speed</Text>
+                  <Text style={{ color: colors.danger, fontSize: 18, fontWeight: '900' }}>
+                    {Math.round(tripDetail.max_speed_mph ?? 0)} mph
+                  </Text>
+                </View>
+              ) : null}
               <View style={styles.tripStatCell}>
                 <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Fuel est.</Text>
                 <Text style={{ color: colors.success, fontSize: 18, fontWeight: '900' }}>
@@ -760,7 +871,65 @@ export default function ProfileInsightsDashboard({
                   {tripDetail.safety_score ?? 0}
                 </Text>
               </View>
+              {(tripDetail.gems_earned ?? 0) > 0 ? (
+                <View style={styles.tripStatCell}>
+                  <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Gems</Text>
+                  <Text style={{ color: colors.warning, fontSize: 18, fontWeight: '900' }}>
+                    +{tripDetail.gems_earned ?? 0}
+                  </Text>
+                </View>
+              ) : null}
             </View>
+            {(tripDetail.hard_braking_events ?? 0) > 0 ||
+            (tripDetail.speeding_events ?? 0) > 0 ? (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  flexWrap: 'wrap',
+                  gap: 8,
+                  marginTop: 12,
+                }}
+              >
+                {(tripDetail.hard_braking_events ?? 0) > 0 ? (
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: 999,
+                      backgroundColor: `${colors.warning}1A`,
+                    }}
+                  >
+                    <Ionicons name="warning-outline" size={12} color={colors.warning} />
+                    <Text style={{ color: colors.warning, fontSize: 11, fontWeight: '700' }}>
+                      {tripDetail.hard_braking_events} hard brake
+                      {(tripDetail.hard_braking_events ?? 0) === 1 ? '' : 's'}
+                    </Text>
+                  </View>
+                ) : null}
+                {(tripDetail.speeding_events ?? 0) > 0 ? (
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: 999,
+                      backgroundColor: `${colors.danger}1A`,
+                    }}
+                  >
+                    <Ionicons name="speedometer-outline" size={12} color={colors.danger} />
+                    <Text style={{ color: colors.danger, fontSize: 11, fontWeight: '700' }}>
+                      {tripDetail.speeding_events} speeding event
+                      {(tripDetail.speeding_events ?? 0) === 1 ? '' : 's'}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
             <TouchableOpacity
               onPress={() => setTripDetail(null)}
               style={[styles.tripDetailClose, { backgroundColor: colors.primary }]}
@@ -777,13 +946,28 @@ export default function ProfileInsightsDashboard({
 
 const styles = StyleSheet.create({
   hero: {
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 18,
     marginBottom: 16,
   },
-  heroEyebrow: { color: 'rgba(255,255,255,0.75)', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-  heroTitle: { color: '#fff', fontSize: 17, fontWeight: '900', marginTop: 6 },
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  heroEyebrow: { color: 'rgba(255,255,255,0.78)', fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
+  heroTitle: { color: '#fff', fontSize: 19, fontWeight: '900', marginTop: 6 },
   heroSub: { color: 'rgba(255,255,255,0.85)', fontSize: 13, marginTop: 4 },
+  heroBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  heroBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   chip: {
     paddingHorizontal: 12,
@@ -797,10 +981,62 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center',
   },
-  kpiVal: { fontSize: 20, fontWeight: '900', marginTop: 6 },
-  kpiLbl: { fontSize: 10, fontWeight: '700', marginTop: 2, textTransform: 'uppercase' },
+  kpiTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  kpiIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kpiDeltaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  kpiDeltaText: { fontSize: 10, fontWeight: '800' },
+  kpiVal: { fontSize: 22, fontWeight: '900', marginTop: 8 },
+  kpiLbl: { fontSize: 10, fontWeight: '700', marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.4 },
+  sparkCard: {
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 12,
+  },
+  sparkHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  sparkBars: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 3,
+    height: 56,
+  },
+  sparkBar: {
+    flex: 1,
+    minWidth: 4,
+    borderRadius: 3,
+  },
+  tripStatGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 14,
+    marginTop: 8,
+    gap: 12,
+  },
   leaderStrip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -903,14 +1139,6 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   tripDetailRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 14 },
-  tripStatGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 14,
-    marginTop: 8,
-    gap: 12,
-  },
   tripStatCell: { width: '47%' },
   tripDetailClose: { marginTop: 18, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
 });

@@ -33,8 +33,14 @@ import { haversineMeters } from '../utils/distance';
 export const STATIONARY_SPEED_MPH = 1.2;
 /** Below this raw speed, we *consider* the device stationary. */
 export const STATIONARY_RAW_SPEED_MPS = 0.6;
+/**
+ * Below this raw speed we lock **immediately** instead of waiting for the
+ * dwell window. At literal zero / parking-lot speeds, the polyline-snapped
+ * matched coord can creep with dead-reckoning, so we want to freeze ASAP.
+ */
+export const STATIONARY_INSTANT_LOCK_RAW_MPS = 0.18;
 /** Must hold for this long before the lock engages (avoids brief 0-mph dips). */
-export const STATIONARY_DWELL_MS = 1100;
+export const STATIONARY_DWELL_MS = 700;
 /** Above this smoothed speed we release the lock immediately. */
 export const MOTION_RELEASE_SPEED_MPH = 3.0;
 /** Brief debounce after motion is detected to avoid quick re-locks. */
@@ -148,20 +154,43 @@ export function updateStationaryLock(
     trueLoc: Coordinate | null;
     heading: number | null;
     nowMs: number;
+    /**
+     * Optional explicit anchor to use when the lock engages. When the
+     * caller has already snapped the puck to the route polyline, passing
+     * the snapped coord here means the freeze point is exactly on the
+     * line — no creeping during the dwell window can carry it off.
+     */
+    anchorOverride?: Coordinate | null;
   },
 ): StationaryLockState {
-  const { speedMph, rawSpeedMps, matched, trueLoc, heading, nowMs } = sample;
-  const anchorSrc = isFiniteCoord(matched)
-    ? matched
-    : isFiniteCoord(trueLoc)
-      ? trueLoc
-      : null;
+  const { speedMph, rawSpeedMps, matched, trueLoc, heading, nowMs, anchorOverride } = sample;
+  const anchorSrc = isFiniteCoord(anchorOverride)
+    ? anchorOverride
+    : isFiniteCoord(matched)
+      ? matched
+      : isFiniteCoord(trueLoc)
+        ? trueLoc
+        : null;
 
   const isSlow =
     Number.isFinite(speedMph) &&
     Number.isFinite(rawSpeedMps) &&
     speedMph <= STATIONARY_SPEED_MPH &&
     rawSpeedMps <= STATIONARY_RAW_SPEED_MPS;
+
+  /**
+   * Raw speed is *literally* zero-ish AND the caller handed us an
+   * explicit anchor (e.g. the route-snapped point). In that case the
+   * dwell window is just dead time during which the upstream candidate
+   * can creep, so freeze immediately. We require the override so this
+   * fast path only fires for callers that know what they're locking to.
+   */
+  const isInstantLockable =
+    Number.isFinite(rawSpeedMps) &&
+    rawSpeedMps <= STATIONARY_INSTANT_LOCK_RAW_MPS &&
+    Number.isFinite(speedMph) &&
+    speedMph <= STATIONARY_SPEED_MPH &&
+    isFiniteCoord(anchorOverride);
 
   if (prev.locked) {
     if (Number.isFinite(speedMph) && speedMph >= MOTION_RELEASE_SPEED_MPH) {
@@ -191,6 +220,18 @@ export function updateStationaryLock(
       anchorHeading: null,
       updatedAtMs: nowMs,
       stillSinceMs: null,
+      movingSinceMs: null,
+    };
+  }
+
+  if (isInstantLockable && anchorSrc) {
+    return {
+      locked: true,
+      anchor: anchorSrc,
+      anchorHeading:
+        typeof heading === 'number' && Number.isFinite(heading) ? heading : null,
+      updatedAtMs: nowMs,
+      stillSinceMs: prev.stillSinceMs ?? nowMs,
       movingSinceMs: null,
     };
   }

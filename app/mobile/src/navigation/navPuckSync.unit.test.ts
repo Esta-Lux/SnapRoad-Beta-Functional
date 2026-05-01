@@ -131,6 +131,61 @@ test('stationary lock: releases only after motion-release dwell at speed', () =>
   assert.equal(s.locked, false);
 });
 
+test('stationary lock: instant-lock fires when raw mps ≈ 0 AND anchorOverride is finite', () => {
+  const t0 = 5_000_000;
+  const route = { lat: SF.lat + 0.0001, lng: SF.lng };
+  const s = updateStationaryLock(INITIAL_STATIONARY_LOCK, {
+    speedMph: 0.4,
+    rawSpeedMps: 0.05,
+    matched: SF,
+    trueLoc: SF,
+    heading: 92,
+    nowMs: t0,
+    anchorOverride: route,
+  });
+  assert.equal(s.locked, true, 'instant lock engages on first sample with anchor override');
+  assert.deepEqual(s.anchor, route, 'anchor uses the override (route-snapped point)');
+  assert.equal(s.anchorHeading, 92);
+});
+
+test('stationary lock: no instant-lock without anchorOverride (preserves dwell)', () => {
+  const t0 = 6_000_000;
+  const s = updateStationaryLock(INITIAL_STATIONARY_LOCK, {
+    speedMph: 0.4,
+    rawSpeedMps: 0.05,
+    matched: SF,
+    trueLoc: SF,
+    heading: 92,
+    nowMs: t0,
+  });
+  assert.equal(s.locked, false, 'without override, dwell is still required');
+});
+
+test('stationary lock: anchor override is honored after dwell completes', () => {
+  const t0 = 7_000_000;
+  const route = { lat: SF.lat + 0.0001, lng: SF.lng };
+  let s = updateStationaryLock(INITIAL_STATIONARY_LOCK, {
+    speedMph: 0.5,
+    rawSpeedMps: 0.4, // above instant threshold; dwell required
+    matched: SF,
+    trueLoc: SF,
+    heading: 92,
+    nowMs: t0,
+    anchorOverride: route,
+  });
+  s = updateStationaryLock(s, {
+    speedMph: 0.5,
+    rawSpeedMps: 0.4,
+    matched: SF,
+    trueLoc: SF,
+    heading: 92,
+    nowMs: t0 + STATIONARY_DWELL_MS + 1,
+    anchorOverride: route,
+  });
+  assert.equal(s.locked, true);
+  assert.deepEqual(s.anchor, route);
+});
+
 /* ── Coord resolver ────────────────────────────────────────────────── */
 
 test('resolvePuckCoord: locked → returns anchor regardless of fresh inputs', () => {

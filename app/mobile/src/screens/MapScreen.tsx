@@ -185,6 +185,11 @@ import {
   resolvePuckHeading as resolvePuckHeadingSync,
   updateStationaryLock,
 } from '../navigation/navPuckSync';
+import {
+  resolveHeadingCandidate as resolveRouteHeadingCandidate,
+  shouldGluePuckToRoute,
+  snapPuckToRoute,
+} from '../navigation/navRouteSnap';
 import { MapboxNavigationView, type MapboxNavigationViewRef } from '@badatgil/expo-mapbox-navigation';
 import { routeProfileForPlatform } from '../hooks/useNativeNavBridge';
 import { normalizeNativeNavParams } from '../navigation/nativeNavGuard';
@@ -889,6 +894,56 @@ export default function MapScreen() {
   const navDisplayCoordCandidate = smoothedNavPuckCoord ?? navDisplayCoordRaw;
 
   /**
+   * Raw matched coord — preferred truth signal when feeding the puck to
+   * `snapPuckToRoute`. We use the **un-eased** SDK matched lat/lng when
+   * available so the route projection is computed from the actual GPS
+   * fix, not from the dead-reckoned arc-length point. Only when no SDK
+   * matched coord exists do we fall back to the candidate.
+   */
+  const navMatchedRaw = useMemo<Coordinate | null>(() => {
+    const sdk = nav.sdkNavLocation;
+    if (
+      sdk &&
+      Number.isFinite(sdk.latitude) &&
+      Number.isFinite(sdk.longitude) &&
+      !(Math.abs(sdk.latitude) < 1e-7 && Math.abs(sdk.longitude) < 1e-7)
+    ) {
+      return { lat: sdk.latitude, lng: sdk.longitude };
+    }
+    if (
+      navDisplayCoordCandidate &&
+      Number.isFinite(navDisplayCoordCandidate.lat) &&
+      Number.isFinite(navDisplayCoordCandidate.lng)
+    ) {
+      return { lat: navDisplayCoordCandidate.lat, lng: navDisplayCoordCandidate.lng };
+    }
+    return null;
+  }, [
+    nav.sdkNavLocation?.latitude,
+    nav.sdkNavLocation?.longitude,
+    navDisplayCoordCandidate.lat,
+    navDisplayCoordCandidate.lng,
+  ]);
+
+  /**
+   * Snap the matched coord onto the active route polyline. When inside
+   * the corridor we publish the **snapped** point — the puck visibly
+   * rides the drawn line. When outside we keep the matched coord and
+   * let the GPS-leash inside `resolvePuckCoordSync` handle phantom
+   * snaps. `null` means we have no usable polyline yet (pre-route or
+   * waiting state).
+   */
+  const navRouteSnap = useMemo(() => {
+    if (!nav.isNavigating) return null;
+    if (!navPolylineForSmoothing || navPolylineForSmoothing.length < 2) return null;
+    if (!navMatchedRaw) return null;
+    return snapPuckToRoute(navMatchedRaw, navPolylineForSmoothing, {
+      accuracyM: accuracy ?? null,
+      tangentLookAheadM: 22,
+    });
+  }, [nav.isNavigating, navPolylineForSmoothing, navMatchedRaw, accuracy]);
+
+  /**
    * Stationary lock + true-location leash. Refs hold cross-render state
    * for {@link updateStationaryLock}; the published values below come
    * from pure `resolvePuckCoordSync` / `resolvePuckHeadingSync` calls.
@@ -908,14 +963,39 @@ export default function MapScreen() {
       Number.isFinite(location.lat) && Number.isFinite(location.lng)
         ? { lat: location.lat, lng: location.lng }
         : null;
-    const matched =
-      navDisplayCoordCandidate &&
-      Number.isFinite(navDisplayCoordCandidate.lat) &&
-      Number.isFinite(navDisplayCoordCandidate.lng)
-        ? { lat: navDisplayCoordCandidate.lat, lng: navDisplayCoordCandidate.lng }
-        : null;
 
-    const headingCandidate = navDisplayHeading;
+    /**
+     * Route-snapped point if available, else the smoothed/raw candidate.
+     * The snap is the *only* way to publish a coord that lies on the
+     * drawn polyline; falling through to candidate handles the brief
+     * pre-match window before the SDK reports its first matched fix.
+     */
+    const routeGlued = shouldGluePuckToRoute(navRouteSnap);
+    const matched: Coordinate | null = routeGlued
+      ? navRouteSnap!.snappedCoord
+      : navMatchedRaw ??
+        (navDisplayCoordCandidate &&
+        Number.isFinite(navDisplayCoordCandidate.lat) &&
+        Number.isFinite(navDisplayCoordCandidate.lng)
+          ? { lat: navDisplayCoordCandidate.lat, lng: navDisplayCoordCandidate.lng }
+          : null);
+
+    /**
+     * Heading candidate — prefer the route tangent on-corridor at speed
+     * so the arrow points along the road the user is on, not at noisy
+     * GPS course.
+     */
+    const sdkCourseDeg =
+      typeof navDisplayHeading === 'number' && Number.isFinite(navDisplayHeading)
+        ? navDisplayHeading
+        : null;
+    const headingCandidate = nav.isNavigating
+      ? resolveRouteHeadingCandidate({
+          snap: navRouteSnap,
+          sdkCourseDeg,
+          speedMps: sdkSpeedMps,
+        })
+      : sdkCourseDeg;
 
     const nextLock = nav.isNavigating
       ? updateStationaryLock(stationaryLockRef.current, {
@@ -927,6 +1007,13 @@ export default function MapScreen() {
             ? headingCandidate
             : null,
           nowMs,
+          /**
+           * When we have a route-snapped point, freeze to *that* — the
+           * exact spot on the line — not whatever the upstream candidate
+           * happens to be. This is what makes the parked puck stay
+           * pinned on the polyline instead of creeping during dwell.
+           */
+          anchorOverride: routeGlued ? navRouteSnap!.snappedCoord : null,
         })
       : INITIAL_STATIONARY_LOCK;
     stationaryLockRef.current = nextLock;
@@ -965,12 +1052,16 @@ export default function MapScreen() {
           ? stabilizedHeading
           : navDisplayHeading,
       locked: nextLock.locked,
+      /** True when the upstream candidate came from a route projection. */
+      glued: routeGlued,
     };
   }, [
     nav.isNavigating,
     navDisplayCoordCandidate.lat,
     navDisplayCoordCandidate.lng,
     navDisplayHeading,
+    navMatchedRaw,
+    navRouteSnap,
     location.lat,
     location.lng,
     speed,
@@ -1027,20 +1118,19 @@ export default function MapScreen() {
   ]);
 
   /**
-   * Chevron / camera bearing during navigation: bias toward **route tangent** at the current
-   * arc-length so the arrow tracks the drawn polyline instead of coupling to device compass
-   * or noisy GPS course when the user pans the map. Blends with SDK course when nearly stopped.
-   *
-   * The stabilizer above ({@link navStablePuck.heading}) is the single source of
-   * truth — it holds the heading frozen when the user is parked / stopped at
-   * a light and rate-limits any single-tick flips to avoid an arrow that
-   * spins to the wrong direction. We only fall back to the unstabilized
-   * candidate when navigation is *not* active.
+   * Chevron / camera bearing during navigation. The stabilizer above
+   * ({@link navStablePuck.heading}) is now the single source of truth on
+   * **all** nav paths — it consumes a tangent-aware candidate via
+   * `resolveHeadingCandidate`, holds frozen during the stationary lock,
+   * and rate-limits any single-tick flip. We keep the JS-only blend as
+   * a belt-and-suspenders fallback for legacy mode where the route-snap
+   * may be skipped (e.g. polyline temporarily missing).
    */
   const navPuckHeading = useMemo(() => {
     if (!nav.isNavigating) return navDisplayHeading;
     if (navLogicEffective) return navStablePuck.heading;
     if (isNativeSdkPassThrough) return navStablePuck.heading;
+    if (navStablePuck.glued) return navStablePuck.heading;
     const poly = navPolylineForSmoothing;
     const cum = navSnapshotCumMeters;
     if (!poly || poly.length < 2) return navStablePuck.heading;
@@ -1067,6 +1157,7 @@ export default function MapScreen() {
     nav.sdkNavLocation?.speed,
     isNativeSdkPassThrough,
     navStablePuck.heading,
+    navStablePuck.glued,
     navPuckStationary,
   ]);
 
@@ -5070,14 +5161,20 @@ export default function MapScreen() {
               </View>
             )}
             <View style={s.tripGrid}>
-              {[
+              {([
                 { l: 'Miles logged', v: `${(activeTripSummary.distance ?? 0).toFixed(2)} mi`, c: colors.text, i: 'navigate-outline' as const },
                 { l: 'Drive time', v: formatDuration(activeTripSummary.duration), c: colors.text, i: 'time-outline' as const },
                 { l: 'Avg speed', v: `${Math.round(activeTripSummary.avg_speed_mph ?? 0)} mph`, c: colors.primary, i: 'speedometer-outline' as const },
+                ...(activeTripSummary.max_speed_mph != null && activeTripSummary.max_speed_mph > 0
+                  ? [{ l: 'Top speed', v: `${Math.round(activeTripSummary.max_speed_mph)} mph`, c: colors.danger, i: 'flash-off-outline' as const }]
+                  : []),
                 { l: 'Fuel est.', v: `${(activeTripSummary.fuel_used_gallons ?? 0).toFixed(2)} gal`, c: colors.warning, i: 'flash-outline' as const },
                 { l: 'Mileage value', v: formatUsd(activeTripSummary.mileage_value_estimate ?? 0), c: colors.success, i: 'receipt-outline' as const },
                 { l: 'Rewards', v: `+${activeTripSummary.gems_earned} gems`, c: colors.warning, i: 'diamond-outline' as const },
-              ].map((stat) => (
+                ...(activeTripSummary.xp_earned != null && activeTripSummary.xp_earned > 0
+                  ? [{ l: 'XP', v: `+${activeTripSummary.xp_earned} xp`, c: colors.primary, i: 'trending-up-outline' as const }]
+                  : []),
+              ]).map((stat) => (
                 <View key={stat.l} style={[s.tripStat, { backgroundColor: colors.surfaceSecondary }]}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <Ionicons name={stat.i} size={14} color={stat.c} />
@@ -5087,6 +5184,58 @@ export default function MapScreen() {
                 </View>
               ))}
             </View>
+            {(activeTripSummary.hard_braking_events ?? 0) > 0 ||
+            (activeTripSummary.speeding_events ?? 0) > 0 ? (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  gap: 8,
+                  marginBottom: 12,
+                  flexWrap: 'wrap',
+                }}
+              >
+                {(activeTripSummary.hard_braking_events ?? 0) > 0 ? (
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: 999,
+                      backgroundColor: `${colors.warning}1A`,
+                      borderWidth: StyleSheet.hairlineWidth,
+                      borderColor: `${colors.warning}55`,
+                    }}
+                  >
+                    <Ionicons name="warning-outline" size={12} color={colors.warning} />
+                    <Text style={{ color: colors.warning, fontSize: 11, fontWeight: '700' }}>
+                      {activeTripSummary.hard_braking_events} hard brake{(activeTripSummary.hard_braking_events ?? 0) === 1 ? '' : 's'}
+                    </Text>
+                  </View>
+                ) : null}
+                {(activeTripSummary.speeding_events ?? 0) > 0 ? (
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: 999,
+                      backgroundColor: `${colors.danger}1A`,
+                      borderWidth: StyleSheet.hairlineWidth,
+                      borderColor: `${colors.danger}55`,
+                    }}
+                  >
+                    <Ionicons name="speedometer-outline" size={12} color={colors.danger} />
+                    <Text style={{ color: colors.danger, fontSize: 11, fontWeight: '700' }}>
+                      {activeTripSummary.speeding_events} speeding event{(activeTripSummary.speeding_events ?? 0) === 1 ? '' : 's'}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
             <View style={[s.tripServiceCard, { backgroundColor: isLight ? 'rgba(37,99,235,0.08)' : 'rgba(96,165,250,0.12)', borderColor: colors.border }]}>
               <View style={{ flex: 1 }}>
                 <Text style={[s.tripServiceTitle, { color: colors.text }]}>Service-driver log</Text>

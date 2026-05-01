@@ -934,7 +934,7 @@ def get_weekly_recap(
             trip_q = (
                 sb.table("trips")
                 .select(
-                    "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, created_at, hard_braking_events, speeding_events"
+                    "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, created_at, hard_braking_events, speeding_events, max_speed_mph, avg_speed_mph"
                 )
                 .eq("profile_id", user_id)
                 .gte("created_at", start)
@@ -954,7 +954,7 @@ def get_weekly_recap(
             trip_res = (
                 sb.table("trips")
                 .select(
-                    "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, created_at, hard_braking_events, speeding_events"
+                    "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, created_at, hard_braking_events, speeding_events, max_speed_mph, avg_speed_mph"
                 )
                 .eq("profile_id", user_id)
                 .gte("created_at", cutoff)
@@ -976,11 +976,17 @@ def get_weekly_recap(
         longest = max((float(t.get("distance_miles", 0)) for t in trips), default=0)
         hard_sum = sum(int(t.get("hard_braking_events") or 0) for t in trips)
         speed_sum = sum(int(t.get("speeding_events") or 0) for t in trips)
+        max_speeds = [float(t.get("max_speed_mph") or 0) for t in trips if t.get("max_speed_mph")]
+        avg_speeds = [float(t.get("avg_speed_mph") or 0) for t in trips if t.get("avg_speed_mph")]
+        top_speed = max(max_speeds) if max_speeds else 0.0
+        avg_speed_overall = (sum(avg_speeds) / len(avg_speeds)) if avg_speeds else 0.0
         highlights = []
         if best_safety:
             highlights.append(f"Best safety score: {int(best_safety)}")
         if longest:
             highlights.append(f"Longest trip: {round(longest, 1)} miles")
+        if top_speed:
+            highlights.append(f"Top speed: {int(round(top_speed))} mph")
 
         orion_commentary: Optional[str] = None
         if is_premium and trips:
@@ -1008,6 +1014,8 @@ def get_weekly_recap(
             "orion_commentary": orion_commentary,
             "premium_insights": is_premium,
             "behavior": {"hard_braking_events_total": hard_sum, "speeding_events_total": speed_sum},
+            "top_speed_mph": round(top_speed, 1),
+            "avg_speed_mph": round(avg_speed_overall, 1),
         }
         return {"success": True, "data": stats}
     except Exception:
@@ -1029,6 +1037,8 @@ def get_weekly_recap(
                 "orion_commentary": None,
                 "premium_insights": False,
                 "behavior": {"hard_braking_events_total": 0, "speeding_events_total": 0},
+                "top_speed_mph": 0.0,
+                "avg_speed_mph": 0.0,
             },
         }
 

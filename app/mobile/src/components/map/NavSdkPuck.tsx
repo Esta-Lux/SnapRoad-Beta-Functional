@@ -48,7 +48,18 @@ type Props = {
 const PREDICTIVE_MS = 0;
 const STOPPED_THRESHOLD_MPS = 0.5;
 const ACCURACY_RING_THRESHOLD_M = 15;
-const ROTATION_EASE_MS = 240;
+/**
+ * Rotation easing — kept short on purpose. The upstream stabilizer
+ * (`navPuckSync.resolvePuckHeading`) already rate-limits heading change
+ * per published frame, so a long timing window here just *delays* a
+ * stabilized target and makes the arrow visibly lag the user's actual
+ * heading at the start of a turn. 110ms moving / 60ms stopped feels
+ * crisp without ever showing a hard snap.
+ */
+const ROTATION_EASE_MS = 110;
+const ROTATION_EASE_STOPPED_MS = 60;
+/** A previously-valid `course` becomes stale this fast — never reuse beyond it. */
+const STALE_COURSE_AFTER_MS = 1500;
 
 function shortestAngleDelta(from: number, to: number): number {
   const diff = ((to - from + 540) % 360) - 180;
@@ -180,17 +191,30 @@ function NavSdkPuckImpl({
   const pulseOpacity = useSharedValue(0.35);
 
   const lastTargetRotationRef = React.useRef<number | null>(null);
-  const lastValidCourseRef = React.useRef<number>(0);
+  /**
+   * Last valid `course` and **when** it was observed. We *only* reuse
+   * this within {@link STALE_COURSE_AFTER_MS}; beyond that we hand back
+   * the current rotation target so the arrow doesn't pop to a heading
+   * that is several seconds stale (tunnel exits, indoor parking, etc.).
+   */
+  const lastValidCourseRef = React.useRef<{ deg: number; atMs: number } | null>(null);
 
   const moving = (speedMps ?? 0) >= STOPPED_THRESHOLD_MPS;
   const courseIsValid = course >= 0 && Number.isFinite(course);
-  const effectiveCourse = courseIsValid ? course : lastValidCourseRef.current;
-  if (courseIsValid) lastValidCourseRef.current = course;
+  const nowMs = Date.now();
+  if (courseIsValid) {
+    lastValidCourseRef.current = { deg: course, atMs: nowMs };
+  }
+  let effectiveCourse: number | null = courseIsValid ? course : null;
+  if (effectiveCourse == null && lastValidCourseRef.current) {
+    const { deg, atMs } = lastValidCourseRef.current;
+    if (nowMs - atMs <= STALE_COURSE_AFTER_MS) effectiveCourse = deg;
+  }
 
-  const orientDeg = React.useMemo(
-    () => screenBearingDeg(effectiveCourse, mapBearingDeg),
-    [effectiveCourse, mapBearingDeg],
-  );
+  const orientDeg = React.useMemo(() => {
+    if (effectiveCourse == null || !Number.isFinite(effectiveCourse)) return null;
+    return screenBearingDeg(effectiveCourse, mapBearingDeg);
+  }, [effectiveCourse, mapBearingDeg]);
 
   const positionEaseEnabled = !mirrorNativePosition;
   /** Slightly longer τ than a raw 6–7 Hz matcher so the puck glides between fixes without lagging far behind. */
@@ -200,6 +224,7 @@ function NavSdkPuckImpl({
     const baseLng = mirrorNativePosition ? lng : smoothCoord.lng;
     if (mirrorNativePosition || !moving || !courseIsValid) return { lat: baseLat, lng: baseLng };
     const meters = Math.max(0, speedMps ?? 0) * (PREDICTIVE_MS / 1000);
+    if (meters <= 0) return { lat: baseLat, lng: baseLng };
     const p = projectAhead(baseLat, baseLng, course, meters);
     return { lat: p.lat, lng: p.lng };
   }, [
@@ -215,24 +240,12 @@ function NavSdkPuckImpl({
   ]);
 
   React.useEffect(() => {
-    if (!Number.isFinite(orientDeg)) return;
-    const prev = lastTargetRotationRef.current;
-
-    if (!moving) {
-      if (prev == null) {
-        rotationSv.value = orientDeg;
-        lastTargetRotationRef.current = orientDeg;
-      } else {
-        const delta = shortestAngleDelta(prev, orientDeg);
-        const nextAbsolute = prev + delta;
-        lastTargetRotationRef.current = nextAbsolute;
-        rotationSv.value = withTiming(nextAbsolute, {
-          duration: mapBearingDeg != null && Number.isFinite(mapBearingDeg) ? 120 : ROTATION_EASE_MS,
-          easing: Easing.out(Easing.cubic),
-        });
-      }
+    if (orientDeg == null || !Number.isFinite(orientDeg)) {
+      // No usable heading right now — hold the previous rotation so the
+      // arrow doesn't snap or fall back to north.
       return;
     }
+    const prev = lastTargetRotationRef.current;
 
     if (prev == null) {
       rotationSv.value = orientDeg;
@@ -244,10 +257,10 @@ function NavSdkPuckImpl({
     const nextAbsolute = prev + delta;
     lastTargetRotationRef.current = nextAbsolute;
     rotationSv.value = withTiming(nextAbsolute, {
-      duration: ROTATION_EASE_MS,
+      duration: moving ? ROTATION_EASE_MS : ROTATION_EASE_STOPPED_MS,
       easing: Easing.out(Easing.cubic),
     });
-  }, [orientDeg, moving, rotationSv, mapBearingDeg]);
+  }, [orientDeg, moving, rotationSv]);
 
   const showAccuracyRing = (accuracy ?? 0) > ACCURACY_RING_THRESHOLD_M;
   React.useEffect(() => {

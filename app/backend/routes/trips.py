@@ -97,7 +97,10 @@ def _trip_row_to_client_shape(r: dict) -> dict:
         "gems_earned": int(r.get("gems_earned") or 0),
         "xp_earned": int(r.get("xp_earned") or 0),
         "avg_speed_mph": float(r.get("avg_speed_mph") or r.get("avg_speed") or 0),
+        "max_speed_mph": float(r.get("max_speed_mph") or 0),
         "fuel_used_gallons": float(r.get("fuel_used_gallons") or 0),
+        "hard_braking_events": int(r.get("hard_braking_events") or 0),
+        "speeding_events": int(r.get("speeding_events") or 0),
     }
 
 
@@ -438,6 +441,7 @@ class TripCompleteBody(BaseModel):
     origin: Optional[str] = None
     destination: Optional[str] = None
     avg_speed_mph: Optional[float] = None
+    max_speed_mph: Optional[float] = None
     fuel_used_gallons: Optional[float] = None
     hard_braking_events: int = 0
     speeding_events: int = 0
@@ -509,6 +513,14 @@ def _build_trip_row(
         if body.avg_speed_mph is not None and math.isfinite(float(body.avg_speed_mph))
         else (float(distance) / (duration_seconds / 3600.0) if duration_seconds > 0 else 0.0)
     )
+    # Max speed: trust the client's smoothed peak when present; otherwise fall back to avg
+    # (never below avg, never above a sane highway ceiling).
+    if body.max_speed_mph is not None and math.isfinite(float(body.max_speed_mph)):
+        max_speed = max(0.0, min(160.0, float(body.max_speed_mph)))
+    else:
+        max_speed = max(0.0, avg_speed)
+    if max_speed < avg_speed:
+        max_speed = avg_speed
     fuel_used = (
         float(body.fuel_used_gallons)
         if body.fuel_used_gallons is not None and math.isfinite(float(body.fuel_used_gallons))
@@ -528,6 +540,7 @@ def _build_trip_row(
         "origin": (body.origin or "Start")[:160],
         "destination": (body.destination or "End")[:160],
         "avg_speed_mph": round(max(0.0, avg_speed), 1),
+        "max_speed_mph": round(max(0.0, max_speed), 1),
         "fuel_used_gallons": round(max(0.0, fuel_used), 3),
         "started_at": body.started_at or now_iso,
         "ended_at": body.ended_at or now_iso,
@@ -565,6 +578,7 @@ def _strip_missing_trip_optional_column(trip_row: dict, exc: BaseException) -> b
         "destination",
         "duration_minutes",
         "avg_speed_mph",
+        "max_speed_mph",
         "fuel_used_gallons",
     )
     for col in optional_columns:

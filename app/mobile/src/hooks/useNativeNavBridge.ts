@@ -6,6 +6,11 @@ import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import type { User } from '../types';
 import {
+  estimateFuelCostUsd,
+  estimateFuelGallons,
+  estimateMileageDeductionUsd,
+} from '../utils/driveMetrics';
+import {
   mergeTripCompleteResponse,
   raceWithTimeout,
   unwrapTripCompleteData,
@@ -92,10 +97,43 @@ export function useNativeNavBridge(params: {
   const { updateUser, refreshUserFromServer, bumpStatsVersion } = useAuth();
   const startTimeRef = useRef(Date.now());
   const lastProgressRef = useRef<NativeNavProgressEvent | null>(null);
+  /**
+   * Wall-clock + meters at the previous progress tick. Used in
+   * {@link handleProgressChanged} to derive instantaneous mph between
+   * native ticks (the native progress event itself does not include a
+   * speed field; subscribing to a second GPS stream just for max-speed
+   * would double the location power draw).
+   */
+  const lastProgressMsRef = useRef<number>(0);
+  const lastDistanceMRef = useRef<number>(0);
+  const maxSpeedMphRef = useRef(0);
   const [arrivedAtDestination, setArrivedAtDestination] = useState(false);
 
+  /**
+   * Trims a derived sample to a sane band before updating the running max:
+   *   - finite, non-negative, ≤ 160 mph (highway ceiling),
+   *   - dt ≥ 350 ms (drop early-warmup samples — distanceTraveled snaps
+   *     forward in 0–60 m bursts in the first second of the trip on iOS).
+   */
   const handleProgressChanged = useCallback((event: { nativeEvent: NativeNavProgressEvent }) => {
-    lastProgressRef.current = event.nativeEvent;
+    const ev = event.nativeEvent;
+    lastProgressRef.current = ev;
+    if (!ev || !Number.isFinite(ev.distanceTraveled)) return;
+    const now = Date.now();
+    const lastMs = lastProgressMsRef.current;
+    const lastM = lastDistanceMRef.current;
+    lastProgressMsRef.current = now;
+    lastDistanceMRef.current = Math.max(0, ev.distanceTraveled);
+    if (lastMs <= 0) return;
+    const dtMs = now - lastMs;
+    if (!Number.isFinite(dtMs) || dtMs < 350) return;
+    const dM = ev.distanceTraveled - lastM;
+    if (!Number.isFinite(dM) || dM <= 0) return;
+    const mph = (dM / 1609.34) / (dtMs / 3_600_000);
+    if (!Number.isFinite(mph) || mph <= 0 || mph > 160) return;
+    if (mph > maxSpeedMphRef.current) {
+      maxSpeedMphRef.current = mph;
+    }
   }, []);
 
   const getTripMetrics = useCallback((): NativeNavTripMetrics => {
@@ -125,16 +163,35 @@ export function useNativeNavBridge(params: {
     (arrived: boolean): TripSummary => {
       const metrics = getTripMetrics();
       const durationMin = Math.max(1, Math.round(metrics.durationSec / 60));
+      const dist = metrics.roundedDistanceMiles;
+      const avgSpeed =
+        metrics.durationSec > 0
+          ? Math.round((dist / (metrics.durationSec / 3600)) * 10) / 10
+          : 0;
+      const maxSpeed =
+        Math.round(Math.max(avgSpeed, maxSpeedMphRef.current) * 10) / 10;
+      const fuelGal = Math.round(estimateFuelGallons(dist) * 100) / 100;
 
       return {
-        distance: metrics.roundedDistanceMiles,
+        distance: dist,
         duration: durationMin,
+        duration_seconds: metrics.durationSec,
         safety_score: 85,
         gems_earned: metrics.qualifiesTrip ? tripGemsFromDurationMinutes(durationMin, Boolean(isPremium)) : 0,
         xp_earned: metrics.qualifiesTrip ? 100 : 0,
         origin: originName ?? 'Current Location',
         destination: destination.name ?? 'Destination',
         date: new Date().toLocaleDateString(),
+        started_at: metrics.startedAtIso,
+        ended_at: metrics.endedAtIso,
+        avg_speed_mph: avgSpeed,
+        max_speed_mph: maxSpeed,
+        fuel_used_gallons: fuelGal,
+        fuel_cost_estimate: Math.round(estimateFuelCostUsd(dist) * 100) / 100,
+        mileage_value_estimate: Math.round(estimateMileageDeductionUsd(dist) * 100) / 100,
+        hard_braking_events: 0,
+        speeding_events: 0,
+        incidents_reported: 0,
         counted: metrics.qualifiesTrip,
         arrivedAtDestination: arrived,
       };
@@ -162,6 +219,11 @@ export function useNativeNavBridge(params: {
           safety_score: base.safety_score,
           started_at: metrics.startedAtIso,
           ended_at: metrics.endedAtIso,
+          origin: base.origin,
+          destination: base.destination,
+          avg_speed_mph: base.avg_speed_mph,
+          max_speed_mph: base.max_speed_mph,
+          fuel_used_gallons: base.fuel_used_gallons,
           hard_braking_events: 0,
           speeding_events: 0,
           incidents_reported: 0,
