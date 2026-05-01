@@ -257,7 +257,7 @@ export default React.memo(function RouteOverlay({
 
   const lineOpacity = isRerouting ? 0.35 : 1.0;
   const passedLineWidth = Math.max(4, routeWidth - 1.5);
-  const passedLineOpacity = 0.78 * lineOpacity;
+  const passedLineOpacity = 0.9 * lineOpacity;
   const effectiveGlowColor = glowColor || routeColor;
 
   if (routeRenderVariant === 'minimal') {

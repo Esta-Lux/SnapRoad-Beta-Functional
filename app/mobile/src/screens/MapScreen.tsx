@@ -861,7 +861,8 @@ export default function MapScreen() {
       ? Math.max(0.005, Math.min(0.05, 100 / navPolylineLenMetersRaw))
       : 0.02;
   const smoothedFraction = useSmoothedNavFraction(stabilizedTargetFraction, nav.isNavigating, {
-    timeConstantMs: drivingMode === 'calm' ? 145 : drivingMode === 'sport' ? 105 : 125,
+    /** Tighter time constants so puck + trim seam catch GPS/SDK ticks faster (less “laggy” slide). */
+    timeConstantMs: drivingMode === 'calm' ? 118 : drivingMode === 'sport' ? 78 : 98,
     snapDeltaFraction,
     enabled: true,
     deadReckoning:
@@ -1017,14 +1018,29 @@ export default function MapScreen() {
      * pre-match window before the SDK reports its first matched fix.
      */
     const routeGlued = shouldGluePuckToRoute(navRouteSnap);
-    const matched: Coordinate | null = routeGlued
-      ? navRouteSnap!.snappedCoord
-      : navMatchedRaw ??
-        (navDisplayCoordCandidate &&
-        Number.isFinite(navDisplayCoordCandidate.lat) &&
-        Number.isFinite(navDisplayCoordCandidate.lng)
-          ? { lat: navDisplayCoordCandidate.lat, lng: navDisplayCoordCandidate.lng }
-          : null);
+    const offRoute = Boolean(nav.navigationProgress?.isOffRoute);
+    /**
+     * When glued, prefer the **smoothed along-route** point (same arc length
+     * basis as `fractionTraveled` / `lineTrimOffset`). Orthogonal GPS→polyline
+     * snap can sit several meters “aside” of that arc on curves, which makes
+     * the puck drift from the colored/gray seam and feel laggy.
+     */
+    const smoothedOnRoute =
+      Boolean(smoothedNavPuckCoord) &&
+      !offRoute &&
+      Number.isFinite(smoothedNavPuckCoord!.lat) &&
+      Number.isFinite(smoothedNavPuckCoord!.lng);
+    const matched: Coordinate | null =
+      routeGlued && smoothedOnRoute && smoothedNavPuckCoord
+        ? smoothedNavPuckCoord
+        : routeGlued
+          ? navRouteSnap!.snappedCoord
+          : navMatchedRaw ??
+            (navDisplayCoordCandidate &&
+            Number.isFinite(navDisplayCoordCandidate.lat) &&
+            Number.isFinite(navDisplayCoordCandidate.lng)
+              ? { lat: navDisplayCoordCandidate.lat, lng: navDisplayCoordCandidate.lng }
+              : null);
 
     /**
      * Heading candidate — prefer the route tangent on-corridor at speed
@@ -1035,9 +1051,16 @@ export default function MapScreen() {
       typeof navDisplayHeading === 'number' && Number.isFinite(navDisplayHeading)
         ? navDisplayHeading
         : null;
+    const snapForHeading =
+      smoothedOnRoute && navPolylineForSmoothing && smoothedNavPuckCoord
+        ? snapPuckToRoute(smoothedNavPuckCoord, navPolylineForSmoothing, {
+            accuracyM: accuracy ?? null,
+            tangentLookAheadM: 22,
+          })
+        : navRouteSnap;
     const headingCandidate = nav.isNavigating
       ? resolveRouteHeadingCandidate({
-          snap: navRouteSnap,
+          snap: snapForHeading,
           sdkCourseDeg,
           speedMps: sdkSpeedMps,
         })
@@ -1059,7 +1082,12 @@ export default function MapScreen() {
            * happens to be. This is what makes the parked puck stay
            * pinned on the polyline instead of creeping during dwell.
            */
-          anchorOverride: routeGlued ? navRouteSnap!.snappedCoord : null,
+          anchorOverride:
+            routeGlued && smoothedOnRoute && smoothedNavPuckCoord
+              ? smoothedNavPuckCoord
+              : routeGlued
+                ? navRouteSnap!.snappedCoord
+                : null,
         })
       : INITIAL_STATIONARY_LOCK;
     stationaryLockRef.current = nextLock;
@@ -1108,6 +1136,9 @@ export default function MapScreen() {
     navDisplayHeading,
     navMatchedRaw,
     navRouteSnap,
+    smoothedNavPuckCoord?.lat,
+    smoothedNavPuckCoord?.lng,
+    nav.navigationProgress?.isOffRoute,
     location.lat,
     location.lng,
     speed,
@@ -2460,7 +2491,7 @@ export default function MapScreen() {
   // Fix 14: Camera tick + odometry. `navDisplayCoord` is SDK-matched when `navLogicSdkEnabled` (single engine); else JS snap.
   useEffect(() => {
     if (!Number.isFinite(navDisplayCoord.lat) || !Number.isFinite(navDisplayCoord.lng)) return;
-    const moveThresholdM = nav.isNavigating ? 0.45 : 1.5;
+    const moveThresholdM = nav.isNavigating ? 0.28 : 1.5;
     const moved = haversineMeters(lastCameraUpdate.current.lat, lastCameraUpdate.current.lng, navDisplayCoord.lat, navDisplayCoord.lng) > moveThresholdM;
     const turned = Math.abs(navPuckHeading - lastCameraUpdate.current.heading) > 1;
     if (moved || turned) {
@@ -4332,7 +4363,9 @@ export default function MapScreen() {
                     glowOpacity={navRouteColors.routeGlowOpacity}
                     congestion={nav.navigationData?.congestion}
                     showCongestion={
-                      modeConfig.showCongestion && (nav.showRoutePreview || nav.isNavigating)
+                      modeConfig.showCongestion &&
+                      !nav.isNavigating &&
+                      nav.showRoutePreview
                     }
                     isRerouting={nav.isRerouting || sdkRouteHandoffUi}
                     belowLayerID={buildingsBelowLayerId}

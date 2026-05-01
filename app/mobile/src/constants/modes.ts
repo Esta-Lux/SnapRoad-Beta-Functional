@@ -74,12 +74,12 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     color: '#6BA4E8',
     icon: 'leaf-outline',
 
-    routeColor: '#6BB0E8',
-    routeCasing: '#3E7FC4',
-    passedColor: '#94A3B8',
+    routeColor: '#5BA3F7',
+    routeCasing: '#2E5A96',
+    passedColor: '#7C8FA8',
     routeWidth: 9,
-    routeGlowColor: '#6BB0E8',
-    routeGlowOpacity: 0.14,
+    routeGlowColor: '#7AB8FF',
+    routeGlowOpacity: 0.18,
 
     turnCardGradient: ['#17202B', '#101620'],
     turnCardRadius: 18,
@@ -136,12 +136,12 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     color: '#3B82F6',
     icon: 'pulse-outline',
 
-    routeColor: '#3B82F6',
-    routeCasing: '#1E40AF',
-    passedColor: '#9CA3AF',
-    routeWidth: 8,
-    routeGlowColor: '#3B82F6',
-    routeGlowOpacity: 0.18,
+    routeColor: '#2F8CFF',
+    routeCasing: '#153E75',
+    passedColor: '#7E8C9E',
+    routeWidth: 9,
+    routeGlowColor: '#4DA3FF',
+    routeGlowOpacity: 0.22,
 
     turnCardGradient: ['#17202B', '#101722'],
     turnCardRadius: 16,
@@ -197,13 +197,13 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     color: '#4A4063',
     icon: 'speedometer-outline',
 
-    /** High-contrast “racing” line; `effectiveNavRouteColors` brightens for dusk/night/satellite. */
-    routeColor: '#FF5A1F',
-    routeCasing: '#0C0A0F',
-    passedColor: '#64748B',
-    routeWidth: 10,
-    routeGlowColor: '#FF8A4A',
-    routeGlowOpacity: 0.38,
+    /** High-saturation core + near-black casing so the line reads on Standard night / dusk. */
+    routeColor: '#FF7A2E',
+    routeCasing: '#050308',
+    passedColor: '#9DB0C4',
+    routeWidth: 11,
+    routeGlowColor: '#FFB366',
+    routeGlowOpacity: 0.46,
 
     turnCardGradient: ['#181B22', '#101218'],
     turnCardRadius: 14,
