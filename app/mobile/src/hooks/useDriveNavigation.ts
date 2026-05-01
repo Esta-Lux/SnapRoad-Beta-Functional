@@ -1490,6 +1490,92 @@ export function useDriveNavigation(params: {
     stopNavigation,
   ]);
 
+  /**
+   * SDK-mode arrival safety net.
+   *
+   * In headless logic-SDK trips the native `onFinalDestinationArrival`
+   * callback from {@link MapboxNavigationView} is the primary signal and
+   * already calls `stopNavigation` from `MapScreen`. However the native
+   * event has been observed to mis-fire in the field — Android
+   * `MapboxNavigation` will sometimes silently keep `state = 'active'`
+   * if the final waypoint is set ≥ a few meters off the routable
+   * network or if the user is stationary inside the arrival radius
+   * before the SDK's internal timer elapses — which leaves the user
+   * stuck "navigating" forever even though they've physically arrived.
+   *
+   * This effect mirrors the JS path above but gated specifically to the
+   * SDK trip:
+   *   - speed < 1.5 mph (parked / pulled in)
+   *   - crow distance to destination ≤ 35 m, OR remaining route distance ≤ 0.06 mi
+   *   - must hold for 2 consecutive samples (GPS flicker guard)
+   *   - session age ≥ 5 s (no false fire on start in driveway)
+   *
+   * `autoEndNavTriggeredRef` makes this idempotent with the native
+   * arrival callback so the trip can only end once.
+   */
+  useEffect(() => {
+    if (!navSdkHeadless) return;
+    if (!isNavigating || !navigationData?.destination) return;
+    if (autoEndNavTriggeredRef.current) return;
+
+    const dest = navigationData.destination;
+    if (!Number.isFinite(dest.lat) || !Number.isFinite(dest.lng)) return;
+
+    const speedMps =
+      navSdkSnapshot.location?.speed ??
+      navigationProgress?.displayCoord?.speedMps ??
+      speed * 0.44704;
+    if (!Number.isFinite(speedMps) || speedMps >= 0.67) {
+      arrivalNearStreakRef.current = 0;
+      return;
+    }
+
+    const matched = navSdkSnapshot.location;
+    const lat =
+      matched && Number.isFinite(matched.latitude) ? matched.latitude : navigationProgressCoord.lat;
+    const lng =
+      matched && Number.isFinite(matched.longitude) ? matched.longitude : navigationProgressCoord.lng;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    const crow = haversineMeters(lat, lng, dest.lat, dest.lng);
+    const remainMeters = navSdkSnapshot.progress?.distanceRemaining;
+    const remainMi =
+      typeof remainMeters === 'number' && Number.isFinite(remainMeters)
+        ? remainMeters / 1609.34
+        : null;
+    const withinCrow = crow <= 35;
+    const withinRoute = remainMi != null && remainMi <= ARRIVAL_NEAR_ROUTE_MI;
+    if (!withinCrow && !withinRoute) {
+      arrivalNearStreakRef.current = 0;
+      return;
+    }
+
+    arrivalNearStreakRef.current += 1;
+    if (arrivalNearStreakRef.current < 2) return;
+
+    const sessionAge = Date.now() - navSessionStartRef.current;
+    if (sessionAge < 5000) return;
+
+    autoEndNavTriggeredRef.current = true;
+    autoEndFromArrivalRef.current = true;
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    queueMicrotask(() => {
+      stopNavigation();
+    });
+  }, [
+    navSdkHeadless,
+    isNavigating,
+    navigationData?.destination?.lat,
+    navigationData?.destination?.lng,
+    navSdkSnapshot.location,
+    navSdkSnapshot.progress?.distanceRemaining,
+    navigationProgressCoord.lat,
+    navigationProgressCoord.lng,
+    navigationProgress?.displayCoord?.speedMps,
+    speed,
+    stopNavigation,
+  ]);
+
   // --- Off-route detection + auto-reroute (`streakRequired` from mode tuning; see offRouteTuning) ---
   // Includes speculative pre-fetch: when snap distance exceeds ~52% of the off-route
   // threshold AND trend is worsening over 2 ticks, fire a background Directions API

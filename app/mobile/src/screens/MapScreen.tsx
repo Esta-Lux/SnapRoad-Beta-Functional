@@ -179,6 +179,12 @@ import { bucketSpeedMpsTo5Mph, maneuverDistanceBucketMeters } from '../navigatio
 import { getNativeHeadlessFollowingPitch, getNativeHeadlessFollowingZoom } from '../navigation/nativeNavCameraMirror';
 import { getNavCameraFollowTuning } from '../navigation/navCameraFollowTuning';
 import NavSdkPuck from '../components/map/NavSdkPuck';
+import {
+  INITIAL_STATIONARY_LOCK,
+  resolvePuckCoord as resolvePuckCoordSync,
+  resolvePuckHeading as resolvePuckHeadingSync,
+  updateStationaryLock,
+} from '../navigation/navPuckSync';
 import { MapboxNavigationView, type MapboxNavigationViewRef } from '@badatgil/expo-mapbox-navigation';
 import { routeProfileForPlatform } from '../hooks/useNativeNavBridge';
 import { normalizeNativeNavParams } from '../navigation/nativeNavGuard';
@@ -871,12 +877,116 @@ export default function MapScreen() {
   ]);
 
   /**
-   * Puck/camera/route-split all read this value; see
-   * `useSmoothedNavFraction` docstring. Falls back to the discrete
-   * `navDisplayCoordRaw` if we can't compute a smoothed point (no polyline,
-   * pre-waiting, etc.) so the existing single-frame guarantees still hold.
+   * Pre-stabilizer candidate. The published {@link navDisplayCoord} below
+   * runs this through {@link resolvePuckCoordSync} which:
+   *   - holds the last anchor when the device is stationary (red light,
+   *     parking) so native matched-coord wobble can't visibly drift the
+   *     puck while the car is parked,
+   *   - leashes the matched coord to the user's smoothed GPS so a
+   *     phantom snap to a parallel road can never carry the puck off the
+   *     user's true position.
    */
-  const navDisplayCoord = smoothedNavPuckCoord ?? navDisplayCoordRaw;
+  const navDisplayCoordCandidate = smoothedNavPuckCoord ?? navDisplayCoordRaw;
+
+  /**
+   * Stationary lock + true-location leash. Refs hold cross-render state
+   * for {@link updateStationaryLock}; the published values below come
+   * from pure `resolvePuckCoordSync` / `resolvePuckHeadingSync` calls.
+   */
+  const stationaryLockRef = useRef(INITIAL_STATIONARY_LOCK);
+  const lastPublishedPuckCoordRef = useRef<Coordinate | null>(null);
+  const lastPublishedPuckHeadingRef = useRef<number | null>(null);
+
+  const navStablePuck = useMemo(() => {
+    const nowMs = Date.now();
+    const speedMphSmoothed = Number.isFinite(speed) ? speed : 0;
+    const sdkSpeedMps =
+      typeof nav.sdkNavLocation?.speed === 'number' && Number.isFinite(nav.sdkNavLocation.speed)
+        ? nav.sdkNavLocation.speed
+        : nav.navigationProgress?.displayCoord?.speedMps ?? speedMphSmoothed * 0.44704;
+    const trueLoc =
+      Number.isFinite(location.lat) && Number.isFinite(location.lng)
+        ? { lat: location.lat, lng: location.lng }
+        : null;
+    const matched =
+      navDisplayCoordCandidate &&
+      Number.isFinite(navDisplayCoordCandidate.lat) &&
+      Number.isFinite(navDisplayCoordCandidate.lng)
+        ? { lat: navDisplayCoordCandidate.lat, lng: navDisplayCoordCandidate.lng }
+        : null;
+
+    const headingCandidate = navDisplayHeading;
+
+    const nextLock = nav.isNavigating
+      ? updateStationaryLock(stationaryLockRef.current, {
+          speedMph: speedMphSmoothed,
+          rawSpeedMps: sdkSpeedMps,
+          matched,
+          trueLoc,
+          heading: typeof headingCandidate === 'number' && Number.isFinite(headingCandidate)
+            ? headingCandidate
+            : null,
+          nowMs,
+        })
+      : INITIAL_STATIONARY_LOCK;
+    stationaryLockRef.current = nextLock;
+
+    const stabilizedCoord = resolvePuckCoordSync({
+      matched,
+      trueLoc,
+      prevPublished: lastPublishedPuckCoordRef.current,
+      lock: nextLock,
+      accuracyM: accuracy ?? null,
+    });
+
+    const stabilizedHeading = nav.isNavigating
+      ? resolvePuckHeadingSync({
+          candidate:
+            typeof headingCandidate === 'number' && Number.isFinite(headingCandidate)
+              ? headingCandidate
+              : null,
+          prevHeading: lastPublishedPuckHeadingRef.current,
+          speedMph: speedMphSmoothed,
+          lock: nextLock,
+        })
+      : typeof headingCandidate === 'number' && Number.isFinite(headingCandidate)
+        ? headingCandidate
+        : null;
+
+    if (stabilizedCoord) lastPublishedPuckCoordRef.current = stabilizedCoord;
+    if (typeof stabilizedHeading === 'number' && Number.isFinite(stabilizedHeading)) {
+      lastPublishedPuckHeadingRef.current = stabilizedHeading;
+    }
+
+    return {
+      coord: stabilizedCoord ?? navDisplayCoordCandidate,
+      heading:
+        typeof stabilizedHeading === 'number' && Number.isFinite(stabilizedHeading)
+          ? stabilizedHeading
+          : navDisplayHeading,
+      locked: nextLock.locked,
+    };
+  }, [
+    nav.isNavigating,
+    navDisplayCoordCandidate.lat,
+    navDisplayCoordCandidate.lng,
+    navDisplayHeading,
+    location.lat,
+    location.lng,
+    speed,
+    accuracy,
+    nav.sdkNavLocation?.speed,
+    nav.navigationProgress?.displayCoord?.speedMps,
+  ]);
+
+  /**
+   * Puck/camera/route-split all read this value. Stabilized through the
+   * stationary lock + true-location leash so the puck can't drift while
+   * stopped or run away on a phantom snap.
+   */
+  const navDisplayCoord = navStablePuck.coord;
+  /** True iff the stationary lock is currently engaged (frozen puck). */
+  const navPuckStationary = navStablePuck.locked;
 
   /** POI / offers / incidents fetches use route-snapped position while navigating so pins stay near the corridor. */
   const poiSearchCoord = useMemo(() => {
@@ -920,25 +1030,32 @@ export default function MapScreen() {
    * Chevron / camera bearing during navigation: bias toward **route tangent** at the current
    * arc-length so the arrow tracks the drawn polyline instead of coupling to device compass
    * or noisy GPS course when the user pans the map. Blends with SDK course when nearly stopped.
+   *
+   * The stabilizer above ({@link navStablePuck.heading}) is the single source of
+   * truth — it holds the heading frozen when the user is parked / stopped at
+   * a light and rate-limits any single-tick flips to avoid an arrow that
+   * spins to the wrong direction. We only fall back to the unstabilized
+   * candidate when navigation is *not* active.
    */
   const navPuckHeading = useMemo(() => {
     if (!nav.isNavigating) return navDisplayHeading;
-    if (navLogicEffective) return navDisplayHeading;
-    if (isNativeSdkPassThrough) return navDisplayHeading;
+    if (navLogicEffective) return navStablePuck.heading;
+    if (isNativeSdkPassThrough) return navStablePuck.heading;
     const poly = navPolylineForSmoothing;
     const cum = navSnapshotCumMeters;
-    if (!poly || poly.length < 2) return navDisplayHeading;
+    if (!poly || poly.length < 2) return navStablePuck.heading;
     const tangent = tangentBearingAlongPolyline(poly, cum, 22);
-    if (tangent == null || !Number.isFinite(tangent)) return navDisplayHeading;
+    if (tangent == null || !Number.isFinite(tangent)) return navStablePuck.heading;
     const spd =
       nav.fusedNavState?.displayCoord?.speedMps ??
       nav.navigationProgress?.displayCoord?.speedMps ??
       (typeof nav.sdkNavLocation?.speed === 'number' ? nav.sdkNavLocation.speed : -1);
     const sdkH = navDisplayHeading;
-    if (spd >= 0 && spd < 0.65) {
-      return clampStepTowardDeg(sdkH, tangent, 22);
-    }
-    return clampStepTowardDeg(sdkH, tangent, 52);
+    const stepped =
+      spd >= 0 && spd < 0.65
+        ? clampStepTowardDeg(sdkH, tangent, 22)
+        : clampStepTowardDeg(sdkH, tangent, 52);
+    return navPuckStationary ? navStablePuck.heading : stepped;
   }, [
     nav.isNavigating,
     navPolylineForSmoothing,
@@ -949,6 +1066,8 @@ export default function MapScreen() {
     nav.navigationProgress?.displayCoord?.speedMps,
     nav.sdkNavLocation?.speed,
     isNativeSdkPassThrough,
+    navStablePuck.heading,
+    navPuckStationary,
   ]);
 
   const poiSearchCoordRef = useRef(poiSearchCoord);
