@@ -647,6 +647,7 @@ export function useDriveNavigation(params: {
         );
       }
 
+      navigationDataRef.current = nav;
       setNavigationData(nav);
       routeModelRefreshedAtRef.current = Date.now();
       setRouteModelRefreshKey((k) => k + 1);
@@ -1022,7 +1023,8 @@ export function useDriveNavigation(params: {
 
   // --- Start / Stop navigation ---
   const startNavigation = useCallback(() => {
-    if (!navigationData) return;
+    const activeNavigationData = navigationDataRef.current ?? navigationData;
+    if (!activeNavigationData) return;
     void configureAudioSessionForSpeechOutput();
     stopSpeaking();
     navSessionStartRef.current = Date.now();
@@ -1055,9 +1057,9 @@ export function useDriveNavigation(params: {
     trafficRefreshHistoryRef.current = [];
     routeModelRefreshedAtRef.current = Date.now();
     setRouteModelRefreshKey((k) => k + 1);
-    const dest = navigationData.destination.name ?? 'your destination';
-    const etaMin = Math.round(navigationData.duration / 60);
-    const firstStep = navigationData.steps?.[0];
+    const dest = activeNavigationData.destination.name ?? 'your destination';
+    const etaMin = Math.round(activeNavigationData.duration / 60);
+    const firstStep = activeNavigationData.steps?.[0];
     const firstCue = firstStep
       ? (primaryVoiceAnnouncement(firstStep) || primaryInstructionText(firstStep))
       : '';

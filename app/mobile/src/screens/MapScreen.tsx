@@ -15,6 +15,7 @@ import MapboxGL, { isMapAvailable } from '../utils/mapbox';
 import * as Battery from 'expo-battery';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -262,6 +263,50 @@ const MAPBOX_DEFAULT_FOLLOW_PADDING = {
   paddingBottom: 0,
   paddingLeft: 0,
 } as const;
+
+const NAV_ORIGIN_REFRESH_TIMEOUT_MS = 1200;
+const NAV_ORIGIN_REROUTE_DISTANCE_M = 22;
+
+function isUsableCoordinate(coord: Coordinate | null | undefined): coord is Coordinate {
+  return (
+    coord != null &&
+    Number.isFinite(coord.lat) &&
+    Number.isFinite(coord.lng) &&
+    (Math.abs(coord.lat) > 1e-6 || Math.abs(coord.lng) > 1e-6)
+  );
+}
+
+async function getFreshNavigationOrigin(fallback: Coordinate): Promise<Coordinate> {
+  try {
+    const perm = await Location.getForegroundPermissionsAsync();
+    if (perm.status !== 'granted') return fallback;
+
+    const lastKnown = await Location.getLastKnownPositionAsync({
+      maxAge: 2500,
+      requiredAccuracy: 35,
+    });
+    if (
+      lastKnown &&
+      Number.isFinite(lastKnown.coords.latitude) &&
+      Number.isFinite(lastKnown.coords.longitude)
+    ) {
+      return { lat: lastKnown.coords.latitude, lng: lastKnown.coords.longitude };
+    }
+
+    const fix = await Promise.race<Location.LocationObject | null>([
+      Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.BestForNavigation,
+      }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), NAV_ORIGIN_REFRESH_TIMEOUT_MS)),
+    ]);
+    if (fix && Number.isFinite(fix.coords.latitude) && Number.isFinite(fix.coords.longitude)) {
+      return { lat: fix.coords.latitude, lng: fix.coords.longitude };
+    }
+  } catch {
+    // Route start should remain usable when the fresh one-shot fix is unavailable.
+  }
+  return fallback;
+}
 
 /**
  * Mode-aware follow-padding used when the puck-follow camera is active but
@@ -758,7 +803,7 @@ export default function MapScreen() {
       ? Math.max(0.005, Math.min(0.05, 100 / navPolylineLenMetersRaw))
       : 0.02;
   const smoothedFraction = useSmoothedNavFraction(stabilizedTargetFraction, nav.isNavigating, {
-    timeConstantMs: drivingMode === 'calm' ? 190 : drivingMode === 'sport' ? 150 : 170,
+    timeConstantMs: drivingMode === 'calm' ? 145 : drivingMode === 'sport' ? 105 : 125,
     snapDeltaFraction,
     enabled: true,
     deadReckoning:
@@ -766,8 +811,8 @@ export default function MapScreen() {
         ? {
             polylineLengthMeters: navPolylineLenMetersRaw,
             speedMps: deadReckoningSpeedMps,
-            staleThresholdMs: drivingMode === 'sport' ? 140 : drivingMode === 'adaptive' ? 180 : 240,
-            maxStaleMs: drivingMode === 'sport' ? 2800 : drivingMode === 'adaptive' ? 2500 : 2200,
+            staleThresholdMs: drivingMode === 'sport' ? 90 : drivingMode === 'adaptive' ? 120 : 165,
+            maxStaleMs: drivingMode === 'sport' ? 3000 : drivingMode === 'adaptive' ? 2800 : 2500,
           }
         : undefined,
   });
@@ -1314,9 +1359,9 @@ export default function MapScreen() {
     const animationDuration = isNewNavSession
       ? 0
       : Math.max(
-          140,
+          95,
           Math.min(
-            520,
+            420,
             Math.min(
               Number.isFinite(navCameraAnimationDuration) ? navCameraAnimationDuration! : 420,
               navCameraFollowTuning.animationDurationMs,
@@ -3111,11 +3156,9 @@ export default function MapScreen() {
         );
         return;
       }
-      const origin = locationRef.current;
-      const originOk =
-        Number.isFinite(origin.lat) &&
-        Number.isFinite(origin.lng) &&
-        (Math.abs(origin.lat) > 1e-5 || Math.abs(origin.lng) > 1e-5);
+      const origin = await getFreshNavigationOrigin(locationRef.current);
+      locationRef.current = origin;
+      const originOk = isUsableCoordinate(origin);
       if (!originOk) {
         if (permissionDenied) {
           Alert.alert(
@@ -4809,25 +4852,50 @@ export default function MapScreen() {
         avoidLowClearances={avoidLowClearances}
         setAvoidLowClearances={setAvoidLowClearances}
         analyzeCongestion={analyzeCongestion}
-        onStartNavigationPress={() => {
+        onStartNavigationPress={async () => {
           setSelectedPlaceId(null);
           setSelectedPlace(null);
+          if (nav.navigationData) {
+            const freshOrigin = await getFreshNavigationOrigin(locationRef.current);
+            locationRef.current = freshOrigin;
+            const previewOrigin = nav.navigationData.origin;
+            const originDriftMeters =
+              isUsableCoordinate(previewOrigin) && isUsableCoordinate(freshOrigin)
+                ? haversineMeters(previewOrigin.lat, previewOrigin.lng, freshOrigin.lat, freshOrigin.lng)
+                : 0;
+            if (originDriftMeters >= NAV_ORIGIN_REROUTE_DISTANCE_M) {
+              const reroute = await nav.fetchDirections(
+                nav.navigationData.destination,
+                freshOrigin,
+                {
+                  maxHeightMeters: avoidLowClearances ? vehicleHeight : undefined,
+                  fastSingleRoute: true,
+                },
+              );
+              if (!reroute.ok) {
+                Alert.alert('Updating route', reroute.message ?? 'Could not refresh the route from your current position.');
+                return;
+              }
+            }
+          }
           if (navNativeFullScreenEnabled() && nav.navigationData && location) {
             const nearestIncident = nearbyIncidents.reduce<Incident | null>((best, inc) => {
-              const incDist = haversineMeters(location.lat, location.lng, inc.lat, inc.lng);
+              const liveOrigin = locationRef.current;
+              const incDist = haversineMeters(liveOrigin.lat, liveOrigin.lng, inc.lat, inc.lng);
               if (!best) return inc;
-              const bestDist = haversineMeters(location.lat, location.lng, best.lat, best.lng);
+              const bestDist = haversineMeters(liveOrigin.lat, liveOrigin.lng, best.lat, best.lng);
               return incDist < bestDist ? inc : best;
             }, null);
+            const nativeOrigin = locationRef.current;
             const nearestIncidentMiles = nearestIncident
-              ? haversineMeters(location.lat, location.lng, nearestIncident.lat, nearestIncident.lng) / 1609.34
+              ? haversineMeters(nativeOrigin.lat, nativeOrigin.lng, nearestIncident.lat, nearestIncident.lng) / 1609.34
               : null;
             const reportHint =
               nearestIncident && nearestIncidentMiles != null && nearestIncidentMiles <= 2.5
                 ? `${nearestIncident.title || nearestIncident.type} reported about ${nearestIncidentMiles.toFixed(1)} mi away.`
                 : undefined;
             const nativeParams = normalizeNativeNavParams({
-              origin: { lat: location.lat, lng: location.lng },
+              origin: { lat: nativeOrigin.lat, lng: nativeOrigin.lng },
               destination: {
                 lat: nav.navigationData.destination.lat,
                 lng: nav.navigationData.destination.lng,

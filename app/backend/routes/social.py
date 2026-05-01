@@ -73,7 +73,36 @@ def _friendship_accepted(sb, uid: str, other_id: str) -> bool:
 
 def _is_missing_column_error(err: Exception, table: str, column: str) -> bool:
     s = str(err).lower()
-    return table.lower() in s and column.lower() in s and ("column" in s and "does not exist" in s)
+    table_l = table.lower()
+    column_l = column.lower()
+    if table_l not in s or column_l not in s or "column" not in s:
+        return False
+    return (
+        "does not exist" in s
+        or "could not find" in s
+        or "schema cache" in s
+    )
+
+
+def _execute_live_location_mutation_with_optional_columns(payload: dict, execute_fn, action: str):
+    """Run a live_locations mutation, dropping optional columns absent from older Supabase schemas."""
+    optional_columns = ("battery_pct", "sharing_mode")
+    while True:
+        try:
+            return execute_fn()
+        except Exception as e:
+            missing = next(
+                (
+                    col
+                    for col in optional_columns
+                    if col in payload and _is_missing_column_error(e, "live_locations", col)
+                ),
+                None,
+            )
+            if missing is None:
+                raise
+            logger.warning("live_locations.%s missing; retrying %s without %s", missing, action, missing)
+            payload.pop(missing, None)
 
 
 def _normalize_live_location_sharing_mode(value: Optional[str], is_sharing: bool) -> str:
@@ -677,19 +706,11 @@ def update_my_location(request: Request, body: LocationUpdateBody, current_user:
         sharing_mode = _normalize_live_location_sharing_mode(body.sharing_mode, is_sharing)
         if sharing_mode != "off":
             payload["sharing_mode"] = sharing_mode
-        try:
-            sb.table("live_locations").upsert(payload).execute()
-        except Exception as e:
-            if "battery_pct" in payload and _is_missing_column_error(e, "live_locations", "battery_pct"):
-                logger.warning("live_locations.battery_pct missing; retrying location upsert without battery_pct")
-                payload.pop("battery_pct", None)
-                sb.table("live_locations").upsert(payload).execute()
-            elif "sharing_mode" in payload and _is_missing_column_error(e, "live_locations", "sharing_mode"):
-                logger.warning("live_locations.sharing_mode missing; retrying location upsert without sharing_mode")
-                payload.pop("sharing_mode", None)
-                sb.table("live_locations").upsert(payload).execute()
-            else:
-                raise
+        _execute_live_location_mutation_with_optional_columns(
+            payload,
+            lambda: sb.table("live_locations").upsert(payload).execute(),
+            "location upsert",
+        )
     except Exception as e:
         logger.warning("failed to upsert live location: %s", e)
         raise HTTPException(status_code=500, detail="Failed to update live location.")
@@ -724,14 +745,11 @@ def set_location_sharing(request: Request, body: LocationSharingBody, current_us
             if body.lat is not None and body.lng is not None:
                 update_payload["lat"] = float(body.lat)
                 update_payload["lng"] = float(body.lng)
-            try:
-                sb.table("live_locations").update(update_payload).eq("user_id", uid).execute()
-            except Exception as e:
-                if "sharing_mode" in update_payload and _is_missing_column_error(e, "live_locations", "sharing_mode"):
-                    update_payload.pop("sharing_mode", None)
-                    sb.table("live_locations").update(update_payload).eq("user_id", uid).execute()
-                else:
-                    raise
+            _execute_live_location_mutation_with_optional_columns(
+                update_payload,
+                lambda: sb.table("live_locations").update(update_payload).eq("user_id", uid).execute(),
+                "sharing update",
+            )
         elif body.is_sharing:
             lat = float(body.lat) if body.lat is not None else 0.0
             lng = float(body.lng) if body.lng is not None else 0.0
@@ -744,14 +762,11 @@ def set_location_sharing(request: Request, body: LocationSharingBody, current_us
                 "is_navigating": False,
                 "last_updated": now,
             }
-            try:
-                sb.table("live_locations").insert(insert_payload).execute()
-            except Exception as e:
-                if _is_missing_column_error(e, "live_locations", "sharing_mode"):
-                    insert_payload.pop("sharing_mode", None)
-                    sb.table("live_locations").insert(insert_payload).execute()
-                else:
-                    raise
+            _execute_live_location_mutation_with_optional_columns(
+                insert_payload,
+                lambda: sb.table("live_locations").insert(insert_payload).execute(),
+                "sharing insert",
+            )
     except Exception as e:
         logger.warning("failed to update location sharing setting: %s", e)
         raise HTTPException(status_code=500, detail="Failed to update location sharing.")

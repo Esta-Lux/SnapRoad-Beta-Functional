@@ -38,6 +38,12 @@ def test_missing_column_error_detection():
     assert social._is_missing_column_error(err, "live_locations", "speed_mph") is False
 
 
+def test_missing_column_error_detection_handles_postgrest_schema_cache():
+    err = Exception("Could not find the 'sharing_mode' column of 'live_locations' in the schema cache")
+    assert social._is_missing_column_error(err, "live_locations", "sharing_mode") is True
+    assert social._is_missing_column_error(err, "live_locations", "battery_pct") is False
+
+
 def test_select_live_locations_includes_battery_when_present():
     def responder(cols, values):
         assert "battery_pct" in cols

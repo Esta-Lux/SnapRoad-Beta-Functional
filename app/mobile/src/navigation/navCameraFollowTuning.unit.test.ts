@@ -6,9 +6,9 @@ test('stopped vehicle uses conservative camera cadence to avoid red-light jitter
   const calm = getNavCameraFollowTuning('calm', 0.2, 300);
   const sport = getNavCameraFollowTuning('sport', 0.2, 300);
 
-  assert.equal(calm.minUpdateIntervalMs, 520);
-  assert.ok(calm.minMoveMeters >= 3);
-  assert.ok(calm.minHeadingDeltaDeg >= 10);
+  assert.equal(calm.minUpdateIntervalMs, 440);
+  assert.ok(calm.minMoveMeters >= 2);
+  assert.ok(calm.minHeadingDeltaDeg >= 8);
   assert.ok(sport.animationDurationMs < calm.animationDurationMs);
 });
 
@@ -29,6 +29,6 @@ test('near maneuvers tighten camera cadence without going below safety floors', 
 
   assert.ok(near.minUpdateIntervalMs < far.minUpdateIntervalMs);
   assert.ok(near.animationDurationMs < far.animationDurationMs);
-  assert.ok(near.minUpdateIntervalMs >= 80);
-  assert.ok(near.animationDurationMs >= 160);
+  assert.ok(near.minUpdateIntervalMs >= 54);
+  assert.ok(near.animationDurationMs >= 105);
 });
