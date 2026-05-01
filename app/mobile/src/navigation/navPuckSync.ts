@@ -269,14 +269,21 @@ export function resolvePuckCoord(input: {
   lock: StationaryLockState;
   /** Optional GPS accuracy (m) — looser leash when accuracy is poor. */
   accuracyM?: number | null;
+  /**
+   * Force-publish `matched` when the caller has already validated it as an
+   * on-route polyline point. This keeps the visible puck glued to the route
+   * instead of letting raw GPS tug it across lanes or around corners.
+   */
+  lockToMatched?: boolean;
 }): Coordinate | null {
-  const { matched, trueLoc, prevPublished, lock, accuracyM } = input;
+  const { matched, trueLoc, prevPublished, lock, accuracyM, lockToMatched = false } = input;
 
   if (lock.locked && isFiniteCoord(lock.anchor)) {
     return lock.anchor;
   }
 
   if (isFiniteCoord(matched)) {
+    if (lockToMatched) return matched;
     if (!isFiniteCoord(trueLoc)) return matched;
     const div = haversineMeters(matched.lat, matched.lng, trueLoc.lat, trueLoc.lng);
     const acc = typeof accuracyM === 'number' && Number.isFinite(accuracyM) ? accuracyM : 0;

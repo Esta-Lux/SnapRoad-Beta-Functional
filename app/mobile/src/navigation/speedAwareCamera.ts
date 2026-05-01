@@ -72,10 +72,10 @@ const PITCH_SPORT: MphValuePoint[] = [
   { mph: 100, v: 62 },
 ];
 
-const CALM_TURN_HOLD_M = 500;
-const ADAPT_TURN_IN_M = 500;
-const ADAPT_TURN_TIGHT_M = 80;
-const SPORT_TUCK_M = 150;
+const CALM_TURN_HOLD_M = 560;
+const ADAPT_TURN_IN_M = 620;
+const ADAPT_TURN_TIGHT_M = 95;
+const SPORT_TUCK_M = 175;
 
 const ACCEL_SPORT_PITCH = 0.45;
 const ACCEL_SPORT_ZOOM = 0.04;
@@ -145,18 +145,18 @@ export function turnAnticipationOffsets(
   if (mode === 'adaptive' || mode === 'sport') {
     if (d < ADAPT_TURN_IN_M) {
       const p = 1 - d / ADAPT_TURN_IN_M;
-      dPitch += (mode === 'sport' ? 3.5 : 4.5) * p * p;
-      dZoom += (mode === 'sport' ? 0.62 : 0.56) * p;
+      dPitch += (mode === 'sport' ? 4.2 : 5.0) * p * p;
+      dZoom += (mode === 'sport' ? 0.78 : 0.68) * p;
     }
     if (d < ADAPT_TURN_TIGHT_M) {
       const p = 1 - d / ADAPT_TURN_TIGHT_M;
-      dPitch -= (mode === 'sport' ? 4.5 : 5.5) * p * p;
-      dZoom += (mode === 'sport' ? 0.72 : 0.62) * p;
+      dPitch -= (mode === 'sport' ? 5.1 : 6.0) * p * p;
+      dZoom += (mode === 'sport' ? 0.88 : 0.74) * p;
     }
   } else {
-    const maneuverZoomAdjustment = d < 55 ? 0.78 : d < 115 ? 0.46 : d < 220 ? 0.24 : 0;
+    const maneuverZoomAdjustment = d < 60 ? 0.92 : d < 130 ? 0.56 : d < 260 ? 0.3 : 0;
     dZoom += maneuverZoomAdjustment;
-    dPitch += d < 60 ? -7.5 : d < 120 ? -5.2 : d < 220 ? -2.4 : 0;
+    dPitch += d < 60 ? -8.2 : d < 130 ? -5.8 : d < 260 ? -2.8 : 0;
   }
 
   const openRoadZoomPullback =
@@ -165,8 +165,8 @@ export function turnAnticipationOffsets(
 
   if (mode === 'sport' && d < SPORT_TUCK_M) {
     const u = 1 - d / SPORT_TUCK_M;
-    dPitch += 3.5 * u * u;
-    dZoom += 0.34 * u;
+    dPitch += 4.0 * u * u;
+    dZoom += 0.44 * u;
   }
 
   return { dPitch, dZoom, holdCalmZoom };

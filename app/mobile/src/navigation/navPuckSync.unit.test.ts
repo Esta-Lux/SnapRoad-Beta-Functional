@@ -274,6 +274,19 @@ test('resolvePuckCoord: hard leash widens with poor accuracy', () => {
   assert.notDeepEqual(loose, matched);
 });
 
+test('resolvePuckCoord: lockToMatched keeps validated route point glued', () => {
+  // Same shape as an on-route snapped point far from raw GPS after a weak fix.
+  const matched = { lat: SF.lat + 0.002, lng: SF.lng };
+  const out = resolvePuckCoord({
+    matched,
+    trueLoc: SF,
+    prevPublished: null,
+    lock: INITIAL_STATIONARY_LOCK,
+    lockToMatched: true,
+  });
+  assert.deepEqual(out, matched);
+});
+
 /* ── Heading resolver ──────────────────────────────────────────────── */
 
 test('resolvePuckHeading: locked + anchor heading wins', () => {

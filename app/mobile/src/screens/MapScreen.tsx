@@ -1078,8 +1078,17 @@ export default function MapScreen() {
             tangentLookAheadM: 22,
           })
         : navRouteSnap;
+    const routeTangentDeg =
+      routeGlued &&
+      !offRoute &&
+      snapForHeading &&
+      typeof snapForHeading.tangentDeg === 'number' &&
+      Number.isFinite(snapForHeading.tangentDeg)
+        ? snapForHeading.tangentDeg
+        : null;
     const headingCandidate = nav.isNavigating
-      ? resolveRouteHeadingCandidate({
+      ? routeTangentDeg ??
+        resolveRouteHeadingCandidate({
           snap: snapForHeading,
           sdkCourseDeg,
           speedMps: sdkSpeedMps,
@@ -1118,6 +1127,7 @@ export default function MapScreen() {
       prevPublished: lastPublishedPuckCoordRef.current,
       lock: nextLock,
       accuracyM: accuracy ?? null,
+      lockToMatched: routeGlued && !offRoute,
     });
 
     const stabilizedHeading = nav.isNavigating
@@ -1541,6 +1551,18 @@ export default function MapScreen() {
     const sp = fusedSpeedMpsNav ?? 0;
     const ahead = getLookAheadMeters(drivingMode, sp, nextManeuverDistanceMeters);
     if (ahead < 4) return null;
+    if (
+      navPolylineForSmoothing &&
+      navPolylineForSmoothing.length >= 2 &&
+      navPolylineLenMetersRaw > 0 &&
+      Number.isFinite(smoothedFraction)
+    ) {
+      const p = coordinateAtCumulativeMeters(
+        navPolylineForSmoothing,
+        Math.min(navPolylineLenMetersRaw, smoothedFraction * navPolylineLenMetersRaw + ahead),
+      );
+      if (p && Number.isFinite(p.lat) && Number.isFinite(p.lng)) return p;
+    }
     const h = Number.isFinite(navPuckHeading) ? navPuckHeading : heading;
     if (!Number.isFinite(h)) return null;
     const p = projectAhead(navDisplayCoord.lat, navDisplayCoord.lng, h, ahead);
@@ -1550,6 +1572,9 @@ export default function MapScreen() {
     drivingMode,
     fusedSpeedMpsNav,
     nextManeuverDistanceMeters,
+    navPolylineForSmoothing,
+    navPolylineLenMetersRaw,
+    smoothedFraction,
     navDisplayCoord.lat,
     navDisplayCoord.lng,
     navPuckHeading,
