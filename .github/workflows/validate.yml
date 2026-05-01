@@ -145,6 +145,7 @@ jobs:
           E2E_PARTNER_EMAIL: ${{ vars.E2E_PARTNER_EMAIL }}
           E2E_PARTNER_PASSWORD: ${{ secrets.E2E_PARTNER_PASSWORD }}
           E2E_ALL_BROWSERS: ${{ vars.E2E_ALL_BROWSERS }}
+          E2E_LIVE_LOGIN: ${{ vars.E2E_LIVE_LOGIN }}
         run: |
           if [ "${E2E_ALL_BROWSERS}" = "true" ] || [ "${E2E_ALL_BROWSERS}" = "1" ]; then
             npx playwright install --with-deps

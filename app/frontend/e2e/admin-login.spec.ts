@@ -10,8 +10,10 @@ const hasApi =
   Boolean(process.env.VITE_API_URL) ||
   Boolean(process.env.VITE_BACKEND_URL) ||
   Boolean(process.env.REACT_APP_BACKEND_URL)
+const liveLoginEnabled = process.env.E2E_LIVE_LOGIN === '1' || process.env.E2E_LIVE_LOGIN === 'true'
 
 test.describe('admin login against live API', () => {
+  test.skip(!liveLoginEnabled, 'Set E2E_LIVE_LOGIN=1 to run live admin login')
   test.skip(!email || !password, 'Set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD to run')
   test.skip(!hasApi, 'Set a staging API URL before running live admin login')
 
