@@ -137,6 +137,7 @@ import {
   formatDistance,
   haversineMeters,
   polylineLengthMeters,
+  segmentAndTFromCumAlongPolyline,
   tangentBearingAlongPolyline,
   type RouteSplitForOverlay,
 } from '../utils/distance';
@@ -1337,21 +1338,27 @@ export default function MapScreen() {
   ]);
 
   /**
-   * Route split geometry must consume the **same** point as the puck so the
-   * traveled/remaining seam sits directly under the puck (not on the raw
-   * projection which can sit 1–3 m off the polyline from matcher drift).
-   * `routeSplitSnap` is derived from `cumulativeMeters` — the same basis that
-   * `navigationProgressCoord` uses — so feeding it here keeps puck + camera
-   * + polyline split locked to one frame. Falling back to `snapped` (raw
-   * projection) produced the "gray line in front of the puck" symptom.
+   * Route split geometry consumes the **same smoothed arc position** as the
+   * puck. This avoids the dot riding one point while the blue/gray seam uses
+   * another, and also keeps the line visible on native builds where
+   * `lineTrimOffset` can intermittently hide the whole route after Start.
    */
   const navigationRouteSplit = useMemo((): RouteSplitForOverlay | null => {
     if (!nav.isNavigating) return null;
+    if (polylineToRender && polylineToRender.length >= 2) {
+      const len = polylineLengthMeters(polylineToRender);
+      const st = len > 1
+        ? segmentAndTFromCumAlongPolyline(smoothedFraction * len, polylineToRender)
+        : null;
+      if (st) return { segmentIndex: st.segmentIndex, tOnSegment: st.tOnSegment };
+    }
     const s = nav.navigationProgress?.routeSplitSnap ?? nav.navigationProgress?.snapped;
     if (!s) return null;
     return { segmentIndex: s.segmentIndex, tOnSegment: s.t };
   }, [
     nav.isNavigating,
+    polylineToRender,
+    smoothedFraction,
     nav.navigationProgress?.routeSplitSnap?.segmentIndex,
     nav.navigationProgress?.routeSplitSnap?.t,
     nav.navigationProgress?.snapped?.segmentIndex,
