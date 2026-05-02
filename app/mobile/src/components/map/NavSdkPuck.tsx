@@ -340,7 +340,7 @@ function NavSdkPuckImpl({
 export const NavSdkPuck = React.memo(NavSdkPuckImpl, (prev, next) => {
   if (prev.color !== next.color) return false;
   if (prev.mirrorNativePosition !== next.mirrorNativePosition) return false;
-  if (haversineMeters(prev.lat, prev.lng, next.lat, next.lng) > 0.35) return false;
+  if (haversineMeters(prev.lat, prev.lng, next.lat, next.lng) > 0.18) return false;
   if (Math.abs(prev.course - next.course) > 0.2) return false;
   const pb = prev.mapBearingDeg;
   const nb = next.mapBearingDeg;

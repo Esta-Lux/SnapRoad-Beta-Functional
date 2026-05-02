@@ -42,6 +42,8 @@ type Options = {
   timeConstantMs?: number;
   /** When false (e.g. not navigating), always pass target straight through. */
   enabled?: boolean;
+  /** Freeze the displayed value while the vehicle is stopped so matcher drift cannot move the puck. */
+  freezeWhenStationary?: boolean;
   /**
    * Optional dead-reckoning: while the authoritative `targetFraction` is not
    * updating (SDK silent — tunnel, stall, matcher hiccup), continue advancing
@@ -78,6 +80,7 @@ export function useSmoothedNavFraction(
     snapDeltaFraction = 0.02,
     timeConstantMs = 180,
     enabled = true,
+    freezeWhenStationary = false,
     deadReckoning,
   } = opts;
 
@@ -96,7 +99,9 @@ export function useSmoothedNavFraction(
   const drSpeedMpsRef = useRef<number>(0);
   const drStaleThresholdMsRef = useRef<number>(350);
   const drMaxStaleMsRef = useRef<number>(1400);
+  const freezeWhenStationaryRef = useRef<boolean>(freezeWhenStationary);
 
+  freezeWhenStationaryRef.current = freezeWhenStationary;
   drPolylineLenRef.current = deadReckoning?.polylineLengthMeters ?? 0;
   drSpeedMpsRef.current = deadReckoning?.speedMps ?? 0;
   drStaleThresholdMsRef.current = deadReckoning?.staleThresholdMs ?? 350;
@@ -108,6 +113,10 @@ export function useSmoothedNavFraction(
       targetRef.current = next;
       displayedRef.current = next;
       setDisplayed(next);
+      return;
+    }
+    if (freezeWhenStationary) {
+      targetRef.current = displayedRef.current;
       return;
     }
     const delta = next - displayedRef.current;
@@ -140,7 +149,7 @@ export function useSmoothedNavFraction(
     } else {
       targetRef.current = next;
     }
-  }, [targetFraction, isNavigating, enabled, snapDeltaFraction]);
+  }, [targetFraction, isNavigating, enabled, snapDeltaFraction, freezeWhenStationary]);
 
   useEffect(() => {
     if (!enabled || !isNavigating) {
@@ -157,6 +166,11 @@ export function useSmoothedNavFraction(
       lastFrameMsRef.current = tMs;
       const target = targetRef.current;
       const current = displayedRef.current;
+      if (freezeWhenStationaryRef.current) {
+        targetRef.current = current;
+        rafIdRef.current = requestAnimationFrame(tick);
+        return;
+      }
       const diff = target - current;
 
       /**
@@ -262,6 +276,7 @@ export function stepSmoothedFractionWithDeadReckoning(params: {
   snapDeltaFraction?: number;
   staleThresholdMs?: number;
   maxStaleMs?: number;
+  freezeWhenStationary?: boolean;
 }): number {
   const {
     current,
@@ -274,8 +289,10 @@ export function stepSmoothedFractionWithDeadReckoning(params: {
     snapDeltaFraction = 0.02,
     staleThresholdMs = 350,
     maxStaleMs = 1400,
+    freezeWhenStationary = false,
   } = params;
   const cur = clamp01(current);
+  if (freezeWhenStationary) return cur;
   const tgt = clamp01(target);
   const diff = tgt - cur;
 

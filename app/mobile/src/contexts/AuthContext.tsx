@@ -160,7 +160,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } else {
         const errMsg = (res as { error?: string }).error ?? '';
-        const isAuthReject = errMsg.includes('expired') || errMsg.includes('401') || errMsg.includes('Session expired');
+        const statusCode = (res as { statusCode?: number }).statusCode;
+        const isAuthReject =
+          statusCode === 401 ||
+          errMsg === 'Session expired. Please sign in again.' ||
+          errMsg.toLowerCase().includes('token expired');
         if (isAuthReject) {
           await api.setToken(null);
           setUser(null);

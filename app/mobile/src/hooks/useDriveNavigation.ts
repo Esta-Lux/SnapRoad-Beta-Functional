@@ -105,6 +105,9 @@ import * as Haptics from 'expo-haptics';
 
 /** Aligned voice + auto-end: "near destination" along remaining route (`navStepsFromDirections` maps `arrive`). */
 const ARRIVAL_NEAR_ROUTE_MI = 0.08;
+const ARRIVAL_MAX_REMAINING_SECONDS = 90;
+const ARRIVAL_TIGHT_CROW_METERS = 25;
+const ARRIVAL_TIGHT_ROUTE_MI = 0.03;
 function applyTripCompleteProfileToUser(updateUser: (u: Partial<User>) => void, profile: unknown) {
   if (!profile || typeof profile !== 'object') return;
   const p = profile as Record<string, unknown>;
@@ -1495,7 +1498,16 @@ export function useDriveNavigation(params: {
       Number.isFinite(dest.lat) && Number.isFinite(dest.lng)
         ? haversineMeters(navigationProgressCoord.lat, navigationProgressCoord.lng, dest.lat, dest.lng)
         : Number.POSITIVE_INFINITY;
-    const near = (rm != null && rm <= ARRIVAL_NEAR_ROUTE_MI) || crow <= 55;
+    const remainingSec =
+      navigationProgress?.durationRemainingSeconds ??
+      (liveEta?.etaMinutes != null ? liveEta.etaMinutes * 60 : null);
+    const timeNear =
+      typeof remainingSec === 'number' &&
+      Number.isFinite(remainingSec) &&
+      remainingSec <= ARRIVAL_MAX_REMAINING_SECONDS;
+    const near =
+      (timeNear && ((rm != null && rm <= ARRIVAL_NEAR_ROUTE_MI) || crow <= 55)) ||
+      (crow <= ARRIVAL_TIGHT_CROW_METERS && (rm == null || rm <= ARRIVAL_TIGHT_ROUTE_MI));
     if (!near) return;
     hasAnnouncedArrivalRef.current = true;
     const destLabel = dest.name ?? 'your destination';
@@ -1508,7 +1520,9 @@ export function useDriveNavigation(params: {
   }, [
     isNavigating,
     liveEta?.distanceMiles,
+    liveEta?.etaMinutes,
     navigationData?.destination,
+    navigationProgress?.durationRemainingSeconds,
     navigationProgress?.nextStep?.kind,
     navigationProgressCoord.lat,
     navigationProgressCoord.lng,
@@ -1535,9 +1549,19 @@ export function useDriveNavigation(params: {
 
     const crow = haversineMeters(navigationProgressCoord.lat, navigationProgressCoord.lng, dest.lat, dest.lng);
     const remainMi = liveEta?.distanceMiles;
+    const remainingSec =
+      navigationProgress?.durationRemainingSeconds ??
+      (liveEta?.etaMinutes != null ? liveEta.etaMinutes * 60 : null);
     const withinRoute = remainMi != null && remainMi <= ARRIVAL_NEAR_ROUTE_MI;
     const withinCrow = crow <= 55;
-    if (!withinRoute && !withinCrow) {
+    const timeNear =
+      typeof remainingSec === 'number' &&
+      Number.isFinite(remainingSec) &&
+      remainingSec <= ARRIVAL_MAX_REMAINING_SECONDS;
+    const physicallyAtDestination =
+      crow <= ARRIVAL_TIGHT_CROW_METERS &&
+      (remainMi == null || remainMi <= ARRIVAL_TIGHT_ROUTE_MI);
+    if ((!timeNear || (!withinRoute && !withinCrow)) && !physicallyAtDestination) {
       arrivalNearStreakRef.current = 0;
       return;
     }
@@ -1561,6 +1585,8 @@ export function useDriveNavigation(params: {
     navigationProgressCoord.lat,
     navigationProgressCoord.lng,
     liveEta?.distanceMiles,
+    liveEta?.etaMinutes,
+    navigationProgress?.durationRemainingSeconds,
     navigationProgress?.nextStep?.kind,
     speed,
     stopNavigation,
@@ -1619,9 +1645,17 @@ export function useDriveNavigation(params: {
       typeof remainMeters === 'number' && Number.isFinite(remainMeters)
         ? remainMeters / 1609.34
         : null;
+    const remainSec = navSdkSnapshot.progress?.durationRemaining;
     const withinCrow = crow <= 35;
     const withinRoute = remainMi != null && remainMi <= ARRIVAL_NEAR_ROUTE_MI;
-    if (!withinCrow && !withinRoute) {
+    const timeNear =
+      typeof remainSec === 'number' &&
+      Number.isFinite(remainSec) &&
+      remainSec <= ARRIVAL_MAX_REMAINING_SECONDS;
+    const physicallyAtDestination =
+      crow <= ARRIVAL_TIGHT_CROW_METERS &&
+      (remainMi == null || remainMi <= ARRIVAL_TIGHT_ROUTE_MI);
+    if ((!timeNear || (!withinCrow && !withinRoute)) && !physicallyAtDestination) {
       arrivalNearStreakRef.current = 0;
       return;
     }
@@ -1645,6 +1679,7 @@ export function useDriveNavigation(params: {
     navigationData?.destination?.lng,
     navSdkSnapshot.location,
     navSdkSnapshot.progress?.distanceRemaining,
+    navSdkSnapshot.progress?.durationRemaining,
     navigationProgressCoord.lat,
     navigationProgressCoord.lng,
     navigationProgress?.displayCoord?.speedMps,

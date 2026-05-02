@@ -733,6 +733,62 @@ export default function MapScreen() {
     [drivingMode, navVoiceMuted],
   );
 
+  const handleSdkFinalDestinationArrival = useCallback(() => {
+    const dest = nav.navigationData?.destination;
+    const progress = nav.navigationProgress;
+    const sdkProgress = nav.sdkNavProgress;
+    const remainingSec =
+      progress?.durationRemainingSeconds ??
+      sdkProgress?.durationRemaining ??
+      null;
+    const remainingMeters =
+      progress?.distanceRemainingMeters ??
+      sdkProgress?.distanceRemaining ??
+      null;
+    const matched = nav.sdkNavLocation;
+    const lat =
+      matched && Number.isFinite(matched.latitude)
+        ? matched.latitude
+        : nav.navigationProgressCoord.lat;
+    const lng =
+      matched && Number.isFinite(matched.longitude)
+        ? matched.longitude
+        : nav.navigationProgressCoord.lng;
+    const crow =
+      dest && Number.isFinite(dest.lat) && Number.isFinite(dest.lng) && Number.isFinite(lat) && Number.isFinite(lng)
+        ? haversineMeters(lat, lng, dest.lat, dest.lng)
+        : Number.POSITIVE_INFINITY;
+    const timeNear =
+      typeof remainingSec === 'number' &&
+      Number.isFinite(remainingSec) &&
+      remainingSec <= 90;
+    const distanceNear =
+      typeof remainingMeters === 'number' &&
+      Number.isFinite(remainingMeters) &&
+      remainingMeters <= 130;
+    const physicallyAtDestination = crow <= 25;
+    if (!physicallyAtDestination && (!timeNear || !distanceNear)) {
+      if (__DEV__) {
+        console.warn('[MapScreen] Ignored early SDK arrival callback', {
+          remainingSec,
+          remainingMeters,
+          crow,
+        });
+      }
+      return;
+    }
+    nav.stopNavigation();
+  }, [
+    nav.navigationData?.destination?.lat,
+    nav.navigationData?.destination?.lng,
+    nav.navigationProgress,
+    nav.sdkNavProgress,
+    nav.sdkNavLocation,
+    nav.navigationProgressCoord.lat,
+    nav.navigationProgressCoord.lng,
+    nav.stopNavigation,
+  ]);
+
   const sdkRouteHandoffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sdkRouteHandoffUi, setSdkRouteHandoffUi] = useState(false);
   const handleSdkRouteChanged = useCallback(
@@ -840,7 +896,16 @@ export default function MapScreen() {
     ? Math.max(0, Math.min(1, nativeFractionTraveled))
     : targetFractionDerived;
   const stableNavTargetFractionRef = useRef(targetFraction);
-  const stoppedForPuckSmoothing = (nav.navigationProgress?.displayCoord?.speedMps ?? speed * 0.44704) < 0.75;
+  const navSpeedMpsForSmoothing =
+    nav.sdkNavLocation?.speed ??
+    nav.navigationProgress?.displayCoord?.speedMps ??
+    speed * 0.44704;
+  const stoppedForPuckSmoothing = navSpeedMpsForSmoothing < 0.75;
+  const freezeNavSmoothing =
+    nav.isNavigating &&
+    Number.isFinite(navSpeedMpsForSmoothing) &&
+    navSpeedMpsForSmoothing <= 0.42 &&
+    speed <= 1.4;
   const stabilizedTargetFraction = useMemo(() => {
     if (!nav.isNavigating || navPolylineLenMetersRaw <= 1) {
       stableNavTargetFractionRef.current = targetFraction;
@@ -848,12 +913,12 @@ export default function MapScreen() {
     }
     const prev = stableNavTargetFractionRef.current;
     const deltaMeters = Math.abs(targetFraction - prev) * navPolylineLenMetersRaw;
-    if (stoppedForPuckSmoothing && deltaMeters < 6) {
+    if (freezeNavSmoothing || (stoppedForPuckSmoothing && deltaMeters < 6)) {
       return prev;
     }
     stableNavTargetFractionRef.current = targetFraction;
     return targetFraction;
-  }, [nav.isNavigating, navPolylineLenMetersRaw, stoppedForPuckSmoothing, targetFraction]);
+  }, [nav.isNavigating, navPolylineLenMetersRaw, stoppedForPuckSmoothing, freezeNavSmoothing, targetFraction]);
   /**
    * Dead-reckoning feed — keeps the smoothed fraction advancing during SDK
    * silence (tunnels, matcher hiccups, stalls > ~350 ms). Uses the last-known
@@ -885,11 +950,12 @@ export default function MapScreen() {
     timeConstantMs: drivingMode === 'calm' ? 118 : drivingMode === 'sport' ? 78 : 98,
     snapDeltaFraction,
     enabled: true,
+    freezeWhenStationary: freezeNavSmoothing,
     deadReckoning:
       navPolylineLenMetersRaw > 1
         ? {
             polylineLengthMeters: navPolylineLenMetersRaw,
-            speedMps: deadReckoningSpeedMps,
+            speedMps: freezeNavSmoothing ? 0 : deadReckoningSpeedMps,
             staleThresholdMs: drivingMode === 'sport' ? 90 : drivingMode === 'adaptive' ? 120 : 165,
             maxStaleMs: drivingMode === 'sport' ? 3000 : drivingMode === 'adaptive' ? 2800 : 2500,
           }
@@ -1364,9 +1430,9 @@ export default function MapScreen() {
    * `lineTrimOffset` can intermittently hide the whole route after Start.
    *
    * Native ShapeSource updates are expensive, so the split sent to RouteOverlay
-   * is decimated to a few meters while the puck/camera keep reading the full
-   * RAF-smoothed fraction. This keeps long trips from rebuilding route GeoJSON
-   * sixty times per second.
+   * is decimated at roughly one to two meters while the puck/camera keep reading the
+   * full RAF-smoothed fraction. That keeps the gray trail visually attached
+   * to the puck without rebuilding route GeoJSON sixty times per second.
    */
   const polylineToRenderLenMeters = useMemo(
     () => (polylineToRender && polylineToRender.length >= 2 ? polylineLengthMeters(polylineToRender) : 0),
@@ -1374,7 +1440,7 @@ export default function MapScreen() {
   );
   const routeOverlayCumMeters = useMemo(() => {
     if (!nav.isNavigating || !polylineToRender || polylineToRenderLenMeters <= 1) return 0;
-    const stepM = drivingMode === 'sport' ? 2.5 : drivingMode === 'adaptive' ? 3.25 : 4;
+    const stepM = drivingMode === 'sport' ? 1.25 : drivingMode === 'adaptive' ? 1.5 : 1.75;
     const meters = Math.max(0, Math.min(polylineToRenderLenMeters, smoothedFraction * polylineToRenderLenMeters));
     return Math.max(0, Math.min(polylineToRenderLenMeters, Math.round(meters / stepM) * stepM));
   }, [nav.isNavigating, polylineToRender, polylineToRenderLenMeters, drivingMode, smoothedFraction]);
@@ -4153,7 +4219,7 @@ export default function MapScreen() {
             ingestSdkLocation(e.nativeEvent)
           }
           onRouteChanged={handleSdkRouteChanged}
-          onFinalDestinationArrival={() => nav.stopNavigation()}
+          onFinalDestinationArrival={handleSdkFinalDestinationArrival}
           onCancelNavigation={() => nav.stopNavigation()}
         />
       ) : null}

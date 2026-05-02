@@ -301,8 +301,14 @@ class ApiService {
           if (retryParsed.ok && retryResponse.ok) {
             return { success: true, data: retryParsed.data as T };
           }
+          if (retryResponse.status === 401 || retryResponse.status === 403) {
+            return {
+              success: false,
+              error: 'Session expired. Please sign in again.',
+              statusCode: retryResponse.status,
+            };
+          }
         }
-        await this.setToken(null);
       }
 
       if (!response.ok) {

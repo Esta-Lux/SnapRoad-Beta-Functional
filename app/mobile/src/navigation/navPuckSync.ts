@@ -40,7 +40,7 @@ export const STATIONARY_RAW_SPEED_MPS = 0.6;
  */
 export const STATIONARY_INSTANT_LOCK_RAW_MPS = 0.18;
 /** Must hold for this long before the lock engages (avoids brief 0-mph dips). */
-export const STATIONARY_DWELL_MS = 700;
+export const STATIONARY_DWELL_MS = 420;
 /** Above this smoothed speed we release the lock immediately. */
 export const MOTION_RELEASE_SPEED_MPH = 3.0;
 /** Brief debounce after motion is detected to avoid quick re-locks. */

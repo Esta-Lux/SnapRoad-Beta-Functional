@@ -159,3 +159,16 @@ test('9. polylineLengthMeters <= 1 short-circuits dead-reckoning', () => {
   });
   assert.strictEqual(out, 0.50, `degenerate polyline triggered DR: ${out}`);
 });
+
+test('10. explicit stationary freeze ignores a creeping target', () => {
+  const out = stepSmoothedFractionWithDeadReckoning({
+    current: 0.50,
+    target: 0.505,
+    dtMs: 1000,
+    staleMs: 0,
+    speedMps: 0,
+    polylineLengthMeters: POLYLINE_LEN_M,
+    freezeWhenStationary: true,
+  });
+  assert.strictEqual(out, 0.50, `stationary freeze allowed target creep: ${out}`);
+});
