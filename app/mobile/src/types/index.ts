@@ -181,6 +181,12 @@ export interface Offer {
   lat?: number;
   lng?: number;
   business_type?: string;
+  /** Google Place id from partner_locations when populated (Places enrichment). */
+  google_place_id?: string;
+  /** First Places photo_reference; render via `/api/places/photo` (never ship API key client-side). */
+  place_photo_reference?: string;
+  /** Optional CDN / partner-hosted store imagery (fallback). */
+  store_photo_urls?: string[];
   /** Normalized category title from API (`attach_offer_category_fields`). */
   category_label?: string;
   redeemed?: boolean;

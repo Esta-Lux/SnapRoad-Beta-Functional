@@ -656,32 +656,52 @@ def _coord_ok(lat: object, lng: object) -> bool:
 
 
 def _hydrate_offer_coordinates_from_locations(offers: list[dict]) -> None:
-    """Fill lat/lng from partner_locations when the offer row is missing coordinates (common for legacy/admin rows)."""
+    """Fill lat/lng and optional google_place_id from partner_locations when missing on the offer row."""
     need: list[str] = []
     for o in offers:
         lid = o.get("location_id")
         if not lid:
             continue
-        if _coord_ok(o.get("lat"), o.get("lng")):
-            continue
-        need.append(str(lid))
+        need_coords = not _coord_ok(o.get("lat"), o.get("lng"))
+        need_place = not str(o.get("google_place_id") or "").strip()
+        if need_coords or need_place:
+            need.append(str(lid))
     if not need:
         return
     uniq = list(dict.fromkeys(need))
+    loc_map: dict[str, dict] = {}
     try:
-        res = _sb().table("partner_locations").select("id,lat,lng").in_("id", uniq).execute()
-        loc_map = {str(r.get("id")): r for r in (res.data or [])}
-    except Exception as e:
-        logger.warning("partner_locations hydrate for nearby offers: %s", e)
-        return
+        res = _sb().table("partner_locations").select("id,lat,lng,google_place_id").in_("id", uniq).execute()
+        for r in res.data or []:
+            rid = str(r.get("id") or "")
+            if rid:
+                loc_map[rid] = r
+    except Exception:
+        logger.debug("partner_locations hydrate (wide) failed, retrying narrow", exc_info=True)
+        try:
+            res = _sb().table("partner_locations").select("id,lat,lng").in_("id", uniq).execute()
+            for r in res.data or []:
+                rid = str(r.get("id") or "")
+                if rid:
+                    loc_map[rid] = r
+        except Exception as e:
+            logger.warning("partner_locations hydrate for nearby offers: %s", e)
+            return
     for o in offers:
         lid = o.get("location_id")
-        if not lid or _coord_ok(o.get("lat"), o.get("lng")):
+        if not lid:
             continue
         row = loc_map.get(str(lid))
-        if row and _coord_ok(row.get("lat"), row.get("lng")):
-            o["lat"] = row["lat"]
-            o["lng"] = row["lng"]
+        if not row:
+            continue
+        if not _coord_ok(o.get("lat"), o.get("lng")):
+            lat, lng = row.get("lat"), row.get("lng")
+            if _coord_ok(lat, lng):
+                o["lat"] = lat
+                o["lng"] = lng
+        gpid = row.get("google_place_id")
+        if gpid and not o.get("google_place_id"):
+            o["google_place_id"] = str(gpid).strip()
 
 
 def _active_offers_source(limit: int = 500) -> list[dict]:
@@ -848,9 +868,33 @@ def get_nearby_offers(
             attach_offer_category_fields(row)
             nearby.append(row)
     nearby.sort(key=lambda x: (x.get("relevance_score", 0), -(x["distance_km"])), reverse=True)
-    result = {"success": True, "data": nearby[:limit], "count": len(nearby[:limit])}
+    trimmed = nearby[:limit]
+    try:
+        from services.place_offer_enrichment import enrich_offers_with_place_photo_references
+
+        enrich_offers_with_place_photo_references(trimmed)
+    except Exception:
+        logger.debug("offer place photo enrichment skipped", exc_info=True)
+    result = {"success": True, "data": trimmed, "count": len(trimmed)}
     cache_set(key, result, ttl=300)
     return _finalize_nearby_cached_response(result, user_id)
+
+
+@router.get("/offers/online")
+@limiter.limit("120/minute")
+def get_online_offers_feed(
+    request: Request,
+    auth_user: CurrentUser,
+    category_slug: Annotated[Optional[str], Query()] = None,
+    cursor: Annotated[Optional[str], Query()] = None,
+):
+    """E-commerce / affiliate-style offers for the Offers tab Online pane (placeholder until API keys wired)."""
+    _ = request
+    _ = auth_user
+    from services.online_offers_provider import fetch_online_catalog
+
+    catalog = fetch_online_catalog(category_slug=category_slug or None, cursor=cursor or None)
+    return {"success": True, "data": catalog}
 
 
 @router.get("/offers/on-route")

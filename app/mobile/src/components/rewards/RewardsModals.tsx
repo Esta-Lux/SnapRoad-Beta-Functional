@@ -8,6 +8,7 @@ import type { UserOfferRedemption } from './types';
 import { displayOfferCategory } from '../../lib/offerCategories';
 import { openMapsSearch } from '../../lib/mapsLinks';
 import { api } from '../../api/client';
+import { offerHeroUri } from '../../lib/offerHeroImage';
 import { rewardsStyles } from './styles';
 import { badgeCategoryAccent, badgeIoniconsName } from '../../lib/badgeIcons';
 import { BadgeTileIcon } from './BadgeTileIcon';
@@ -153,6 +154,7 @@ export function OfferDetailModal({
 
   const titleLine = offer?.title?.trim() || offer?.description?.split(/[.!?]/)[0]?.trim() || `${offer?.discount_percent ?? 0}% off`;
   const mi = offer?.distance_km != null ? (Number(offer.distance_km) * 0.621371).toFixed(1) : null;
+  const heroUri = offerHeroUri(offer ?? null);
 
   return (
     <Modal visible={!!selectedOffer} transparent animationType="slide" onRequestClose={onClose}>
@@ -160,9 +162,9 @@ export function OfferDetailModal({
         <View style={[rewardsStyles.modalSheet, { backgroundColor: cardBg, borderTopWidth: 1, borderColor: `${primary}22`, maxHeight: '92%' }]} onStartShouldSetResponder={() => true}>
           <View style={[rewardsStyles.modalHandle, { backgroundColor: sub }]} />
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
-            {offer?.image_url ? (
+            {heroUri ? (
               <View style={{ width: '100%', height: 176, borderRadius: 16, overflow: 'hidden', marginBottom: 14 }}>
-                <Image source={{ uri: offer.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                <Image source={{ uri: heroUri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
               </View>
             ) : (
               <View
@@ -486,19 +488,21 @@ export function AllOffersModal({
           <ScrollView contentContainerStyle={{ paddingBottom: 24, paddingTop: 8 }}>
             {offers.length === 0 && (
               <Text style={[rewardsStyles.offerBiz, { color: sub, textAlign: 'center', paddingVertical: 28, paddingHorizontal: 16 }]}>
-                No offers in range yet. Pull to refresh on Wallet, or move closer to a partner location (offers use your last known area).
+                No offers in range yet. Open the Offers tab and pull to refresh, or move closer to a partner location.
               </Text>
             )}
-            {offers.map((o) => (
+            {offers.map((o) => {
+              const thumb = offerHeroUri(o);
+              return (
               <TouchableOpacity
                 key={o.id}
                 style={[rewardsStyles.offerCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: border, borderRadius: 16, padding: 12 }]}
                 onPress={() => onSelectOffer(o)}
                 activeOpacity={0.82}
               >
-                {o.image_url ? (
+                {thumb ? (
                   <View style={{ width: 72, height: 72, borderRadius: 14, overflow: 'hidden', marginRight: 12, backgroundColor: border }}>
-                    <Image source={{ uri: o.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                    <Image source={{ uri: thumb }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
                   </View>
                 ) : (
                   <View style={{ width: 72, height: 72, borderRadius: 14, marginRight: 12, backgroundColor: `${primary}14`, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: `${primary}28` }}>
@@ -530,7 +534,8 @@ export function AllOffersModal({
                   <Text style={{ color: o.redeemed ? success : primary, fontSize: 11, fontWeight: '800' }}>{o.redeemed ? 'Redeemed' : 'Open'}</Text>
                 </View>
               </TouchableOpacity>
-            ))}
+            );
+            })}
           </ScrollView>
         </View>
       </View>
