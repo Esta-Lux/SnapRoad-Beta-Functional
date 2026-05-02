@@ -8,6 +8,7 @@ export type AppActionTarget =
   | 'dashboards'
   | 'wallet'
   | 'profile'
+  | 'offers_hub'
   | 'profile_billing'
   | 'place_alerts'
   | 'commute_alerts'
@@ -47,9 +48,17 @@ export const APP_ACTION_AUDIT: AppActionContract[] = [
     premiumRequired: true,
   },
   {
+    id: 'offers_hub',
+    label: 'Offers hub',
+    description: 'Local partner redemptions and online deals (browse in one place).',
+    icon: 'pricetag-outline',
+    target: 'offers_hub',
+    availability: 'works',
+  },
+  {
     id: 'wallet',
     label: 'Wallet',
-    description: 'Gems, offers, redemptions, and savings.',
+    description: 'Gems ledger, activity, redemptions — browse deals on the Offers tab.',
     icon: 'wallet-outline',
     target: 'wallet',
     availability: 'works',

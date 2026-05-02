@@ -26,6 +26,10 @@ export type RewardsStackParamList = {
   RewardsMain: undefined;
 };
 
+export type OffersStackParamList = {
+  OffersMain: undefined;
+};
+
 export type ProfileStackParamList = {
   ProfileMain:
     | {
@@ -62,6 +66,7 @@ export type MapStackParamList = {
 
 export type MainTabParamList = {
   Map: NavigatorScreenParams<MapStackParamList>;
+  Offers: NavigatorScreenParams<OffersStackParamList>;
   Dashboards: NavigatorScreenParams<DashboardStackParamList>;
   Wallet: NavigatorScreenParams<RewardsStackParamList>;
   Profile: NavigatorScreenParams<ProfileStackParamList>;
@@ -88,5 +93,11 @@ export type DashboardStackScreenNavigationProp = CompositeNavigationProp<
 /** Wallet / Rewards tab: stack + sibling tabs. */
 export type RewardsStackScreenNavigationProp = CompositeNavigationProp<
   StackNavigationProp<RewardsStackParamList>,
+  BottomTabNavigationProp<MainTabParamList>
+>;
+
+/** Offers hub tab: stack + sibling tabs. */
+export type OffersStackScreenNavigationProp = CompositeNavigationProp<
+  StackNavigationProp<OffersStackParamList>,
   BottomTabNavigationProp<MainTabParamList>
 >;

@@ -1,7 +1,7 @@
 import type { Badge, Offer } from '../../types';
 
 /** Primary Wallet sections (UI: former "Rewards"). */
-export type WalletTab = 'balance' | 'activity' | 'offers' | 'redemptions' | 'badges';
+export type WalletTab = 'balance' | 'activity' | 'redemptions' | 'badges';
 
 /** @deprecated Use WalletTab */
 export type RewardsTab = WalletTab;

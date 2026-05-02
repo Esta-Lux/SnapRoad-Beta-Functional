@@ -31,6 +31,7 @@ function runAfterMenuClose(onClose: () => void, action: () => void, delayMs = 22
 export type HamburgerMenuTarget =
   | 'Map'
   | 'Social'
+  | 'Offers'
   | 'Convoy'
   | 'PlaceAlerts'
   | 'CommuteAlerts'
@@ -107,6 +108,14 @@ export default function HamburgerMenu({ visible, onClose, isLight, onNavigate }:
       accent: '#10B981',
       availability: actionMeta('commute_alerts')?.availability,
       action: () => runAfterMenuClose(onClose, () => onNavigate('CommuteAlerts')),
+    },
+    {
+      icon: actionMeta('offers_hub')?.icon ?? 'pricetag-outline',
+      label: actionMeta('offers_hub')?.label ?? 'Offers',
+      description: actionMeta('offers_hub')?.description ?? 'Local partners and online deals.',
+      accent: '#F472B6',
+      availability: actionMeta('offers_hub')?.availability,
+      action: () => runAfterMenuClose(onClose, () => onNavigate('Offers')),
     },
     {
       icon: actionMeta('wallet')?.icon ?? 'wallet-outline',

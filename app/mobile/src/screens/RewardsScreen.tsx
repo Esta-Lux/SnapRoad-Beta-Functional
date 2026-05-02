@@ -11,56 +11,28 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../hooks/useLocation';
 import { api } from '../api/client';
 import {
-  parseNearbyOffers,
-  parseRedeemOfferPayload,
-  unwrapApiData as unwrapOffersApiData,
-} from '../api/dto/offers';
-import {
   parseProfilePatch,
   unwrapApiData as unwrapProfileApiData,
 } from '../api/dto/profileWallet';
-import type { Badge, Offer } from '../types';
+import type { Badge } from '../types';
 import RewardsHeader from '../components/rewards/RewardsHeader';
 import RewardsTabs from '../components/rewards/RewardsTabs';
 import {
   ViewAllButton,
   SectionTitle,
   BadgesPreview,
-  OffersPreview,
   MyRedemptionsSection,
   GemActivityList,
   OfferCategoryChips,
 } from '../components/rewards/RewardsSections';
 import {
   BadgeDetailModal,
-  OfferDetailModal,
   RedemptionDetailModal,
-  AllOffersModal,
   AllBadgesModal,
 } from '../components/rewards/RewardsModals';
 import GemActivityDetailModal from '../components/rewards/GemActivityDetailModal';
 import { rewardsStyles } from '../components/rewards/styles';
 import type { WalletTab, GemTx, UserOfferRedemption } from '../components/rewards/types';
-
-/** Product filter chips. `nearby` = ≤ ~20 mi (~32 km) to match map recommendations. */
-const REWARDS_OFFER_FILTER_DEFS: { slug: string | null; label: string }[] = [
-  { slug: null, label: 'All' },
-  { slug: 'nearby', label: 'Nearby' },
-  { slug: 'gas', label: 'Gas' },
-  { slug: 'food', label: 'Food' },
-  { slug: 'coffee', label: 'Coffee' },
-  { slug: 'restaurants', label: 'Restaurants' },
-  { slug: 'retail', label: 'Retail' },
-  { slug: 'services', label: 'Services' },
-];
-
-function offerMatchesCategory(o: Offer, slug: string | null): boolean {
-  if (slug == null) return true;
-  const bt = String(o.business_type || 'other');
-  if (slug === 'nearby') return Number(o.distance_km ?? 999) <= 32.2;
-  if (slug === 'food' || slug === 'restaurants') return bt === 'restaurant';
-  return bt === slug;
-}
 
 function parseMyRedemptionsResponse(raw: unknown): UserOfferRedemption[] {
   const arr = Array.isArray(raw) ? raw : [];
@@ -119,22 +91,15 @@ export default function RewardsScreen() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [badges, setBadges] = useState<Badge[]>([]);
-  const [offers, setOffers] = useState<Offer[]>([]);
   const [selectedBadge, setSelectedBadge] = useState<Badge | null>(null);
-  const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
   const [walletTab, setWalletTab] = useState<WalletTab>('balance');
-  const [redeemingOfferId, setRedeemingOfferId] = useState<string | null>(null);
+  const [redemptionCategoryFilter, setRedemptionCategoryFilter] = useState<string | null>(null);
   const [gemTx, setGemTx] = useState<GemTx[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [showAllOffers, setShowAllOffers] = useState(false);
   const [showAllBadges, setShowAllBadges] = useState(false);
-  const [offerCategoryFilter, setOfferCategoryFilter] = useState<string | null>(null);
   const [myRedemptions, setMyRedemptions] = useState<UserOfferRedemption[]>([]);
   const [selectedRedemption, setSelectedRedemption] = useState<UserOfferRedemption | null>(null);
   const [selectedGemTx, setSelectedGemTx] = useState<GemTx | null>(null);
-  const [redeemQrByOfferId, setRedeemQrByOfferId] = useState<
-    Record<string, { qr_token?: string; claim_code?: string; expires_at?: string }>
-  >({});
   /** Populated from GET /api/rewards/summary — drives the 2×2 stat cards (trips, badges, multiplier label). */
   const [rewardsSummary, setRewardsSummary] = useState<{
     totalTrips: number;
@@ -151,10 +116,9 @@ export default function RewardsScreen() {
       const safeGet = async (url: string) => {
         try { return await api.get(url); } catch { return { success: false, data: null }; }
       };
-      const [profileRes, bRes, oRes, gRes, mineRes, sumRes] = await Promise.all([
+      const [profileRes, bRes, gRes, mineRes, sumRes] = await Promise.all([
         api.getProfile().catch(() => ({ success: false, data: null })),
         safeGet('/api/badges'),
-        safeGet(`/api/offers/nearby?lat=${lat}&lng=${lng}&radius=32.2`),
         safeGet('/api/gems/history'),
         safeGet('/api/offers/my-redemptions'),
         safeGet('/api/rewards/summary'),
@@ -166,13 +130,12 @@ export default function RewardsScreen() {
         const failed: string[] = [];
         if (!profileRes?.success) failed.push('profile');
         if (!bRes?.success) failed.push('badges');
-        if (!oRes?.success) failed.push('offers');
         if (!gRes?.success) failed.push('gem history');
         if (!mineRes?.success) failed.push('redemptions');
         if (!sumRes?.success) failed.push('summary');
-        if (failed.length > 0 && failed.length < 6) {
+        if (failed.length > 0 && failed.length < 5) {
           setErrorMsg(`Some wallet data didn't load (${failed.join(', ')}). Pull to retry.`);
-        } else if (failed.length === 6) {
+        } else if (failed.length === 5) {
           setErrorMsg('Could not refresh wallet data. Pull to retry.');
         }
       }
@@ -184,7 +147,6 @@ export default function RewardsScreen() {
       const bData = unwrap(bRes);
       const bRoot = bData && typeof bData === 'object' ? (bData as Record<string, unknown>) : null;
       setBadges(Array.isArray(bData) ? bData : (Array.isArray(bRoot?.badges) ? (bRoot?.badges as Badge[]) : []));
-      setOffers(parseNearbyOffers(oRes?.data));
       if (mineRes?.success) {
         setMyRedemptions(parseMyRedemptionsResponse(unwrap(mineRes)));
       }
@@ -241,48 +203,20 @@ export default function RewardsScreen() {
     }
   }, [updateUser]);
 
-  const refreshNearbyOffers = useCallback(async (lat: number, lng: number) => {
-    try {
-      const res = await api.get(`/api/offers/nearby?lat=${lat}&lng=${lng}&radius=32.2`);
-      setOffers(parseNearbyOffers(res?.data));
-    } catch {
-      /* keep existing offers */
-    }
-  }, []);
 
-  const refreshMyRedemptions = useCallback(async () => {
-    try {
-      const res = await api.get('/api/offers/my-redemptions');
-      if (!res.success) return;
-      const raw = unwrapOffersApiData(res.data);
-      setMyRedemptions(parseMyRedemptionsResponse(raw));
-    } catch {
-      /* keep list */
-    }
-  }, []);
 
-  const rewardsLocGrid = useMemo(
-    () => `${Math.round(location.lat * 200) / 200}_${Math.round(location.lng * 200) / 200}`,
-    [location.lat, location.lng],
-  );
   const rewardsBootstrapped = useRef(false);
-  const lastOfferGrid = useRef<string | null>(null);
   /** Skip first tab focus — initial `useEffect` already loads; avoids double fetch. */
   const skipRewardsFocusSilentRef = useRef(true);
-  /** Avoid refiring 8 parallel API calls on every tab focus (reduces jank / freezes). */
+  /** Avoid refiring wallet API bundle on every tab focus (reduces jank / freezes). */
   const lastSilentRewardsFetchAt = useRef(0);
 
   useEffect(() => {
     if (!rewardsBootstrapped.current) {
       rewardsBootstrapped.current = true;
-      lastOfferGrid.current = rewardsLocGrid;
       void loadFull('initial', location.lat, location.lng);
-      return;
     }
-    if (lastOfferGrid.current === rewardsLocGrid) return;
-    lastOfferGrid.current = rewardsLocGrid;
-    void refreshNearbyOffers(location.lat, location.lng);
-  }, [rewardsLocGrid, location.lat, location.lng, loadFull, refreshNearbyOffers]);
+  }, [location.lat, location.lng, loadFull]);
 
   useFocusEffect(
     useCallback(() => {
@@ -325,85 +259,10 @@ export default function RewardsScreen() {
     return [{ slug: null as string | null, label: 'All' }, ...rest];
   }, [myRedemptions]);
 
-  const [redemptionCategoryFilter, setRedemptionCategoryFilter] = useState<string | null>(null);
-
-  const filteredNearbyOffers = useMemo(() => {
-    const base = offers.filter((o) => !o.is_admin_offer);
-    return base.filter((o) => offerMatchesCategory(o, offerCategoryFilter));
-  }, [offers, offerCategoryFilter]);
-
-  const filteredFeaturedOffers = useMemo(() => {
-    const base = offers.filter((o) => Boolean(o.is_admin_offer));
-    return base.filter((o) => offerMatchesCategory(o, offerCategoryFilter));
-  }, [offers, offerCategoryFilter]);
-
   const filteredRedemptions = useMemo(() => {
     if (!redemptionCategoryFilter) return myRedemptions;
     return myRedemptions.filter((r) => String(r.business_type || 'other') === redemptionCategoryFilter);
   }, [myRedemptions, redemptionCategoryFilter]);
-
-  const allOffersForModal = useMemo(
-    () => offers.filter((o) => offerMatchesCategory(o, offerCategoryFilter)),
-    [offers, offerCategoryFilter],
-  );
-
-  const handleRedeemOffer = useCallback(async (offer: Offer) => {
-    setRedeemingOfferId(String(offer.id));
-    setErrorMsg(null);
-    try {
-      const res = await api.post(`/api/offers/${offer.id}/redeem`);
-      if (!res.success) {
-        setErrorMsg(res.error || 'Could not redeem this offer right now.');
-        return;
-      }
-      const inner = parseRedeemOfferPayload(res.data);
-      const gemCost = Number.isFinite(inner.gem_cost ?? NaN)
-        ? Number(inner.gem_cost)
-        : Number(offer.gem_cost ?? offer.gems_reward ?? 0);
-      const newGemTotal = Number(inner.new_gem_total ?? NaN);
-      const oid = String(offer.id);
-      setRedeemQrByOfferId((prev) => ({
-        ...prev,
-        [oid]: {
-          qr_token: inner.qr_token,
-          claim_code: inner.claim_code,
-          expires_at: inner.expires_at,
-        },
-      }));
-      setOffers((prev) =>
-        prev.map((o) =>
-          String(o.id) === oid
-            ? {
-                ...o,
-                redeemed: true,
-                redemption_id: inner.redemption_id ?? o.redemption_id,
-                redemption: { status: 'verified', redeemed_at: inner.redeemed_at },
-              }
-            : o,
-        ),
-      );
-      setSelectedOffer((prev) =>
-        prev && String(prev.id) === oid
-          ? {
-              ...prev,
-              redeemed: true,
-              redemption_id: inner.redemption_id ?? prev.redemption_id,
-              redemption: { status: 'verified', redeemed_at: inner.redeemed_at },
-            }
-          : prev,
-      );
-      if (user) {
-        const fallbackTotal = Math.max(0, user.gems - gemCost);
-        const safeTotal = Number.isFinite(newGemTotal) ? Math.max(0, Math.floor(newGemTotal)) : fallbackTotal;
-        updateUser({ gems: safeTotal });
-      }
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      void refreshMyRedemptions();
-      void loadFull('silent', location.lat, location.lng);
-    } finally {
-      setRedeemingOfferId(null);
-    }
-  }, [updateUser, user, refreshMyRedemptions, loadFull, location.lat, location.lng]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: bg }} edges={['top']}>
@@ -497,11 +356,38 @@ export default function RewardsScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={{ color: text, fontSize: 13, fontWeight: '900' }}>Unified wallet</Text>
                 <Text style={{ color: sub, fontSize: 12, marginTop: 3, lineHeight: 17 }}>
-                  Gems move only through your ledger. Use Activity for history, Offers to redeem, Redemptions for partner proof.
+                  Gems move only through your ledger. Use Activity for history, the Offers tab for browse & redeem, and Redemptions for partner proof.
                 </Text>
               </View>
             </View>
           </View>
+
+          <TouchableOpacity
+            activeOpacity={0.88}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              navigation.navigate('Offers', { screen: 'OffersMain' });
+            }}
+            style={{ marginHorizontal: 16, marginBottom: 14, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, ...shadow(6) }}
+          >
+            <LinearGradient
+              colors={[`${colors.primary}24`, 'transparent']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{ flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 }}
+            >
+              <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: `${colors.primary}20`, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="pricetag" size={22} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={{ color: text, fontSize: 15, fontWeight: '800' }}>Browse offers</Text>
+                <Text style={{ color: sub, fontSize: 12, marginTop: 3, lineHeight: 17 }}>
+                  Local partners + online deals — redeem with gems or open partner links in your browser.
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+            </LinearGradient>
+          </TouchableOpacity>
 
           {!user?.isPremium && (
             <TouchableOpacity
@@ -547,26 +433,6 @@ export default function RewardsScreen() {
         </>
       )}
 
-      {walletTab === 'offers' && (
-        <>
-          <OfferCategoryChips
-            choices={REWARDS_OFFER_FILTER_DEFS}
-            selectedSlug={offerCategoryFilter}
-            onSelect={setOfferCategoryFilter}
-            {...rt}
-          />
-          <ViewAllButton title="View all offers" onPress={() => setShowAllOffers(true)} {...rt} />
-          <SectionTitle title="Nearby Partner Offers" text={text} accent={colors.primary} />
-          <OffersPreview loading={initialLoading} offers={filteredNearbyOffers} onPressOffer={setSelectedOffer} {...rt} />
-          {offers.some((o) => o.is_admin_offer) && (
-            <>
-              <SectionTitle title="Featured Deals" text={text} accent={colors.primary} />
-              <OffersPreview loading={initialLoading} offers={filteredFeaturedOffers} onPressOffer={setSelectedOffer} {...rt} />
-            </>
-          )}
-        </>
-      )}
-
       {walletTab === 'redemptions' && (
         <>
           <OfferCategoryChips
@@ -585,6 +451,18 @@ export default function RewardsScreen() {
             }}
             {...rt}
           />
+          <TouchableOpacity
+            activeOpacity={0.88}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              navigation.navigate('Offers', { screen: 'OffersMain' });
+            }}
+            style={{ marginHorizontal: 16, marginTop: 6, marginBottom: 12, paddingVertical: 14, paddingHorizontal: 16, borderRadius: 16, borderWidth: 1, borderColor: `${colors.primary}35`, backgroundColor: `${colors.primary}0D`, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+          >
+            <Ionicons name="sparkles-outline" size={20} color={colors.primary} />
+            <Text style={{ color: colors.primary, fontSize: 14, fontWeight: '800', flex: 1 }}>Find more deals</Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+          </TouchableOpacity>
         </>
       )}
 
@@ -599,19 +477,6 @@ export default function RewardsScreen() {
       <View style={{ height: insets.bottom + 20 }} />
 
       <BadgeDetailModal selectedBadge={selectedBadge} cardBg={cardBg} text={text} sub={sub} primary={colors.primary} isLight={isLight} onClose={() => setSelectedBadge(null)} />
-      <OfferDetailModal
-        selectedOffer={selectedOffer}
-        redeemingOfferId={redeemingOfferId}
-        redeemExtras={selectedOffer ? redeemQrByOfferId[String(selectedOffer.id)] : null}
-        cardBg={cardBg}
-        text={text}
-        sub={sub}
-        primary={colors.primary}
-        success={colors.success}
-        isLight={isLight}
-        onClose={() => setSelectedOffer(null)}
-        onRedeem={handleRedeemOffer}
-      />
       <GemActivityDetailModal
         visible={!!selectedGemTx}
         tx={selectedGemTx}
@@ -636,20 +501,6 @@ export default function RewardsScreen() {
         danger={colors.danger}
         isLight={isLight}
         onClose={() => setSelectedRedemption(null)}
-      />
-      <AllOffersModal
-        visible={showAllOffers}
-        offers={allOffersForModal}
-        bg={bg}
-        cardBg={cardBg}
-        text={text}
-        sub={sub}
-        border={colors.border}
-        primary={colors.primary}
-        success={colors.success}
-        isLight={isLight}
-        onClose={() => setShowAllOffers(false)}
-        onSelectOffer={setSelectedOffer}
       />
       <AllBadgesModal
         visible={showAllBadges}

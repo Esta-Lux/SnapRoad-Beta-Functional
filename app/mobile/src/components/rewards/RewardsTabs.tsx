@@ -15,7 +15,6 @@ type Props = {
 const TABS: { key: WalletTab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'balance', label: 'Balance', icon: 'wallet-outline' },
   { key: 'activity', label: 'Activity', icon: 'pulse-outline' },
-  { key: 'offers', label: 'Offers', icon: 'pricetag-outline' },
   { key: 'redemptions', label: 'Redemptions', icon: 'receipt-outline' },
   { key: 'badges', label: 'Badges', icon: 'ribbon-outline' },
 ];

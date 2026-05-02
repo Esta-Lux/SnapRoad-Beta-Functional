@@ -6076,6 +6076,8 @@ export default function MapScreen() {
           /* Menu already closed by HamburgerMenu before this runs (deferred). */
           if (screen === 'Map') {
             return;
+          } else if (screen === 'Offers') {
+            rnNav.navigate('Offers', { screen: 'OffersMain' });
           } else if (screen === 'Wallet') {
             rnNav.navigate('Wallet', { screen: 'RewardsMain' });
           } else if (screen === 'Premium') {

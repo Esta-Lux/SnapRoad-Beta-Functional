@@ -58,6 +58,7 @@ Notifications.setNotificationHandler({
 const Tab = createBottomTabNavigator();
 const MapStack = createStackNavigator();
 const DashboardStack = createStackNavigator();
+const OffersStack = createStackNavigator();
 const RewardsStack = createStackNavigator();
 const ProfileStack = createStackNavigator();
 const PublicStack = createStackNavigator();
@@ -97,6 +98,18 @@ function loadRewardsScreenOnce(): React.ComponentType<any> {
 }
 function RewardsScreenLazy(props: Record<string, unknown>) {
   const Screen = loadRewardsScreenOnce();
+  return <Screen {...props} />;
+}
+
+let offersScreenComponent: React.ComponentType<any> | null = null;
+function loadOffersScreenOnce(): React.ComponentType<any> {
+  if (!offersScreenComponent) {
+    offersScreenComponent = require('./src/screens/OffersScreen').default as React.ComponentType<any>;
+  }
+  return offersScreenComponent as React.ComponentType<any>;
+}
+function OffersScreenLazy(props: Record<string, unknown>) {
+  const Screen = loadOffersScreenOnce();
   return <Screen {...props} />;
 }
 
@@ -180,6 +193,14 @@ function DashboardStackScreen() {
   );
 }
 
+function OffersStackScreen() {
+  return (
+    <OffersStack.Navigator screenOptions={{ headerShown: false }}>
+      <OffersStack.Screen name="OffersMain" component={OffersScreenLazy} />
+    </OffersStack.Navigator>
+  );
+}
+
 function RewardsStackScreen() {
   return (
     <RewardsStack.Navigator screenOptions={{ headerShown: false }}>
@@ -220,7 +241,7 @@ function MainTabs() {
   return (
     <Tab.Navigator
       screenOptions={{
-        /** Without this, all four tabs mount at once and pull Map + Profile + Wallet + Dashboard native graphs — common TestFlight crash. */
+        /** Without this, all five tabs mount at once and pull Map + Offers + Profile + Wallet + Dashboard native graphs — common TestFlight crash. */
         lazy: true,
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
@@ -255,6 +276,18 @@ function MainTabs() {
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.tabIconWrap, focused && { backgroundColor: `${colors.primary}18` }]}>
               <Ionicons name={focused ? 'map' : 'map-outline'} size={22} color={color} />
+            </View>
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Offers"
+        component={OffersStackScreen}
+        options={{
+          tabBarLabel: 'Offers',
+          tabBarIcon: ({ color, focused }) => (
+            <View style={[styles.tabIconWrap, focused && { backgroundColor: `${colors.primary}18` }]}>
+              <Ionicons name={focused ? 'pricetag' : 'pricetag-outline'} size={22} color={color} />
             </View>
           ),
         }}

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import {
   parseNearbyOffers,
+  parseOnlineOffersCatalog,
+  parseOfferCategories,
   parseRedeemOfferPayload,
   unwrapApiData,
 } from './offers';
@@ -25,6 +27,30 @@ test('parseNearbyOffers accepts envelope with nested offers array', () => {
 test('parseNearbyOffers accepts envelope with nested items array', () => {
   const payload = { data: { items: [{ id: 'x' }] } };
   assert.deepEqual(parseNearbyOffers(payload), [{ id: 'x' }]);
+});
+
+test('parseOfferCategories filters invalid rows', () => {
+  assert.deepEqual(parseOfferCategories({ data: [{ slug: '', label: '' }, { slug: 'gas', label: 'Fuel' }] }), [
+    { slug: 'gas', label: 'Fuel' },
+  ]);
+});
+
+test('parseOnlineOffersCatalog extracts online feed envelope', () => {
+  const payload = {
+    success: true,
+    data: {
+      items: [{ id: '1', title: 'Save', affiliate_url: 'https://example.com/a', featured: true }],
+      categories: [{ slug: 'fashion', label: 'Fashion' }],
+      next_cursor: 'cursor1',
+      provider: 'placeholder',
+    },
+  };
+  const cat = parseOnlineOffersCatalog(payload);
+  assert.equal(cat.items.length, 1);
+  assert.equal(cat.items[0].title, 'Save');
+  assert.equal(cat.next_cursor, 'cursor1');
+  assert.equal(cat.categories[0].slug, 'fashion');
+  assert.equal(cat.provider, 'placeholder');
 });
 
 test('parseRedeemOfferPayload parses important fields', () => {
