@@ -52,6 +52,41 @@ type AppUsagePayload = {
   top_paths: { path: string; count: number }[]
 }
 
+type SloStatus = 'ok' | 'warning' | 'critical'
+
+type SloPayload = {
+  api_success_rate: number | null
+  error_rate: number | null
+  reward_success_rate: number | null
+  route_completion_rate: number | null
+  crash_free_sessions: number | null
+  samples: {
+    api_total: number
+    api_errors: number
+    rewards_total: number
+    rewards_verified: number
+    trips_total: number
+    trips_completed: number
+  }
+  thresholds: Record<string, Record<string, number>>
+  status: {
+    api: SloStatus
+    rewards: SloStatus
+    routes: SloStatus
+    crash_free: SloStatus
+    overall: SloStatus
+  }
+}
+
+type MetricsOverviewPayload = {
+  total_users: number
+  active_users_today: number
+  routes_started: number
+  routes_completed: number
+  rewards_issued: number
+  rewards_redeemed: number
+}
+
 export default function AppControl({ theme = 'dark', onNavigate }: AppControlProps) {
   const isDark = theme === 'dark'
   const [activeTab, setActiveTab] = useState<AppControlTab>('overview')
@@ -64,6 +99,8 @@ export default function AppControl({ theme = 'dark', onNavigate }: AppControlPro
     Record<string, { updated_at?: string | null; updated_by?: string | null }>
   >({})
   const [appUsage, setAppUsage] = useState<AppUsagePayload | null>(null)
+  const [slo, setSlo] = useState<SloPayload | null>(null)
+  const [overviewMetrics, setOverviewMetrics] = useState<MetricsOverviewPayload | null>(null)
   const [healthCheckedAt, setHealthCheckedAt] = useState<Date | null>(null)
   const [mapReports, setMapReports] = useState<Record<string, unknown>[]>([])
   const [mapPartnerLocs, setMapPartnerLocs] = useState<Record<string, unknown>[]>([])
@@ -92,14 +129,17 @@ export default function AppControl({ theme = 'dark', onNavigate }: AppControlPro
 
   const loadAll = async () => {
     try {
-      const [statsRes, usersRes, healthRes, configRes, sbRes, usageRes] = await Promise.all([
-        adminApi.getStats(),
-        adminApi.getLiveUsers(),
-        adminApi.getHealth(),
-        adminApi.getConfigDetailed(),
-        adminApi.getSupabaseStatus().catch(() => ({ success: false, data: null })),
-        adminApi.getAppUsageTelemetry(500).catch(() => ({ success: false, data: null })),
-      ])
+      const [statsRes, usersRes, healthRes, configRes, sbRes, usageRes, sloRes, overviewRes] =
+        await Promise.all([
+          adminApi.getStats(),
+          adminApi.getLiveUsers(),
+          adminApi.getHealth(),
+          adminApi.getConfigDetailed(),
+          adminApi.getSupabaseStatus().catch(() => ({ success: false, data: null })),
+          adminApi.getAppUsageTelemetry(500).catch(() => ({ success: false, data: null })),
+          adminApi.getMetricsSlo().catch(() => ({ success: false, data: null })),
+          adminApi.getMetricsOverview().catch(() => ({ success: false, data: null })),
+        ])
       setHealthCheckedAt(new Date())
       const sr = statsRes as { success?: boolean; data?: Record<string, unknown> | null }
       const statsPayload =
@@ -135,6 +175,12 @@ export default function AppControl({ theme = 'dark', onNavigate }: AppControlPro
 
       const uData = (usageRes as { success?: boolean; data?: AppUsagePayload | null }).data
       setAppUsage(uData && typeof uData === 'object' ? uData : null)
+
+      const sloData = (sloRes as { success?: boolean; data?: SloPayload | null }).data
+      setSlo(sloData && typeof sloData === 'object' && sloData ? sloData : null)
+
+      const ovData = (overviewRes as { success?: boolean; data?: MetricsOverviewPayload | null }).data
+      setOverviewMetrics(ovData && typeof ovData === 'object' && ovData ? ovData : null)
     } catch (e) {
       console.error('Operations load failed:', e)
     } finally {
@@ -267,7 +313,13 @@ export default function AppControl({ theme = 'dark', onNavigate }: AppControlPro
       >
         <div className="p-4 md:p-5">
           {activeTab === 'overview' && (
-            <OverviewTab stats={stats} liveUsers={liveUsers} isDark={isDark} />
+            <OverviewTab
+              stats={stats}
+              liveUsers={liveUsers}
+              isDark={isDark}
+              slo={slo}
+              overview={overviewMetrics}
+            />
           )}
           {activeTab === 'live_traffic' && <SystemMonitorTab theme={theme} />}
           {activeTab === 'app_flows' && (
@@ -481,15 +533,143 @@ function LiveOpsTab({
   )
 }
 
+/**
+ * Format a 0..1 rate as a percentage. `null` (no samples) → '—' so we never
+ * display "0.0%" for an idle service, which would falsely look like an outage.
+ */
+function formatRate(rate: number | null | undefined): string {
+  if (rate === null || rate === undefined || Number.isNaN(rate)) return '—'
+  return `${(rate * 100).toFixed(1)}%`
+}
+
+const SLO_BADGE_TEXT: Record<SloStatus, string> = {
+  ok: 'OK',
+  warning: 'WARNING',
+  critical: 'CRITICAL',
+}
+
+const SLO_BADGE_DARK: Record<SloStatus, string> = {
+  ok: 'bg-emerald-500/20 text-emerald-200 border-emerald-500/35',
+  warning: 'bg-amber-500/20 text-amber-200 border-amber-500/35',
+  critical: 'bg-red-500/20 text-red-200 border-red-500/35',
+}
+
+const SLO_BADGE_LIGHT: Record<SloStatus, string> = {
+  ok: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  warning: 'bg-amber-100 text-amber-800 border-amber-200',
+  critical: 'bg-red-100 text-red-800 border-red-200',
+}
+
+function SloBadge({ status, isDark }: Readonly<{ status: SloStatus; isDark: boolean }>) {
+  const cls = (isDark ? SLO_BADGE_DARK : SLO_BADGE_LIGHT)[status] ?? ''
+  return (
+    <span className={`inline-flex items-center text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border ${cls}`}>
+      {SLO_BADGE_TEXT[status] ?? 'OK'}
+    </span>
+  )
+}
+
+/**
+ * SLO-driven decision panel. Numbers + colored badges only — no charts.
+ * Reads from `/api/admin/metrics/slo` (telemetry-buffer + Supabase aggregates)
+ * and `/api/admin/metrics/overview`. Renders '—' when a signal has no samples
+ * yet so a fresh container doesn't show a misleading 0% / red badge.
+ */
+function SystemHealthPanel({
+  slo,
+  overview,
+  isDark,
+}: Readonly<{
+  slo: SloPayload | null
+  overview: MetricsOverviewPayload | null
+  isDark: boolean
+}>) {
+  const card = isDark
+    ? 'bg-slate-800/40 border-white/[0.08]'
+    : 'bg-white border-gray-200 shadow-sm'
+  const muted = isDark ? 'text-slate-400' : 'text-gray-500'
+  const heading = isDark ? 'text-white' : 'text-gray-900'
+
+  const overall: SloStatus = slo?.status?.overall ?? 'ok'
+
+  const tiles: { label: string; value: string; status?: SloStatus; sub?: string }[] = [
+    {
+      label: 'API success',
+      value: formatRate(slo?.api_success_rate ?? null),
+      status: slo?.status?.api,
+      sub: slo ? `${slo.samples.api_total - slo.samples.api_errors}/${slo.samples.api_total} req` : undefined,
+    },
+    {
+      label: 'Reward success',
+      value: formatRate(slo?.reward_success_rate ?? null),
+      status: slo?.status?.rewards,
+      sub: slo ? `${slo.samples.rewards_verified}/${slo.samples.rewards_total} verified` : undefined,
+    },
+    {
+      label: 'Route completion',
+      value: formatRate(slo?.route_completion_rate ?? null),
+      status: slo?.status?.routes,
+      sub: slo ? `${slo.samples.trips_completed}/${slo.samples.trips_total} trips` : undefined,
+    },
+    {
+      label: 'Active users today',
+      value:
+        typeof overview?.active_users_today === 'number'
+          ? overview.active_users_today.toLocaleString()
+          : '—',
+      sub:
+        typeof overview?.total_users === 'number'
+          ? `of ${overview.total_users.toLocaleString()} total`
+          : undefined,
+    },
+  ]
+
+  return (
+    <div className={`rounded-xl border p-4 ${card}`}>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="flex items-center gap-2">
+          <HeartPulse size={16} className={isDark ? 'text-emerald-300' : 'text-emerald-700'} />
+          <h3 className={`text-sm font-semibold ${heading}`}>System health</h3>
+        </div>
+        <SloBadge status={overall} isDark={isDark} />
+      </div>
+      <p className={`text-xs mb-3 ${muted}`}>
+        SLO targets: API ≥ 98%, rewards ≥ 99%, route completion ≥ 90%. Below the bar shows a warning or critical badge.
+      </p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {tiles.map((t) => (
+          <div
+            key={t.label}
+            className={`rounded-lg border p-3 ${
+              isDark ? 'bg-white/[0.03] border-white/[0.08]' : 'bg-gray-50/60 border-gray-200'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className={`text-xs ${muted}`}>{t.label}</div>
+              {t.status && <SloBadge status={t.status} isDark={isDark} />}
+            </div>
+            <div className={`text-2xl font-bold tabular-nums mt-1 ${heading}`}>{t.value}</div>
+            {t.sub && <div className={`text-[10px] mt-0.5 ${muted}`}>{t.sub}</div>}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function OverviewTab({
   stats,
   liveUsers,
   isDark,
-}: {
+  slo,
+  overview,
+}: Readonly<{
   stats: Record<string, unknown> | null
   liveUsers: Record<string, unknown>[]
   isDark: boolean
-}) {
+  slo: SloPayload | null
+  overview: MetricsOverviewPayload | null
+}>) {
   const card = isDark
     ? 'bg-slate-800/40 border-white/[0.08]'
     : 'bg-white border-gray-200 shadow-sm'
@@ -513,6 +693,7 @@ function OverviewTab({
 
   return (
     <div className="space-y-6">
+      <SystemHealthPanel slo={slo} overview={overview} isDark={isDark} />
       <div>
         <h3 className={`text-base font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
           Platform overview
@@ -1465,12 +1646,68 @@ const TOGGLE_IMPACT: Record<string, string> = {
   ohgo_cameras_enabled: 'Hides OHGO camera layer for clients reading public config.',
 }
 
+/**
+ * Deterministic baseline used by both "Normal operations" and "Reset to known good".
+ * Listing every key explicitly is the whole point — it prevents config drift after
+ * incidents (a half-applied panic leaves stragglers if we only flip what we touched).
+ */
+const KNOWN_GOOD_BASELINE: Record<string, unknown> = {
+  maintenance_mode: false,
+  force_update_required: false,
+  driver_signups_enabled: true,
+  partner_signups_enabled: true,
+  premium_purchases_enabled: true,
+  partner_payments_enabled: true,
+  offer_redemptions_enabled: true,
+  partner_qr_redemption_enabled: true,
+  incident_submissions_enabled: true,
+  incident_voting_enabled: true,
+  partner_referrals_enabled: true,
+  push_notifications_enabled: true,
+  live_location_publishing_enabled: true,
+  telemetry_collection_enabled: true,
+  ai_photo_moderation_enabled: true,
+  gems_rewards_enabled: true,
+  orion_enabled: true,
+  friend_tracking_enabled: true,
+  ohgo_cameras_enabled: true,
+  gems_multiplier: 1,
+  max_offer_distance_miles: 10,
+  announcement_banner: '',
+}
+
 const OPS_PRESETS: { id: string; label: string; description: string; patch: Record<string, unknown>; panic?: boolean }[] = [
+  {
+    id: 'panic_hard',
+    label: 'Hard panic (maintenance + lockdown)',
+    description:
+      'DESTRUCTIVE. Sets maintenance_mode + force_update_required ON, and disables every signup, payment, redemption, gem reward, referral, push, live location, and incident write. Use only when the app is actively unsafe to run; restore via "Reset to known good" once the incident is closed.',
+    panic: true,
+    patch: {
+      maintenance_mode: true,
+      force_update_required: true,
+      driver_signups_enabled: false,
+      partner_signups_enabled: false,
+      premium_purchases_enabled: false,
+      partner_payments_enabled: false,
+      offer_redemptions_enabled: false,
+      partner_qr_redemption_enabled: false,
+      gems_rewards_enabled: false,
+      partner_referrals_enabled: false,
+      push_notifications_enabled: false,
+      live_location_publishing_enabled: false,
+      friend_tracking_enabled: false,
+      incident_submissions_enabled: false,
+      incident_voting_enabled: false,
+      ai_photo_moderation_enabled: false,
+      orion_enabled: false,
+    },
+  },
   {
     id: 'panic_stabilize',
     label: 'Stabilize (panic)',
     description:
-      'Aggressive lockdown for abuse or firefight: stop incidents, commerce, live location writes, pushes, and API telemetry. Restore gradually with Normal or targeted presets.',
+      'Aggressive lockdown for abuse or firefight: stop incidents, commerce, live location writes, pushes, and API telemetry. Less destructive than Hard panic — leaves signups + maintenance flag alone.',
     panic: true,
     patch: {
       incident_submissions_enabled: false,
@@ -1486,27 +1723,36 @@ const OPS_PRESETS: { id: string; label: string; description: string; patch: Reco
     },
   },
   {
+    id: 'read_only',
+    label: 'Read-only mode',
+    description:
+      'Disables every writeable surface (signups, payments, redemptions, incident submissions, partner referrals, location publishing, friend tracking) while leaving read APIs and maintenance_mode alone. Useful for read-only Sunday/migration windows.',
+    patch: {
+      driver_signups_enabled: false,
+      partner_signups_enabled: false,
+      premium_purchases_enabled: false,
+      partner_payments_enabled: false,
+      offer_redemptions_enabled: false,
+      partner_qr_redemption_enabled: false,
+      incident_submissions_enabled: false,
+      partner_referrals_enabled: false,
+      live_location_publishing_enabled: false,
+      friend_tracking_enabled: false,
+    },
+  },
+  {
+    id: 'reset_known_good',
+    label: 'Reset to known good state',
+    description:
+      'Deterministic full reset. Sets every operational + product key to its baseline (maintenance off, all gates open, Orion/friend tracking/OHGO on, gems_multiplier=1, max_offer_distance=10mi, banner cleared). Prevents config drift after an incident.',
+    patch: KNOWN_GOOD_BASELINE,
+  },
+  {
     id: 'normal',
     label: 'Normal operations',
-    description: 'All gates open; no maintenance. Use after incidents are resolved.',
-    patch: {
-      maintenance_mode: false,
-      force_update_required: false,
-      driver_signups_enabled: true,
-      partner_signups_enabled: true,
-      premium_purchases_enabled: true,
-      partner_payments_enabled: true,
-      offer_redemptions_enabled: true,
-      partner_qr_redemption_enabled: true,
-      incident_submissions_enabled: true,
-      incident_voting_enabled: true,
-      partner_referrals_enabled: true,
-      push_notifications_enabled: true,
-      live_location_publishing_enabled: true,
-      telemetry_collection_enabled: true,
-      ai_photo_moderation_enabled: true,
-      gems_rewards_enabled: true,
-    },
+    description:
+      'Same baseline as "Reset to known good", phrased for routine post-incident recovery. Idempotent.',
+    patch: KNOWN_GOOD_BASELINE,
   },
   {
     id: 'soft_maint',

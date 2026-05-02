@@ -861,6 +861,9 @@ def get_map_cameras(
     Return OHGO traffic cameras for the mobile cameras layer.
     Separated from /map/traffic so cameras are never truncated by the road-report limit.
     """
+    from services.runtime_config import require_enabled
+
+    require_enabled("ohgo_cameras_enabled", "Traffic camera layer is temporarily disabled.")
     cameras: List[dict] = []
 
     # OHGO (Ohio DOT)

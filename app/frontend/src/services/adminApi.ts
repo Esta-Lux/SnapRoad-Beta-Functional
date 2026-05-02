@@ -577,6 +577,54 @@ class AdminApiService {
   > {
     return this.request(`/api/admin/telemetry/app-usage?limit=${limit}`)
   }
+
+  /** High-level KPI roll-up for the System Health panel. Aggregate counts only — no PII. */
+  async getMetricsOverview(): Promise<
+    AdminApiResponse<{
+      total_users: number
+      active_users_today: number
+      routes_started: number
+      routes_completed: number
+      rewards_issued: number
+      rewards_redeemed: number
+    }>
+  > {
+    return this.request('/api/admin/metrics/overview')
+  }
+
+  /**
+   * SLO rates + per-signal status badges.
+   * Rates can be `null` when there are no samples yet (cold start, empty
+   * tables); render those as "—" and trust the `status` field, which already
+   * defaults to "ok" in that case.
+   */
+  async getMetricsSlo(): Promise<
+    AdminApiResponse<{
+      api_success_rate: number | null
+      error_rate: number | null
+      reward_success_rate: number | null
+      route_completion_rate: number | null
+      crash_free_sessions: number | null
+      samples: {
+        api_total: number
+        api_errors: number
+        rewards_total: number
+        rewards_verified: number
+        trips_total: number
+        trips_completed: number
+      }
+      thresholds: Record<string, Record<string, number>>
+      status: {
+        api: 'ok' | 'warning' | 'critical'
+        rewards: 'ok' | 'warning' | 'critical'
+        routes: 'ok' | 'warning' | 'critical'
+        crash_free: 'ok' | 'warning' | 'critical'
+        overall: 'ok' | 'warning' | 'critical'
+      }
+    }>
+  > {
+    return this.request('/api/admin/metrics/slo')
+  }
 }
 
 export const adminApi = new AdminApiService()

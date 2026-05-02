@@ -374,6 +374,24 @@ def create_app() -> FastAPI:
     def health():
         return _build_health_response()
 
+    @app.get("/api/health")
+    def api_health():
+        """Public, unauthenticated SLO-driven health for uptime probes / load
+        balancers. ok / degraded / down derived from the in-memory telemetry
+        buffer (no DB hit on every probe). Returns 200 in all cases — the
+        body's `status` field is the signal."""
+        from services import slo
+
+        events = telemetry_service.snapshot(limit=500)
+        api = slo.compute_api_rates_from_telemetry(events)
+        return {
+            "status": slo.health_status(api["success_rate"]),
+            "api_success_rate": api["success_rate"],
+            "error_rate": api["error_rate"],
+            "samples": api["total"],
+            "timestamp": telemetry_service.now_iso(),
+        }
+
     @app.get("/api/env-check")
     def env_check():
         return _build_env_check_response()

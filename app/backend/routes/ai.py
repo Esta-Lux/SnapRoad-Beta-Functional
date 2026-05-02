@@ -19,6 +19,8 @@ router = APIRouter(prefix="/api", tags=["AI"])
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
 
+ORION_DISABLED_DETAIL = "Orion coach is temporarily disabled."
+
 _NAV_CHAT_PREFIXES = (
     "start navigation to ",
     "navigation to ",
@@ -257,6 +259,9 @@ async def orion_completions(
     user: CurrentUser,
 ):
     """Orion chat completions via backend NVIDIA_API_KEY or OPENAI_API_KEY (never in the frontend)."""
+    from services.runtime_config import require_enabled
+
+    require_enabled("orion_enabled", ORION_DISABLED_DETAIL)
     from services.orion_coach import orion_service
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
     content = await orion_service.completion(messages, body.context)
@@ -284,6 +289,9 @@ async def orion_completions_stream(
     user: CurrentUser,
 ):
     """Orion streaming completions; returns SSE in OpenAI-compatible format."""
+    from services.runtime_config import require_enabled
+
+    require_enabled("orion_enabled", ORION_DISABLED_DETAIL)
     from services.orion_coach import orion_service
 
     async def generate():
@@ -305,6 +313,9 @@ async def orion_completions_stream(
 )
 @limiter.limit("20/minute")
 async def orion_chat(request: Request, body: OrionMessageRequest, user: CurrentUser):
+    from services.runtime_config import require_enabled
+
+    require_enabled("orion_enabled", ORION_DISABLED_DETAIL)
     from services.orion_coach import orion_service
     session_id = body.session_id or f"session_{user.get('id', 'anon')}_{uuid.uuid4().hex[:8]}"
     result = await orion_service.send_message(

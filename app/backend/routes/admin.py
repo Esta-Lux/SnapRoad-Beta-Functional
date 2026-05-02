@@ -1910,6 +1910,8 @@ def admin_photo_report_reject(
     return {"success": True, "message": "Report rejected"}
 
 
+from routes.admin_metrics import admin_metrics_router  # noqa: E402
+
 router.include_router(admin_platform_router)
 router.include_router(admin_concerns_router)
 router.include_router(admin_config_router)
@@ -1924,3 +1926,4 @@ router.include_router(admin_boosts_router)
 router.include_router(admin_realtime_router)
 router.include_router(admin_photo_reports_router)
 router.include_router(admin_ops_router)
+router.include_router(admin_metrics_router)

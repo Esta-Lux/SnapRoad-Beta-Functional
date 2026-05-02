@@ -34,6 +34,7 @@ def _utc_timestamptz_iso() -> str:
 
 
 MSG_AUTH_REQUIRED = "Authentication required"
+MSG_FRIEND_TRACKING_DISABLED = "Friend tracking is temporarily disabled."
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
 
@@ -270,6 +271,9 @@ def get_friends_list(
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     require_premium_user(current_user)
+    from services.runtime_config import require_enabled
+
+    require_enabled("friend_tracking_enabled", MSG_FRIEND_TRACKING_DISABLED)
     uid = current_user["id"]
     supabase = get_supabase()
     res = supabase.table("friendships").select(
@@ -630,6 +634,9 @@ def get_my_location_sharing(current_user: CurrentUser):
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     require_premium_user(current_user)
+    from services.runtime_config import require_enabled
+
+    require_enabled("friend_tracking_enabled", MSG_FRIEND_TRACKING_DISABLED)
     uid = current_user["id"]
     from database import get_supabase
     from config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
@@ -665,6 +672,7 @@ def update_my_location(request: Request, body: LocationUpdateBody, current_user:
     """Update current user's live location (Supabase: live_locations upsert; mock: no-op)."""
     from services.runtime_config import require_enabled
 
+    require_enabled("friend_tracking_enabled", MSG_FRIEND_TRACKING_DISABLED)
     require_enabled(
         "live_location_publishing_enabled",
         "Live location publishing is temporarily paused.",
@@ -724,6 +732,9 @@ def set_location_sharing(request: Request, body: LocationSharingBody, current_us
     if not current_user:
         raise HTTPException(status_code=401, detail=MSG_AUTH_REQUIRED)
     require_premium_user(current_user)
+    from services.runtime_config import require_enabled
+
+    require_enabled("friend_tracking_enabled", MSG_FRIEND_TRACKING_DISABLED)
     uid = current_user["id"]
     from database import get_supabase
     from config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY

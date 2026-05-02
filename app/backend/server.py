@@ -20,9 +20,8 @@ def root():
     }
 
 
-@app.get("/api/health")
-def health():
-    return {"status": "healthy", "service": "snaproad-api"}
+# /api/health is registered in main.create_app() with SLO-driven status
+# (ok / degraded / down). Defining it again here would duplicate the route.
 
 
 # ==================== DATABASE MIGRATION ====================
