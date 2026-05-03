@@ -78,6 +78,7 @@ import ReportMarkers from '../components/map/ReportMarkers';
 import FriendMarkers from '../components/map/FriendMarkers';
 import CameraMarkers from '../components/map/CameraMarkers';
 import type { CameraLocation, CameraViewFeed } from '../components/map/CameraMarkers';
+import GasPriceMarkers, { type GasPriceMapPoint } from '../components/map/GasPriceMarkers';
 import TrafficCameraSheet from '../components/map/TrafficCameraSheet';
 import TrafficLayer from '../components/map/TrafficLayer';
 import IncidentHeatmap from '../components/map/IncidentHeatmap';
@@ -1956,6 +1957,7 @@ export default function MapScreen() {
   );
 
   const [cameraLocations, setCameraLocations] = useState<CameraLocation[]>([]);
+  const [gasPricePoints, setGasPricePoints] = useState<GasPriceMapPoint[]>([]);
   const [selectedTrafficCamera, setSelectedTrafficCamera] = useState<CameraLocation | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<{
     name: string;
@@ -1999,7 +2001,8 @@ export default function MapScreen() {
   // ── Layers ──
   const { showTraffic, showIncidents, showCameras, setShowTraffic, setShowIncidents, setShowCameras,
     showConstruction, setShowConstruction,
-    showPhotoReports, setShowPhotoReports, showTrafficSafety, setShowTrafficSafety } = useMapLayers();
+    showPhotoReports, setShowPhotoReports, showTrafficSafety, setShowTrafficSafety,
+    showGasPrices, setShowGasPrices } = useMapLayers();
   /** Apple Maps baseline: safety cameras should be visible during active nav even if the explore layer is off. */
   const trafficSafetyWanted = showTrafficSafety || nav.isNavigating;
   /** Camera POIs are a premium browse layer, but active navigation should still populate safety context. */
@@ -2480,6 +2483,39 @@ export default function MapScreen() {
       })
       .catch((e) => logMapDataIssue('GET /api/map/cameras', e));
   }, [cameraPoisWanted, mapTabFocused, Math.round(poiSearchCoord.lat * 100), Math.round(poiSearchCoord.lng * 100)]);
+
+  useEffect(() => {
+    if (!showGasPrices || !mapTabFocused) {
+      setGasPricePoints([]);
+      return;
+    }
+    api
+      .get<Record<string, unknown>>('/api/map/gas-prices')
+      .then((r) => {
+        if (!r.success || r.data == null) {
+          if (!r.success) logMapDataIssue('GET /api/map/gas-prices', r.error);
+          return;
+        }
+        const body = r.data as Record<string, unknown>;
+        const items = body.data;
+        if (!Array.isArray(items)) return;
+        const mapped = items
+          .map((row: Record<string, unknown>) => ({
+            id: String(row.id ?? ''),
+            state: String(row.state ?? ''),
+            lat: Number(row.lat),
+            lng: Number(row.lng),
+            currency: typeof row.currency === 'string' ? row.currency : undefined,
+            regular: (row.regular != null ? String(row.regular) : null) as string | null,
+            midGrade: (row.midGrade != null ? String(row.midGrade) : null) as string | null,
+            premium: (row.premium != null ? String(row.premium) : null) as string | null,
+            diesel: (row.diesel != null ? String(row.diesel) : null) as string | null,
+          }))
+          .filter((p: GasPriceMapPoint) => p.id && p.state && Number.isFinite(p.lat) && Number.isFinite(p.lng));
+        setGasPricePoints(mapped);
+      })
+      .catch((e) => logMapDataIssue('GET /api/map/gas-prices', e));
+  }, [showGasPrices, mapTabFocused]);
 
   const refreshPhotoReportsNearby = useCallback(() => {
     if (!showPhotoReports) return;
@@ -4560,6 +4596,13 @@ export default function MapScreen() {
               referenceCoordinate={nav.isNavigating ? navDisplayCoord : null}
             />
           )}
+          {showGasPrices && !nav.showRoutePreview && (
+            <GasPriceMarkers
+              points={gasPricePoints}
+              zoomLevel={mapZoomLevel}
+              referenceCoordinate={poiSearchCoord}
+            />
+          )}
           <FriendMarkers
             zoomLevel={mapZoomLevel}
             friends={friendLocationsVisible}
@@ -6022,6 +6065,13 @@ export default function MapScreen() {
             <Text style={[s.layerSectionT, { color: colors.text }]}>Layers</Text>
             {[
               { k: 'traffic', l: 'Traffic', ic: 'car-outline' as const, v: showTraffic, t: setShowTraffic },
+              {
+                k: 'gasPrices',
+                l: 'Gas prices (state avg.)',
+                ic: 'flame-outline' as const,
+                v: showGasPrices,
+                t: setShowGasPrices,
+              },
               { k: 'incidents', l: 'Incidents', ic: 'warning-outline' as const, v: showIncidents, t: setShowIncidents },
               {
                 k: 'cameras',

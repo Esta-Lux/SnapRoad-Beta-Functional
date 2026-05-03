@@ -84,6 +84,9 @@ OHGO_API_KEY = (os.environ.get("OHGO_API_KEY") or os.environ.get("VITE_OHGO_API_
 # Optional base URL (no trailing path). Default is the public OHGO host.
 OHGO_API_BASE = (os.environ.get("OHGO_API_URL") or "https://publicapi.ohgo.com").strip().rstrip("/")
 
+# CollectAPI — statewide US gas averages (mobile map layer via GET /api/map/gas-prices).
+COLLECTAPI_KEY = (os.environ.get("COLLECTAPI_KEY") or "").strip()
+
 _WEAK_JWT_SECRETS = {
     "",
     "changeme",

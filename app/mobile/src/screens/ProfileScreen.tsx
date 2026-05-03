@@ -346,7 +346,8 @@ export default function ProfileScreen() {
       const historyRoot = unwrapProfileApiData(tripsHistoryRes?.data);
       const recentTrips = recentTripsListFromPayload(historyRoot);
       setTripHistoryRows(
-        recentTrips.map((t: Record<string, unknown>, idx: number) => {
+        recentTrips.map((raw: unknown, idx: number) => {
+          const t = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
           const rawEnded = String(t.ended_at ?? t.date ?? '').trim();
           const rawStarted = String(t.started_at ?? '').trim();
           const anchorRaw = rawEnded || rawStarted;

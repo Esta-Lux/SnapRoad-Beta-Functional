@@ -35,6 +35,12 @@ test('approxVisibleRadiusMeters shrinks with higher zoom', () => {
   assert.equal(approxVisibleRadiusMeters(12), 22000);
 });
 
+test('markerCapForZoom gasPrice is zero below city zoom then positive', () => {
+  assert.equal(markerCapForZoom('gasPrice', 11.5), 0);
+  assert.equal(markerCapForZoom('gasPrice', 12), 14);
+  assert.ok(markerCapForZoom('gasPrice', 15.5) >= 50);
+});
+
 test('sortAndCapMarkers sorts nearest-first and respects caps', () => {
   const markers = [
     { lat: 40.0, lng: -83.0, id: 'near' },
