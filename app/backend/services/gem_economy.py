@@ -1,26 +1,21 @@
 """Central gem pricing rules (trips, offers)."""
 
 # Max trip gems credited from driving per calendar day (UTC); 0 = no cap.
-TRIP_GEM_DAILY_CAP = 800
-# Hard ceiling per single trip (after premium multiplier).
-TRIP_GEM_PER_TRIP_CAP = 200
+TRIP_GEM_DAILY_CAP = 100
+# Hard ceiling per single counted trip (flat reward below).
+TRIP_GEM_PER_TRIP_CAP = 25
+# Flat gems per qualifying trip once distance/duration gates pass (`complete_trip` route).
+TRIP_GEMS_PER_COUNTED_DRIVE = 5
 
 
 def trip_gems_from_duration_minutes(duration_minutes: float, is_premium: bool) -> int:
     """
-    10-minute buckets from driving time on a valid trip:
-      - 1st full 10 min: 15 gems
-      - each additional full 10 min: +5 gems
-    Premium doubles the total. Partial buckets below 10 min → 0 gems from buckets.
+    Flat gems per counted trip (gates are enforced in `/trips/complete`).
+    Premium does not multiply trip-drive gems anymore — Insights + wallet stay aligned.
+    Legacy parameters kept so call sites stay stable.
     """
-    d = max(0.0, float(duration_minutes))
-    chunks = int(d // 10)
-    if chunks < 1:
-        return 0
-    raw = 15 + (chunks - 1) * 5
-    raw = min(raw, 100)
-    total = raw * 2 if is_premium else raw
-    return min(total, TRIP_GEM_PER_TRIP_CAP)
+    _ = duration_minutes, is_premium
+    return min(TRIP_GEMS_PER_COUNTED_DRIVE, TRIP_GEM_PER_TRIP_CAP)
 
 
 def apply_trip_gem_daily_cap(gems: int, already_earned_today: int) -> int:
@@ -39,30 +34,22 @@ def trip_drive_ledger_metadata(
 ) -> dict:
     """
     Server-side breakdown for wallet_transactions metadata (trip_drive credits).
-    Mirrors trip_gems_from_duration_minutes + daily cap semantics.
+    Mirrors flat trip gems + daily cap semantics.
     """
     duration_min = max(0.0, float(duration_seconds)) / 60.0
-    chunks = int(duration_min // 10)
-    raw_bucket = 0
-    if chunks >= 1:
-        raw_bucket = min(15 + (chunks - 1) * 5, 100)
-    after_premium = raw_bucket * 2 if is_premium else raw_bucket
-    after_trip_cap = min(after_premium, TRIP_GEM_PER_TRIP_CAP)
-    after_daily = apply_trip_gem_daily_cap(after_trip_cap, already_earned_today_before_this_trip)
+    base_flat = min(TRIP_GEMS_PER_COUNTED_DRIVE, TRIP_GEM_PER_TRIP_CAP)
+    after_daily = apply_trip_gem_daily_cap(base_flat, already_earned_today_before_this_trip)
     formula_summary = (
-        f"{chunks} full 10 min block(s) of valid driving: first block 15 gems, "
-        f"+5 per additional block (cap 100 before multiplier). "
-        f"{'Premium 2× applied. ' if is_premium else ''}"
+        f"Counted trip reward: {TRIP_GEMS_PER_COUNTED_DRIVE} gems (flat; premium does not multiply). "
         f"Per-trip cap {TRIP_GEM_PER_TRIP_CAP} gems; daily cap {TRIP_GEM_DAILY_CAP} gems (UTC)."
     )
     return {
         "duration_minutes": round(duration_min, 2),
         "duration_seconds": int(duration_seconds),
         "distance_miles": round(float(distance_miles), 2),
-        "full_ten_minute_chunks": chunks,
-        "base_bucket_gems": raw_bucket,
-        "premium_multiplier": 2 if is_premium else 1,
-        "gems_after_premium_and_trip_cap": after_trip_cap,
+        "flat_trip_gems": base_flat,
+        "is_premium": bool(is_premium),
+        "gems_after_trip_cap": base_flat,
         "already_earned_today_utc_before_trip": int(already_earned_today_before_this_trip),
         "gems_after_daily_cap": after_daily,
         "gems_credited": int(gems_credited),

@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo, useLayoutEffect, useSyncExternalStore } from 'react';
 import type { Coordinate, DrivingMode } from '../types';
+import type { TripSummary } from '../types/tripSummary';
 import type {
   CongestionLevel,
   DirectionsResult,
@@ -13,6 +14,7 @@ import {
   getMapboxRouteOptions,
   isMapboxDirectionsConfigured,
   parseMapboxDirectionsRoute,
+  reverseGeocode,
 } from '../lib/directions';
 import { getMapboxPublicToken } from '../config/mapbox';
 
@@ -33,7 +35,12 @@ import { setNavigationGuidanceSuppressedUntil } from '../navigation/navigationGu
 import { primaryInstructionText, primaryVoiceAnnouncement } from '../lib/navigationInstructions';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
-import { tripGemsFromDurationMinutes } from '../utils/tripGems';
+import {
+  previewXpForCountedTrip,
+  tripGemsFromDurationMinutes,
+} from '../utils/tripGems';
+import { formatTripPlaceLabel } from '../utils/tripPlaceLabels';
+import { mergeTripCompleteResponse, unwrapTripCompleteData } from '../lib/tripComplete';
 import {
   avgSpeedMph,
   estimateFuelCostUsd,
@@ -122,7 +129,7 @@ function applyTripCompleteProfileToUser(updateUser: (u: Partial<User>) => void, 
 }
 
 export interface NavigationData {
-  origin: Coordinate & { name?: string };
+  origin: Coordinate & { name?: string; address?: string };
   destination: Coordinate & { name?: string; address?: string };
   steps: DirectionsStep[];
   polyline: Coordinate[];
@@ -138,43 +145,7 @@ export interface NavigationData {
   dynamicDestination?: boolean;
 }
 
-export interface TripSummary {
-  distance: number;
-  /** Minutes */
-  duration: number;
-  duration_seconds?: number;
-  safety_score: number;
-  gems_earned: number;
-  xp_earned: number;
-  origin: string;
-  destination: string;
-  date: string;
-  started_at?: string;
-  ended_at?: string;
-  avg_speed_mph?: number;
-  /** Smoothed peak speed observed during the trip (mph). */
-  max_speed_mph?: number;
-  fuel_used_gallons?: number;
-  fuel_cost_estimate?: number;
-  mileage_value_estimate?: number;
-  /** Real safety-event counts forwarded to backend; 0 when not tracked. */
-  hard_braking_events?: number;
-  speeding_events?: number;
-  incidents_reported?: number;
-  /** False = trip sheet still shows, but drive did not meet min distance/time for rewards. */
-  counted?: boolean;
-  /** Auto-ended at destination — show “You’ve arrived” hero in trip sheet. */
-  arrivedAtDestination?: boolean;
-  /** Authoritative profile totals after /api/trips/complete (when returned). */
-  profile_totals?: {
-    total_miles?: number;
-    total_trips?: number;
-    gems?: number;
-    xp?: number;
-  };
-}
-
-export function useDriveNavigation(params: {
+export type { TripSummary };export function useDriveNavigation(params: {
   userLocation: Coordinate;
   speed: number;
   heading: number;
@@ -267,6 +238,8 @@ export function useDriveNavigation(params: {
    * backend/profile can show "Max speed" in the trip summary + Insights.
    */
   const maxSpeedMphRef = useRef(0);
+  /** Bumps when a new route is fetched so stale reverse-geocode results cannot rename a later trip's origin. */
+  const originGeocodeTokenRef = useRef(0);
   const prevLocationRef = useRef<Coordinate | null>(null);
   /** Latest route progress (for trip-end distance; avoids stale useCallback closure). */
   const routeProgressRef = useRef<NavigationRouteProgress | null>(null);
@@ -727,8 +700,22 @@ export function useDriveNavigation(params: {
         );
       }
 
+      const geoTok = ++originGeocodeTokenRef.current;
       navigationDataRef.current = nav;
       setNavigationData(nav);
+      void reverseGeocode(o.lat, o.lng)
+        .then((geo) => {
+          if (geoTok !== originGeocodeTokenRef.current) return;
+          const label = formatTripPlaceLabel(
+            { name: geo?.name, address: geo?.address },
+            'Current Location',
+          );
+          setNavigationData((prev) => {
+            if (!prev) return prev;
+            return { ...prev, origin: { ...prev.origin, name: label } };
+          });
+        })
+        .catch(() => {});
       routeModelRefreshedAtRef.current = Date.now();
       setRouteModelRefreshKey((k) => k + 1);
       setCurrentStepIndex(0);
@@ -1225,8 +1212,15 @@ export function useDriveNavigation(params: {
         : Math.max(0, blendedMi);
     const roundedDist = Math.max(0, Math.round(distMiles * 100) / 100);
 
-    const originName = navigationData?.origin?.name ?? 'Start';
-    const destName = navigationData?.destination?.name ?? 'End';
+    const tripSafetyScore = Math.round(Math.max(0, Math.min(100, Number(user?.safetyScore ?? 85))));
+    const originName = formatTripPlaceLabel(
+      { name: navigationData?.origin?.name, address: navigationData?.origin?.address },
+      'Start',
+    );
+    const destName = formatTripPlaceLabel(
+      { name: navigationData?.destination?.name, address: navigationData?.destination?.address },
+      'End',
+    );
     const tripStartMs = tripStartTimeRef.current;
     const startedAtIso = tripStartMs ? new Date(tripStartMs).toISOString() : undefined;
     const endedAtIso = new Date(now).toISOString();
@@ -1268,11 +1262,11 @@ export function useDriveNavigation(params: {
       distance: roundedDist,
       duration: Math.max(1, durationMin || 1),
       duration_seconds: durationSec,
-      safety_score: 85,
+      safety_score: tripSafetyScore,
       gems_earned: qualifiesTrip
         ? tripGemsFromDurationMinutes(Math.max(1, durationMin || 1), Boolean(user?.isPremium))
         : 0,
-      xp_earned: qualifiesTrip ? 100 : 0,
+      xp_earned: qualifiesTrip ? previewXpForCountedTrip(roundedDist, tripSafetyScore) : 0,
       origin: originName,
       destination: destName,
       date: new Date().toLocaleDateString(),
@@ -1307,7 +1301,7 @@ export function useDriveNavigation(params: {
     api.post('/api/trips/complete', {
       distance_miles: roundedDist,
       duration_seconds: durationSec,
-      safety_score: 85,
+      safety_score: tripSafetyScore,
       started_at: startedAt,
       ended_at: endedAtIso,
       origin: originName,
@@ -1320,39 +1314,14 @@ export function useDriveNavigation(params: {
       incidents_reported: 0,
     }).then(async (res) => {
       if (!res.success || !res.data) return;
-      const body = res.data as Record<string, unknown>;
-      const d = (body?.data as Record<string, unknown> | undefined) ?? body;
-      const apiCounted = d?.counted !== false && d?.trip_id != null;
-      const profRaw = d?.profile as Record<string, unknown> | undefined;
-      const profileSnap =
-        profRaw && typeof profRaw === 'object'
-          ? {
-              total_miles:
-                profRaw.total_miles != null ? Number(profRaw.total_miles) : undefined,
-              total_trips:
-                profRaw.total_trips != null ? Number(profRaw.total_trips) : undefined,
-              gems: profRaw.gems != null ? Number(profRaw.gems) : undefined,
-              xp: profRaw.xp != null ? Number(profRaw.xp) : undefined,
-            }
-          : undefined;
-
-      setTripSummary((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          gems_earned: Number(d?.gems_earned ?? prev.gems_earned),
-          xp_earned: Number(d?.xp_earned ?? prev.xp_earned),
-          safety_score: Number(d?.safety_score ?? prev.safety_score),
-          counted: apiCounted,
-          profile_totals: profileSnap ?? prev.profile_totals,
-        };
-      });
-      if (!apiCounted) return;
-      applyTripCompleteProfileToUser(updateUserRef.current, d?.profile);
+      setTripSummary((prev) => (prev ? mergeTripCompleteResponse(prev, res.data) : prev));
+      const d = unwrapTripCompleteData(res.data);
+      if (d.counted === false || d.trip_id == null) return;
+      applyTripCompleteProfileToUser(updateUserRef.current, d.profile);
       await refreshUserFromServerRef.current();
       bumpStatsVersionRef.current();
     }).catch(() => { /* offline — summary already shown */ });
-  }, [navigationData, navigationProgressCoord, user?.isPremium]);
+  }, [navigationData, navigationProgressCoord, user?.safetyScore]);
 
   const dismissTripSummary = useCallback(() => setTripSummary(null), []);
 

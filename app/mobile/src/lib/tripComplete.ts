@@ -4,7 +4,7 @@
  * (`tsx --test`).
  */
 
-import type { TripSummary } from '../hooks/useDriveNavigation';
+import type { TripSummary } from '../types/tripSummary';
 
 /** Shape of the unwrapped `/api/trips/complete` success body (inside `data`). */
 export interface TripCompleteApiData {
@@ -16,6 +16,7 @@ export interface TripCompleteApiData {
   distance_miles?: number;
   duration_seconds?: number;
   avg_speed_mph?: number;
+  max_speed_mph?: number;
   fuel_used_gallons?: number;
   origin?: string;
   destination?: string;
@@ -56,6 +57,8 @@ export function mergeTripCompleteResponse(base: TripSummary, body: unknown): Tri
           total_trips: profRaw.total_trips != null ? Number(profRaw.total_trips) : undefined,
           gems: profRaw.gems != null ? Number(profRaw.gems) : undefined,
           xp: profRaw.xp != null ? Number(profRaw.xp) : undefined,
+          level: profRaw.level != null ? Number(profRaw.level) : undefined,
+          safety_score: profRaw.safety_score != null ? Number(profRaw.safety_score) : undefined,
         }
       : undefined;
 
@@ -69,6 +72,7 @@ export function mergeTripCompleteResponse(base: TripSummary, body: unknown): Tri
     destination: typeof d.destination === 'string' && d.destination.trim() ? d.destination : base.destination,
     duration_seconds: d.duration_seconds != null ? Number(d.duration_seconds) : base.duration_seconds,
     avg_speed_mph: d.avg_speed_mph != null ? Number(d.avg_speed_mph) : base.avg_speed_mph,
+    max_speed_mph: d.max_speed_mph != null ? Number(d.max_speed_mph) : base.max_speed_mph,
     fuel_used_gallons: d.fuel_used_gallons != null ? Number(d.fuel_used_gallons) : base.fuel_used_gallons,
     counted: apiCounted,
     profile_totals: profileSnap ?? base.profile_totals,

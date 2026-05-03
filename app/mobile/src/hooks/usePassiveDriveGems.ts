@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { api } from '../api/client';
 import { estimateFuelGallons } from '../utils/driveMetrics';
 import type { Coordinate } from '../types';
+import { unwrapTripCompleteData } from '../lib/tripComplete';
 
 const MIN_SPEED_MPH = 4;
 const STATIONARY_MS = 120_000;
@@ -24,7 +25,7 @@ function haversineMeters(a: Coordinate, b: Coordinate): number {
   return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
-type UserLite = { isPremium?: boolean } | null | undefined;
+type UserLite = { isPremium?: boolean; safetyScore?: number } | null | undefined;
 
 function applyTripCompleteToUser(
   updateUser: (p: {
@@ -116,13 +117,17 @@ export function usePassiveDriveGems(opts: {
     const maxSpeed = Math.round(Math.max(avgSpeed, maxSpeedSeen) * 10) / 10;
     const fuelGal = Math.round(estimateFuelGallons(roundedDist) * 1000) / 1000;
 
+    const tripSafety = Math.round(Math.max(0, Math.min(100, Number(user?.safetyScore ?? 85))));
+
     try {
       const res = await api.post<Record<string, unknown>>('/api/trips/complete', {
         distance_miles: roundedDist,
         duration_seconds: durationSec,
-        safety_score: 85,
+        safety_score: tripSafety,
         started_at: new Date(start).toISOString(),
         ended_at: new Date(now).toISOString(),
+        origin: 'Background drive',
+        destination: 'Ended here',
         avg_speed_mph: avgSpeed,
         max_speed_mph: maxSpeed,
         fuel_used_gallons: fuelGal,
@@ -131,18 +136,16 @@ export function usePassiveDriveGems(opts: {
         incidents_reported: 0,
       });
       if (!res.success || !res.data) return;
-      const body = res.data as Record<string, unknown>;
-      const d = (body.data as Record<string, unknown> | undefined) ?? body;
-      const inner = (d?.data as Record<string, unknown> | undefined) ?? d;
-      const apiCounted = inner?.counted !== false && inner?.trip_id != null;
+      const payload = unwrapTripCompleteData(res.data);
+      const apiCounted = payload.counted !== false && payload.trip_id != null;
       if (!apiCounted) return;
-      applyTripCompleteToUser(updateUser, inner);
+      applyTripCompleteToUser(updateUser, payload as Record<string, unknown>);
       await refreshUserFromServer();
       bumpStatsVersion();
     } catch {
       /* offline */
     }
-  }, [user?.isPremium, updateUser, refreshUserFromServer, bumpStatsVersion]);
+  }, [user?.safetyScore, updateUser, refreshUserFromServer, bumpStatsVersion]);
 
   useEffect(() => {
     if (wasNavigating.current && !isNavigating) {

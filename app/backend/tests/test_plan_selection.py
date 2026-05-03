@@ -190,7 +190,7 @@ class TestOnboardingStatus:
 
 
 class TestTripCompletionWithMultiplier:
-    """Trip completion: 10-minute chunk gems (gem_economy.trip_gems_from_duration_minutes). Requires auth."""
+    """Trip completion: flat trip gems (`gem_economy`). Requires auth."""
 
     _QUALIFYING_BODY = {
         "distance_miles": 1.0,
@@ -203,7 +203,7 @@ class TestTripCompletionWithMultiplier:
         reason="Set TEST_USER_JWT (Bearer token for a test user) to run trip completion tests",
     )
     def test_trip_complete_basic_duration_tier(self):
-        """POST /api/trips/complete — first full 10 min → 15 gems non-premium (chunk rule)."""
+        """POST /api/trips/complete — flat gems + bounded XP (see `_compute_trip_rewards`)."""
         token = os.environ["TEST_USER_JWT"].strip()
         headers = {"Authorization": f"Bearer {token}"}
         requests.post(f"{BASE_URL}/api/user/plan", json={"plan": "basic"}, headers=headers)
@@ -218,8 +218,9 @@ class TestTripCompletionWithMultiplier:
         data = response.json()
         assert data["success"] is True
         inner = data.get("data") or {}
-        assert inner.get("gems_earned") == 15
-        print(f"✓ Trip complete: {inner.get('gems_earned')} gems (10-min chunk, basic)")
+        assert inner.get("gems_earned") == 5
+        assert inner.get("xp_earned") == 20
+        print(f"✓ Trip complete: {inner.get('gems_earned')} gems, {inner.get('xp_earned')} XP (basic)")
 
     @pytest.mark.skip(reason="Premium is enforced via checkout; cannot toggle via /api/user/plan in tests")
     def test_trip_complete_premium_plan(self):

@@ -62,6 +62,7 @@ test('mergeTripCompleteResponse: merges tracking metrics used by trip summary', 
       distance_miles: 12.45,
       duration_seconds: 1840,
       avg_speed_mph: 24.36,
+      max_speed_mph: 58.5,
       fuel_used_gallons: 0.5,
       origin: 'Downtown pickup',
       destination: 'Airport dropoff',
@@ -71,6 +72,7 @@ test('mergeTripCompleteResponse: merges tracking metrics used by trip summary', 
   assert.equal(merged.distance, 12.45);
   assert.equal(merged.duration_seconds, 1840);
   assert.equal(merged.avg_speed_mph, 24.36);
+  assert.equal(merged.max_speed_mph, 58.5);
   assert.equal(merged.fuel_used_gallons, 0.5);
   assert.equal(merged.origin, 'Downtown pickup');
   assert.equal(merged.destination, 'Airport dropoff');
