@@ -902,14 +902,14 @@ export default function MapScreen() {
     nav.sdkNavLocation?.speed ??
     nav.navigationProgress?.displayCoord?.speedMps ??
     speed * 0.44704;
-  /** Matcher / NAV speed thinks we're creeping or stopped (~1.7 mph cutoff). */
-  const stoppedForPuckSmoothing = navSpeedMpsForSmoothing < 0.75;
+  /** Matcher / NAV speed thinks we're creeping or stopped (~2.35 mph cutoff). */
+  const stoppedForPuckSmoothing = navSpeedMpsForSmoothing < 1.05;
   /** Tight stationary band + raw GPS sanity — freezes eased fraction + suppresses phantom DR. */
   const freezeNavSmoothing =
     nav.isNavigating &&
     Number.isFinite(navSpeedMpsForSmoothing) &&
-    navSpeedMpsForSmoothing <= 0.42 &&
-    speed <= 1.4;
+    navSpeedMpsForSmoothing <= 0.75 &&
+    speed <= 2.0;
   /**
    * When we're slow/stopped, hold the NAV target arc-length unless the matcher
    * jumps a lot at once (geometry refresh / reroute). The old `< 6 m` gate let
@@ -958,7 +958,7 @@ export default function MapScreen() {
   const deadReckoningSpeedMps =
     freezeNavSmoothing ||
     stoppedForPuckSmoothing ||
-    smoothingSpeedMps < 4.0 ||
+    smoothingSpeedMps < 1.35 ||
     !(consensusDrSpeedMps > 1.2)
       ? 0
       : consensusDrSpeedMps;
@@ -977,8 +977,8 @@ export default function MapScreen() {
       ? Math.max(0.005, Math.min(0.05, 100 / navPolylineLenMetersRaw))
       : 0.02;
   const smoothedFraction = useSmoothedNavFraction(stabilizedTargetFraction, nav.isNavigating, {
-    /** Softer exponential τ between ticks — visibly smoother glide with modest extra lag vs the prior 78–118ms band. */
-    timeConstantMs: drivingMode === 'calm' ? 152 : drivingMode === 'sport' ? 108 : 128,
+    /** Short exponential τ: enough easing to glide, little enough to avoid visible puck/camera lag. */
+    timeConstantMs: drivingMode === 'calm' ? 112 : drivingMode === 'sport' ? 78 : 92,
     snapDeltaFraction,
     enabled: true,
     freezeWhenStationary: freezeNavSmoothing || stoppedForPuckSmoothing,
@@ -987,8 +987,8 @@ export default function MapScreen() {
         ? {
             polylineLengthMeters: navPolylineLenMetersRaw,
             speedMps: deadReckoningSpeedMps,
-            staleThresholdMs: drivingMode === 'sport' ? 90 : drivingMode === 'adaptive' ? 120 : 165,
-            maxStaleMs: drivingMode === 'sport' ? 3000 : drivingMode === 'adaptive' ? 2800 : 2500,
+            staleThresholdMs: drivingMode === 'sport' ? 70 : drivingMode === 'adaptive' ? 90 : 125,
+            maxStaleMs: drivingMode === 'sport' ? 3200 : drivingMode === 'adaptive' ? 3000 : 2800,
           }
         : undefined,
   });
@@ -1470,9 +1470,9 @@ export default function MapScreen() {
    * `lineTrimOffset` can intermittently hide the whole route after Start.
    *
    * Native ShapeSource updates are expensive, so the split sent to RouteOverlay
-   * is decimated at roughly one to two meters while the puck/camera keep reading the
+   * is decimated below the visible puck radius while the puck/camera keep reading the
    * full RAF-smoothed fraction. That keeps the gray trail visually attached
-   * to the puck without rebuilding route GeoJSON sixty times per second.
+   * to the puck without a visible break at the seam.
    */
   const polylineToRenderLenMeters = useMemo(
     () => (polylineToRender && polylineToRender.length >= 2 ? polylineLengthMeters(polylineToRender) : 0),
@@ -1480,7 +1480,7 @@ export default function MapScreen() {
   );
   const routeOverlayCumMeters = useMemo(() => {
     if (!nav.isNavigating || !polylineToRender || polylineToRenderLenMeters <= 1) return 0;
-    const stepM = drivingMode === 'sport' ? 1.25 : drivingMode === 'adaptive' ? 1.5 : 1.75;
+    const stepM = drivingMode === 'sport' ? 0.4 : drivingMode === 'adaptive' ? 0.5 : 0.65;
     const meters = Math.max(0, Math.min(polylineToRenderLenMeters, smoothedFraction * polylineToRenderLenMeters));
     return Math.max(0, Math.min(polylineToRenderLenMeters, Math.round(meters / stepM) * stepM));
   }, [nav.isNavigating, polylineToRender, polylineToRenderLenMeters, drivingMode, smoothedFraction]);
@@ -1810,9 +1810,9 @@ export default function MapScreen() {
     const animationDuration = isNewNavSession
       ? 0
       : Math.max(
-          95,
+          stoppedForCamera ? 140 : 55,
           Math.min(
-            420,
+            stoppedForCamera ? 260 : 240,
             Math.min(
               Number.isFinite(navCameraAnimationDuration) ? navCameraAnimationDuration! : 420,
               navCameraFollowTuning.animationDurationMs,
@@ -1990,6 +1990,18 @@ export default function MapScreen() {
   const [mapCameraHeadingDeg, setMapCameraHeadingDeg] = useState(0);
   const mapZoomDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastMapCameraHeadingRef = useRef<{ value: number; at: number }>({ value: 0, at: 0 });
+  /**
+   * While the navigation follow camera is locked, use the commanded bearing
+   * for puck compensation instead of the delayed `onCameraChanged` callback.
+   * That keeps the chevron visually normalized during turns: puck, HUD and
+   * camera all agree on the same heading target every frame.
+   */
+  const navPuckMapBearingDeg = useMemo(() => {
+    if (nav.isNavigating && cameraLocked && Number.isFinite(navPuckHeading)) {
+      return ((navPuckHeading % 360) + 360) % 360;
+    }
+    return mapCameraHeadingDeg;
+  }, [nav.isNavigating, cameraLocked, navPuckHeading, mapCameraHeadingDeg]);
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
   const [nearbyOffersPickerOpen, setNearbyOffersPickerOpen] = useState(false);
   useEffect(() => {
@@ -4779,7 +4791,7 @@ export default function MapScreen() {
               lng={navDisplayCoord.lng}
               lat={navDisplayCoord.lat}
               course={Number.isFinite(navPuckHeading) ? navPuckHeading : -1}
-              mapBearingDeg={mapCameraHeadingDeg}
+              mapBearingDeg={navPuckMapBearingDeg}
               color={navRouteColors.routeColor}
               accuracy={nav.sdkNavLocation?.horizontalAccuracy ?? null}
               speedMps={

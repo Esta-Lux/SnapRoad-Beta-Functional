@@ -30,17 +30,17 @@ import { haversineMeters } from '../utils/distance';
 /* ── Stationary-lock thresholds ──────────────────────────────────────── */
 
 /** Below this smoothed speed, we *consider* the device stationary. */
-export const STATIONARY_SPEED_MPH = 1.2;
+export const STATIONARY_SPEED_MPH = 1.6;
 /** Below this raw speed, we *consider* the device stationary. */
-export const STATIONARY_RAW_SPEED_MPS = 0.6;
+export const STATIONARY_RAW_SPEED_MPS = 0.85;
 /**
  * Below this raw speed we lock **immediately** instead of waiting for the
  * dwell window. At literal zero / parking-lot speeds, the polyline-snapped
  * matched coord can creep with dead-reckoning, so we want to freeze ASAP.
  */
-export const STATIONARY_INSTANT_LOCK_RAW_MPS = 0.18;
+export const STATIONARY_INSTANT_LOCK_RAW_MPS = 0.35;
 /** Must hold for this long before the lock engages (avoids brief 0-mph dips). */
-export const STATIONARY_DWELL_MS = 420;
+export const STATIONARY_DWELL_MS = 260;
 /** Above this smoothed speed we release the lock immediately. */
 export const MOTION_RELEASE_SPEED_MPH = 3.0;
 /** Brief debounce after motion is detected to avoid quick re-locks. */

@@ -4,7 +4,7 @@ import MapboxGL, { isMapAvailable } from '../../utils/mapbox';
 import { sortAndCapMarkers, type MarkerCoordinate } from './markerDensity';
 
 /** Hide statewide average badges when zoomed out (see `markerDensity` gasPrice caps). */
-export const GAS_PRICE_LAYER_MIN_ZOOM = 11;
+export const GAS_PRICE_LAYER_MIN_ZOOM = 12;
 
 export type GasPriceMapPoint = {
   id: string;
