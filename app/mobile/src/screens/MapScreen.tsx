@@ -78,6 +78,7 @@ import ReportMarkers from '../components/map/ReportMarkers';
 import FriendMarkers from '../components/map/FriendMarkers';
 import CameraMarkers from '../components/map/CameraMarkers';
 import type { CameraLocation, CameraViewFeed } from '../components/map/CameraMarkers';
+import GasPriceMarkers, { type GasPriceMapPoint } from '../components/map/GasPriceMarkers';
 import TrafficCameraSheet from '../components/map/TrafficCameraSheet';
 import TrafficLayer from '../components/map/TrafficLayer';
 import IncidentHeatmap from '../components/map/IncidentHeatmap';
@@ -900,12 +901,21 @@ export default function MapScreen() {
     nav.sdkNavLocation?.speed ??
     nav.navigationProgress?.displayCoord?.speedMps ??
     speed * 0.44704;
+  /** Matcher / NAV speed thinks we're creeping or stopped (~1.7 mph cutoff). */
   const stoppedForPuckSmoothing = navSpeedMpsForSmoothing < 0.75;
+  /** Tight stationary band + raw GPS sanity — freezes eased fraction + suppresses phantom DR. */
   const freezeNavSmoothing =
     nav.isNavigating &&
     Number.isFinite(navSpeedMpsForSmoothing) &&
     navSpeedMpsForSmoothing <= 0.42 &&
     speed <= 1.4;
+  /**
+   * When we're slow/stopped, hold the NAV target arc-length unless the matcher
+   * jumps a lot at once (geometry refresh / reroute). The old `< 6 m` gate let
+   * phantom forward creep stack across ticks and drive the eased puck toward
+   * the destination while the car was parked.
+   */
+  const NAV_STATIONARY_HOLD_MAX_DELTA_M = 42;
   const stabilizedTargetFraction = useMemo(() => {
     if (!nav.isNavigating || navPolylineLenMetersRaw <= 1) {
       stableNavTargetFractionRef.current = targetFraction;
@@ -913,7 +923,10 @@ export default function MapScreen() {
     }
     const prev = stableNavTargetFractionRef.current;
     const deltaMeters = Math.abs(targetFraction - prev) * navPolylineLenMetersRaw;
-    if (freezeNavSmoothing || (stoppedForPuckSmoothing && deltaMeters < 6)) {
+    const holdStoppedTarget =
+      stoppedForPuckSmoothing &&
+      deltaMeters < NAV_STATIONARY_HOLD_MAX_DELTA_M;
+    if (freezeNavSmoothing || holdStoppedTarget) {
       return prev;
     }
     stableNavTargetFractionRef.current = targetFraction;
@@ -927,10 +940,27 @@ export default function MapScreen() {
    */
   const lastKnownNavSpeedMps =
     nav.navigationProgress?.displayCoord?.speedMps ?? 0;
-  const deadReckoningSpeedMps =
-    Number.isFinite(lastKnownNavSpeedMps) && lastKnownNavSpeedMps > 1.2
-      ? lastKnownNavSpeedMps
+  const smoothingSpeedMps =
+    typeof navSpeedMpsForSmoothing === 'number' && Number.isFinite(navSpeedMpsForSmoothing)
+      ? Math.max(0, navSpeedMpsForSmoothing)
       : 0;
+  const displayCoordSpeedMps =
+    typeof lastKnownNavSpeedMps === 'number' && Number.isFinite(lastKnownNavSpeedMps)
+      ? Math.max(0, lastKnownNavSpeedMps)
+      : smoothingSpeedMps;
+  /**
+   * Require display + NAV speed to agree — stale `displayCoord.speed` alone
+   * must not extrapolate along the polyline while the matcher already reports
+   * near-zero ground speed at a stoplight/tunnel portal.
+   */
+  const consensusDrSpeedMps = Math.min(smoothingSpeedMps, displayCoordSpeedMps);
+  const deadReckoningSpeedMps =
+    freezeNavSmoothing ||
+    stoppedForPuckSmoothing ||
+    smoothingSpeedMps < 4.0 ||
+    !(consensusDrSpeedMps > 1.2)
+      ? 0
+      : consensusDrSpeedMps;
   /**
    * Scale the "teleport" threshold by route length so it's always bounded
    * in *meters*, not percent. A fixed 2% threshold on a 100-mile route is
@@ -946,16 +976,16 @@ export default function MapScreen() {
       ? Math.max(0.005, Math.min(0.05, 100 / navPolylineLenMetersRaw))
       : 0.02;
   const smoothedFraction = useSmoothedNavFraction(stabilizedTargetFraction, nav.isNavigating, {
-    /** Tighter time constants so puck + trim seam catch GPS/SDK ticks faster (less “laggy” slide). */
-    timeConstantMs: drivingMode === 'calm' ? 118 : drivingMode === 'sport' ? 78 : 98,
+    /** Softer exponential τ between ticks — visibly smoother glide with modest extra lag vs the prior 78–118ms band. */
+    timeConstantMs: drivingMode === 'calm' ? 152 : drivingMode === 'sport' ? 108 : 128,
     snapDeltaFraction,
     enabled: true,
-    freezeWhenStationary: freezeNavSmoothing,
+    freezeWhenStationary: freezeNavSmoothing || stoppedForPuckSmoothing,
     deadReckoning:
       navPolylineLenMetersRaw > 1
         ? {
             polylineLengthMeters: navPolylineLenMetersRaw,
-            speedMps: freezeNavSmoothing ? 0 : deadReckoningSpeedMps,
+            speedMps: deadReckoningSpeedMps,
             staleThresholdMs: drivingMode === 'sport' ? 90 : drivingMode === 'adaptive' ? 120 : 165,
             maxStaleMs: drivingMode === 'sport' ? 3000 : drivingMode === 'adaptive' ? 2800 : 2500,
           }
@@ -1927,6 +1957,7 @@ export default function MapScreen() {
   );
 
   const [cameraLocations, setCameraLocations] = useState<CameraLocation[]>([]);
+  const [gasPricePoints, setGasPricePoints] = useState<GasPriceMapPoint[]>([]);
   const [selectedTrafficCamera, setSelectedTrafficCamera] = useState<CameraLocation | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<{
     name: string;
@@ -1970,7 +2001,8 @@ export default function MapScreen() {
   // ── Layers ──
   const { showTraffic, showIncidents, showCameras, setShowTraffic, setShowIncidents, setShowCameras,
     showConstruction, setShowConstruction,
-    showPhotoReports, setShowPhotoReports, showTrafficSafety, setShowTrafficSafety } = useMapLayers();
+    showPhotoReports, setShowPhotoReports, showTrafficSafety, setShowTrafficSafety,
+    showGasPrices, setShowGasPrices } = useMapLayers();
   /** Apple Maps baseline: safety cameras should be visible during active nav even if the explore layer is off. */
   const trafficSafetyWanted = showTrafficSafety || nav.isNavigating;
   /** Camera POIs are a premium browse layer, but active navigation should still populate safety context. */
@@ -2451,6 +2483,39 @@ export default function MapScreen() {
       })
       .catch((e) => logMapDataIssue('GET /api/map/cameras', e));
   }, [cameraPoisWanted, mapTabFocused, Math.round(poiSearchCoord.lat * 100), Math.round(poiSearchCoord.lng * 100)]);
+
+  useEffect(() => {
+    if (!showGasPrices || !mapTabFocused) {
+      setGasPricePoints([]);
+      return;
+    }
+    api
+      .get<Record<string, unknown>>('/api/map/gas-prices')
+      .then((r) => {
+        if (!r.success || r.data == null) {
+          if (!r.success) logMapDataIssue('GET /api/map/gas-prices', r.error);
+          return;
+        }
+        const body = r.data as Record<string, unknown>;
+        const items = body.data;
+        if (!Array.isArray(items)) return;
+        const mapped = items
+          .map((row: Record<string, unknown>) => ({
+            id: String(row.id ?? ''),
+            state: String(row.state ?? ''),
+            lat: Number(row.lat),
+            lng: Number(row.lng),
+            currency: typeof row.currency === 'string' ? row.currency : undefined,
+            regular: (row.regular != null ? String(row.regular) : null) as string | null,
+            midGrade: (row.midGrade != null ? String(row.midGrade) : null) as string | null,
+            premium: (row.premium != null ? String(row.premium) : null) as string | null,
+            diesel: (row.diesel != null ? String(row.diesel) : null) as string | null,
+          }))
+          .filter((p: GasPriceMapPoint) => p.id && p.state && Number.isFinite(p.lat) && Number.isFinite(p.lng));
+        setGasPricePoints(mapped);
+      })
+      .catch((e) => logMapDataIssue('GET /api/map/gas-prices', e));
+  }, [showGasPrices, mapTabFocused]);
 
   const refreshPhotoReportsNearby = useCallback(() => {
     if (!showPhotoReports) return;
@@ -4531,6 +4596,13 @@ export default function MapScreen() {
               referenceCoordinate={nav.isNavigating ? navDisplayCoord : null}
             />
           )}
+          {showGasPrices && !nav.showRoutePreview && (
+            <GasPriceMarkers
+              points={gasPricePoints}
+              zoomLevel={mapZoomLevel}
+              referenceCoordinate={poiSearchCoord}
+            />
+          )}
           <FriendMarkers
             zoomLevel={mapZoomLevel}
             friends={friendLocationsVisible}
@@ -5347,7 +5419,6 @@ export default function MapScreen() {
           onEndNavigation={nav.stopNavigation}
           bottomInset={insets.bottom}
           voiceMuted={navVoiceMuted}
-          drivenMiles={nav.traveledDistanceMeters / 1609.34}
           onVoiceToggle={handleNavVoiceToggle}
           onVoiceRepeat={() => {
             void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -5994,6 +6065,13 @@ export default function MapScreen() {
             <Text style={[s.layerSectionT, { color: colors.text }]}>Layers</Text>
             {[
               { k: 'traffic', l: 'Traffic', ic: 'car-outline' as const, v: showTraffic, t: setShowTraffic },
+              {
+                k: 'gasPrices',
+                l: 'Gas prices (state avg.)',
+                ic: 'flame-outline' as const,
+                v: showGasPrices,
+                t: setShowGasPrices,
+              },
               { k: 'incidents', l: 'Incidents', ic: 'warning-outline' as const, v: showIncidents, t: setShowIncidents },
               {
                 k: 'cameras',

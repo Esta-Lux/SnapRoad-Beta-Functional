@@ -56,8 +56,8 @@ const ACCURACY_RING_THRESHOLD_M = 15;
  * heading at the start of a turn. 110ms moving / 60ms stopped feels
  * crisp without ever showing a hard snap.
  */
-const ROTATION_EASE_MS = 110;
-const ROTATION_EASE_STOPPED_MS = 60;
+const ROTATION_EASE_MS = 150;
+const ROTATION_EASE_STOPPED_MS = 85;
 /** A previously-valid `course` becomes stale this fast — never reuse beyond it. */
 const STALE_COURSE_AFTER_MS = 1500;
 
@@ -217,8 +217,8 @@ function NavSdkPuckImpl({
   }, [effectiveCourse, mapBearingDeg]);
 
   const positionEaseEnabled = !mirrorNativePosition;
-  /** Slightly longer τ than a raw 6–7 Hz matcher so the puck glides between fixes without lagging far behind. */
-  const smoothCoord = useSmoothCoordinate(lat, lng, moving ? 480 : 560, positionEaseEnabled);
+  /** Longer τ than earlier builds so MarkerView coords ease more visibly between RAF frames (fraction smoothing still leads). */
+  const smoothCoord = useSmoothCoordinate(lat, lng, moving ? 620 : 720, positionEaseEnabled);
   const { lat: puckLat, lng: puckLng } = React.useMemo(() => {
     const baseLat = mirrorNativePosition ? lat : smoothCoord.lat;
     const baseLng = mirrorNativePosition ? lng : smoothCoord.lng;

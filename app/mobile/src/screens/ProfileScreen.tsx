@@ -57,6 +57,21 @@ import { ProfileStatsStrip, ProfileTabBar } from '../components/profile/ProfileS
 import PlaceAlertsDashboardModal from '../components/profile/PlaceAlertsDashboardModal';
 import { registerCommutePushToken } from '../utils/pushNotifications';
 
+/** Accept flat arrays or legacy envelopes so Insights trip KPIs never silently read as empty. */
+function recentTripsListFromPayload(root: unknown): unknown[] {
+  if (Array.isArray(root)) return root;
+  const o = root && typeof root === 'object' ? (root as Record<string, unknown>) : null;
+  if (!o) return [];
+  const layer1 = o.data;
+  const layer1Obj =
+    layer1 && typeof layer1 === 'object' && !Array.isArray(layer1) ? (layer1 as Record<string, unknown>) : null;
+  if (Array.isArray(o.recent_trips)) return o.recent_trips;
+  if (layer1Obj && Array.isArray(layer1Obj.recent_trips)) return layer1Obj.recent_trips;
+  if (Array.isArray(layer1)) return layer1;
+  if (layer1Obj && Array.isArray(layer1Obj.data)) return layer1Obj.data as unknown[];
+  return [];
+}
+
 export default function ProfileScreen() {
   const navigation = useNavigation<ProfileStackScreenNavigationProp>();
   const route = useRoute<RouteProp<ProfileStackParamList, 'ProfileMain'>>();
@@ -329,30 +344,53 @@ export default function ProfileScreen() {
       }
       updateUserRef.current(userPatch);
       const historyRoot = unwrapProfileApiData(tripsHistoryRes?.data);
-      const recentTrips = Array.isArray(historyRoot) ? historyRoot : [];
+      const recentTrips = recentTripsListFromPayload(historyRoot);
       setTripHistoryRows(
-        recentTrips.map((t: Record<string, unknown>, idx: number) => {
-          const rawDate = String(t.ended_at ?? t.date ?? '');
+        recentTrips.map((raw: unknown, idx: number) => {
+          const t = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+          const rawEnded = String(t.ended_at ?? t.date ?? '').trim();
+          const rawStarted = String(t.started_at ?? '').trim();
+          const anchorRaw = rawEnded || rawStarted;
           let dateStr = '';
           let timeStr = '';
-          let tripEndedAtIso = rawDate;
-          try {
-            const d = new Date(rawDate);
-            if (!Number.isNaN(d.getTime())) {
-              dateStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-              timeStr = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-              tripEndedAtIso = d.toISOString();
+          let tripEndedAtIso = '';
+          let startedAtIso = '';
+
+          const toIsoIfValid = (s: string): string => {
+            if (!s) return '';
+            try {
+              const d = new Date(s);
+              if (!Number.isNaN(d.getTime())) return d.toISOString();
+            } catch {
+              /* noop */
             }
-          } catch {
-            /* keep raw */
+            return '';
+          };
+
+          startedAtIso = toIsoIfValid(rawStarted);
+          tripEndedAtIso = toIsoIfValid(rawEnded);
+
+          if (anchorRaw) {
+            try {
+              const d = new Date(anchorRaw);
+              if (!Number.isNaN(d.getTime())) {
+                dateStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+                timeStr = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+              }
+            } catch {
+              /* noop */
+            }
           }
+          if (!tripEndedAtIso) tripEndedAtIso = startedAtIso;
+          if (!startedAtIso) startedAtIso = tripEndedAtIso;
+
           const dist =
             t.distance_miles != null ? Number(t.distance_miles) : Number(t.distance ?? 0);
           const durSec = Number(t.duration ?? 0);
           const durMin = t.duration_minutes != null ? Number(t.duration_minutes) : Math.round(durSec / 60);
           return {
             id: String(t.id ?? idx),
-            date: dateStr || rawDate,
+            date: dateStr || rawEnded || anchorRaw || '—',
             time: timeStr,
             origin: String(t.origin ?? 'Start').trim() || 'Start',
             destination: String(t.destination ?? 'End').trim() || 'End',
@@ -367,10 +405,11 @@ export default function ProfileScreen() {
             hard_braking_events: Number(t.hard_braking_events ?? 0),
             speeding_events: Number(t.speeding_events ?? 0),
             tripEndedAtIso,
+            startedAtIso,
           };
         }).sort((a, b) => {
-          const ams = Date.parse(a.tripEndedAtIso || '');
-          const bms = Date.parse(b.tripEndedAtIso || '');
+          const ams = Date.parse(a.tripEndedAtIso || a.startedAtIso || '');
+          const bms = Date.parse(b.tripEndedAtIso || b.startedAtIso || '');
           return (Number.isFinite(bms) ? bms : 0) - (Number.isFinite(ams) ? ams : 0);
         }),
       );

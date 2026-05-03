@@ -11,6 +11,8 @@ interface LayerState {
   showPhotoReports: boolean;
   /** Open data speed camera / traffic safety POIs (not available in some regions). */
   showTrafficSafety: boolean;
+  /** State-average regular gas prices (CollectAPI via backend proxy). */
+  showGasPrices: boolean;
 }
 
 const DEFAULTS: LayerState = {
@@ -21,6 +23,7 @@ const DEFAULTS: LayerState = {
   showConstruction: false,
   showPhotoReports: false,
   showTrafficSafety: false,
+  showGasPrices: true,
 };
 
 function loadSaved(): LayerState {
@@ -54,6 +57,7 @@ export function useMapLayers() {
   const setShowConstruction = useCallback((v: boolean) => setState((p) => ({ ...p, showConstruction: v })), []);
   const setShowPhotoReports = useCallback((v: boolean) => setState((p) => ({ ...p, showPhotoReports: v })), []);
   const setShowTrafficSafety = useCallback((v: boolean) => setState((p) => ({ ...p, showTrafficSafety: v })), []);
+  const setShowGasPrices = useCallback((v: boolean) => setState((p) => ({ ...p, showGasPrices: v })), []);
 
   return {
     ...state,
@@ -64,5 +68,6 @@ export function useMapLayers() {
     setShowConstruction,
     setShowPhotoReports,
     setShowTrafficSafety,
+    setShowGasPrices,
   };
 }

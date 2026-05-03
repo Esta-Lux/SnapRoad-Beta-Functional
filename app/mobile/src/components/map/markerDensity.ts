@@ -1,6 +1,6 @@
 import { haversineMeters } from '../../utils/distance';
 
-export type MarkerDensityKind = 'camera' | 'cameraNavigating' | 'friend' | 'offer' | 'report';
+export type MarkerDensityKind = 'camera' | 'cameraNavigating' | 'friend' | 'offer' | 'report' | 'gasPrice';
 export type MarkerCoordinate = { lat: number; lng: number };
 
 /**
@@ -31,6 +31,13 @@ export function markerCapForZoom(kind: MarkerDensityKind, zoomLevel: number): nu
       return zoomLevel >= 15.5 ? 104 : zoomLevel >= 14 ? 72 : zoomLevel >= 12.25 ? 44 : 28;
     case 'report':
       return zoomLevel >= 15.5 ? 100 : zoomLevel >= 14 ? 70 : 40;
+    case 'gasPrice':
+      if (zoomLevel < 12) return 0;
+      if (zoomLevel >= 15.5) return 56;
+      if (zoomLevel >= 14) return 40;
+      if (zoomLevel >= 13) return 28;
+      if (zoomLevel >= 12.5) return 22;
+      return 14;
     default:
       return 40;
   }
@@ -65,6 +72,13 @@ function visibleRadiusMetersForKind(kind: MarkerDensityKind, zoomLevel: number):
     if (zoomLevel >= 14) return 7600;
     if (zoomLevel >= 13) return 13000;
     if (zoomLevel >= 12) return 22000;
+  }
+  if (kind === 'gasPrice') {
+    if (zoomLevel < 12) return 0;
+    if (zoomLevel >= 15) return 900_000;
+    if (zoomLevel >= 13.5) return 1_350_000;
+    if (zoomLevel >= 12.5) return 1_750_000;
+    return 2_200_000;
   }
   return approxVisibleRadiusMeters(zoomLevel);
 }

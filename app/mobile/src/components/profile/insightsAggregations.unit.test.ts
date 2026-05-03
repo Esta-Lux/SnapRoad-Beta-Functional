@@ -95,6 +95,19 @@ test('filterTripsInRange / filterGemTxInRange: only inside range', () => {
   assert.equal(inRange[0]!.id, '1');
 });
 
+test('filterTripsInRange: falls back to startedAtIso when tripEndedAtIso missing', () => {
+  const now = Date.parse('2026-04-30T12:00:00.000Z');
+  const r = { startMs: now - 3 * DAY_MS, endMs: now };
+  const startedMs = now - DAY_MS;
+  const trips: ProfileTripHistoryItem[] = [
+    trip(2, {
+      tripEndedAtIso: undefined,
+      startedAtIso: new Date(startedMs).toISOString(),
+    }, now),
+  ];
+  assert.equal(filterTripsInRange(trips, r).length, 1);
+});
+
 /* ── KPI math ──────────────────────────────────────────────────────── */
 
 test('computeKpis: empty list yields zeros', () => {
