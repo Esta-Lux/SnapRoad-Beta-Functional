@@ -73,13 +73,6 @@ function visibleRadiusMetersForKind(kind: MarkerDensityKind, zoomLevel: number):
     if (zoomLevel >= 13) return 13000;
     if (zoomLevel >= 12) return 22000;
   }
-  if (kind === 'gasPrice') {
-    if (zoomLevel < 12) return 0;
-    if (zoomLevel >= 15) return 900_000;
-    if (zoomLevel >= 13.5) return 1_350_000;
-    if (zoomLevel >= 12.5) return 1_750_000;
-    return 2_200_000;
-  }
   return approxVisibleRadiusMeters(zoomLevel);
 }
 
@@ -96,6 +89,21 @@ export function sortAndCapMarkers<T extends MarkerCoordinate>(
       !(Math.abs(item.lat) < 1e-7 && Math.abs(item.lng) < 1e-7),
   );
   if (!valid.length) return [];
+  if (kind === 'gasPrice') {
+    const cap = markerCapForZoom(kind, zoomLevel);
+    if (cap <= 0) return [];
+    /** Statewide anchors: avoid radius clipping (2M+ km gaps confuse the generic POI funnel). Always show nearest-N to the focal point. */
+    if (!reference || !Number.isFinite(reference.lat) || !Number.isFinite(reference.lng)) {
+      return valid.slice(0, cap);
+    }
+    const scored = valid.map((item) => ({
+      item,
+      distanceM: haversineMeters(reference.lat, reference.lng, item.lat, item.lng),
+    }));
+    scored.sort((a, b) => a.distanceM - b.distanceM);
+    return scored.slice(0, cap).map((s) => s.item);
+  }
+
   if (!reference) return valid.slice(0, markerCapForZoom(kind, zoomLevel));
 
   const radiusM = visibleRadiusMetersForKind(kind, zoomLevel);

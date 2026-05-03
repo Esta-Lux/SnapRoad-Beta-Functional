@@ -79,6 +79,7 @@ import FriendMarkers from '../components/map/FriendMarkers';
 import CameraMarkers from '../components/map/CameraMarkers';
 import type { CameraLocation, CameraViewFeed } from '../components/map/CameraMarkers';
 import GasPriceMarkers, { type GasPriceMapPoint } from '../components/map/GasPriceMarkers';
+import { gasPricePointsFromApiEnvelope } from '../components/map/gasPricesFromApi';
 import TrafficCameraSheet from '../components/map/TrafficCameraSheet';
 import TrafficLayer from '../components/map/TrafficLayer';
 import IncidentHeatmap from '../components/map/IncidentHeatmap';
@@ -1311,6 +1312,15 @@ export default function MapScreen() {
     location.lng,
   ]);
 
+  /** State-average gas pins: (0,0) breaks distance sort — use cap-only fallback until GPS is real. */
+  const gasMarkerReference = useMemo((): { lat: number; lng: number } | null => {
+    const lat = poiSearchCoord.lat;
+    const lng = poiSearchCoord.lng;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (Math.abs(lat) < 1e-5 && Math.abs(lng) < 1e-5) return null;
+    return { lat, lng };
+  }, [poiSearchCoord.lat, poiSearchCoord.lng]);
+
   /**
    * Chevron / camera bearing during navigation. The stabilizer above
    * ({@link navStablePuck.heading}) is now the single source of truth on
@@ -2496,22 +2506,7 @@ export default function MapScreen() {
           if (!r.success) logMapDataIssue('GET /api/map/gas-prices', r.error);
           return;
         }
-        const body = r.data as Record<string, unknown>;
-        const items = body.data;
-        if (!Array.isArray(items)) return;
-        const mapped = items
-          .map((row: Record<string, unknown>) => ({
-            id: String(row.id ?? ''),
-            state: String(row.state ?? ''),
-            lat: Number(row.lat),
-            lng: Number(row.lng),
-            currency: typeof row.currency === 'string' ? row.currency : undefined,
-            regular: (row.regular != null ? String(row.regular) : null) as string | null,
-            midGrade: (row.midGrade != null ? String(row.midGrade) : null) as string | null,
-            premium: (row.premium != null ? String(row.premium) : null) as string | null,
-            diesel: (row.diesel != null ? String(row.diesel) : null) as string | null,
-          }))
-          .filter((p: GasPriceMapPoint) => p.id && p.state && Number.isFinite(p.lat) && Number.isFinite(p.lng));
+        const mapped = gasPricePointsFromApiEnvelope(r.data);
         setGasPricePoints(mapped);
       })
       .catch((e) => logMapDataIssue('GET /api/map/gas-prices', e));
@@ -4600,7 +4595,7 @@ export default function MapScreen() {
             <GasPriceMarkers
               points={gasPricePoints}
               zoomLevel={mapZoomLevel}
-              referenceCoordinate={poiSearchCoord}
+              referenceCoordinate={gasMarkerReference}
             />
           )}
           <FriendMarkers
