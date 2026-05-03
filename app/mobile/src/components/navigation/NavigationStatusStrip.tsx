@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -52,8 +52,6 @@ type Props = {
   onVoiceToggle?: () => void;
   /** Long-press voice control: repeat last turn-by-turn cue (not mute). */
   onVoiceRepeat?: () => void;
-  /** Distance covered this navigation session (mi), from fused odometry + route progress. */
-  drivenMiles?: number | null;
 };
 
 function finiteOrFallback(value: unknown, fallback: number): number {
@@ -61,7 +59,7 @@ function finiteOrFallback(value: unknown, fallback: number): number {
 }
 
 export default React.memo(function NavigationStatusStrip({
-  drivingMode,
+  drivingMode: _drivingMode,
   modeConfig,
   isLight,
   liveEta,
@@ -76,14 +74,7 @@ export default React.memo(function NavigationStatusStrip({
   voiceMuted = false,
   onVoiceToggle,
   onVoiceRepeat,
-  drivenMiles = null,
 }: Props) {
-  const [calmExpanded, setCalmExpanded] = useState(false);
-
-  useEffect(() => {
-    if (drivingMode !== 'calm') setCalmExpanded(false);
-  }, [drivingMode]);
-
   const etaAccent = modeConfig.etaAccentColor;
   const etaBg = isLight ? modeConfig.etaBarBg : modeConfig.etaBarBgDark;
   const textPrimary = modeConfig.etaValueColor;
@@ -147,79 +138,34 @@ export default React.memo(function NavigationStatusStrip({
     return next;
   }, [speedMph]);
 
-  const secondaryLine = useCallback(() => {
+  const mphLabel = `${displayedSpeedMph} mph`;
+  const compactSpeedPx = Math.min(13, Math.max(11, Math.round(modeConfig.speedFontSize * 0.5)));
+
+  /** One compact speed line shared by Calm / Adaptive / Sport; color + scale from mode config. */
+  const secondaryNode = useMemo(() => {
     if (isRerouting) {
       return (
-        <Text style={[styles.secondary, { color: etaAccent }]} numberOfLines={1}>
+        <Text style={[styles.reroutingNote, { color: etaAccent }]} numberOfLines={1}>
           Recalculating…
         </Text>
       );
     }
-
-    if (drivingMode === 'calm') {
-      if (calmExpanded) {
-        return (
-          <Text style={[styles.secondary, { color: textSec }]} numberOfLines={1}>
-            <Text style={{ fontWeight: '600', color: textPrimary }}>{displayedSpeedMph} mph</Text>
-            <Text style={{ color: textSec }}> · Smooth drive</Text>
-          </Text>
-        );
-      }
-      return (
-        <Text style={[styles.secondary, { color: textSec }]} numberOfLines={1}>
-          Smooth drive
-          <Text style={{ color: textSec, opacity: 0.65 }}> · Tap for speed</Text>
-        </Text>
-      );
-    }
-
-    if (drivingMode === 'sport') {
-      return (
-        <Text style={[styles.secondary, { color: textSec }]} numberOfLines={1}>
-          <Text style={{ fontWeight: '800', color: etaAccent, fontSize: 14 }}>{displayedSpeedMph} mph</Text>
-          <Text style={{ color: textSec }}> · Smooth drive</Text>
-        </Text>
-      );
-    }
-
-    // Adaptive
-    if (speedMph > 3) {
-      return (
-        <Text style={[styles.secondary, { color: textSec }]} numberOfLines={1}>
-          <Text style={{ fontWeight: '700', color: textPrimary }}>{displayedSpeedMph} mph</Text>
-          <Text style={{ color: textSec }}> · Smooth drive</Text>
-        </Text>
-      );
-    }
     return (
-      <Text style={[styles.secondary, { color: textSec }]} numberOfLines={1}>
-        Smooth drive
+      <Text
+        style={[styles.speedFoot, { color: modeConfig.speedColor, fontSize: compactSpeedPx }]}
+        numberOfLines={1}
+        accessibilityLabel={`Current speed ${mphLabel}`}
+      >
+        {mphLabel}
       </Text>
     );
   }, [
-    isRerouting,
-    drivingMode,
-    calmExpanded,
-    speedMph,
-    displayedSpeedMph,
+    compactSpeedPx,
     etaAccent,
-    textPrimary,
-    textSec,
+    isRerouting,
+    modeConfig.speedColor,
+    mphLabel,
   ]);
-
-  const secondaryWrap =
-    drivingMode === 'calm' && !isRerouting ? (
-      <Pressable
-        onPress={() => setCalmExpanded((v) => !v)}
-        style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1 }]}
-        accessibilityRole="button"
-        accessibilityLabel={calmExpanded ? 'Hide speed' : 'Show speed'}
-      >
-        {secondaryLine()}
-      </Pressable>
-    ) : (
-      <View>{secondaryLine()}</View>
-    );
 
   return (
     <Animated.View
@@ -238,7 +184,7 @@ export default React.memo(function NavigationStatusStrip({
       >
         {onVoiceToggle ? (
           <Pressable
-            style={styles.voiceBtn}
+            style={[styles.voiceBtn, styles.voiceBtnOffset]}
             onPress={onVoiceToggle}
             onLongPress={onVoiceRepeat}
             delayLongPress={450}
@@ -260,16 +206,11 @@ export default React.memo(function NavigationStatusStrip({
             <Text style={[styles.bullet, { color: textSec }]}> · </Text>
             <Text style={[styles.primaryMid, { color: textPrimary }]}>{distLabel}</Text>
           </Text>
-          <Text style={styles.arriveLine} numberOfLines={1}>
-            <Text style={[styles.primaryArrive, { color: arriveColor }]}>Arrive {arrivalTime}</Text>
+          <Text style={[styles.arriveLine, { color: arriveColor }]} numberOfLines={1}>
+            Arrive {arrivalTime}
           </Text>
         </View>
-        <View style={styles.secondaryRow}>{secondaryWrap}</View>
-        {drivenMiles != null && Number.isFinite(drivenMiles) && drivenMiles > 0.02 ? (
-          <Text style={[styles.drivenLine, { color: textSec }]} numberOfLines={1}>
-            Logged {drivenMiles.toFixed(drivenMiles < 10 ? 2 : 1)} mi this drive
-          </Text>
-        ) : null}
+        <View style={styles.secondaryRow}>{secondaryNode}</View>
       </View>
 
       <TouchableOpacity
@@ -297,7 +238,7 @@ export default React.memo(function NavigationStatusStrip({
         activeOpacity={0.88}
         accessibilityLabel="End navigation"
       >
-        <Ionicons name="stop-circle" size={20} color="#fff" style={{ marginRight: 8 }} />
+        <Ionicons name="stop-circle" size={18} color="#fff" style={{ marginRight: 6 }} />
         <Text style={styles.endBtnText}>End navigation</Text>
       </TouchableOpacity>
     </Animated.View>
@@ -311,7 +252,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: 'transparent',
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
   },
   contextLine: {
     fontSize: 12,
@@ -323,11 +264,11 @@ const styles = StyleSheet.create({
   /** Detached from map at bottom: top edge and upward shadow (negative Y) “face” the map; content reads toward the driver. */
   strip: {
     borderTopWidth: StyleSheet.hairlineWidth * 2,
-    borderTopLeftRadius: 14,
-    borderTopRightRadius: 14,
-    paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: 9,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 6,
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: -2 } },
       android: { elevation: 6 },
@@ -336,11 +277,13 @@ const styles = StyleSheet.create({
   },
   voiceBtn: {
     position: 'absolute',
-    right: 8,
-    top: 8,
+    right: 6,
     zIndex: 2,
     padding: 6,
     borderRadius: 12,
+  },
+  voiceBtnOffset: {
+    top: 5,
   },
   primaryLine: {
     fontSize: 16,
@@ -350,40 +293,37 @@ const styles = StyleSheet.create({
   },
   arriveLine: {
     textAlign: 'center',
-    marginTop: 2,
-    fontSize: 16,
+    marginTop: 3,
+    fontSize: 14,
     fontWeight: '800',
   },
   primaryLineWithVoice: {
     paddingHorizontal: 40,
   },
-  primaryEmphasis: { fontWeight: '900', fontSize: 28, letterSpacing: -0.6 },
-  primaryMid: { fontWeight: '800', fontSize: 24, letterSpacing: -0.5 },
-  primaryArrive: { fontWeight: '800' },
-  drivenLine: {
-    textAlign: 'center',
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: -0.1,
-  },
+  primaryEmphasis: { fontWeight: '900', fontSize: 24, letterSpacing: -0.5 },
+  primaryMid: { fontWeight: '800', fontSize: 20, letterSpacing: -0.45 },
   bullet: { fontWeight: '500' },
   secondaryRow: {
-    marginTop: 6,
+    marginTop: 4,
     alignItems: 'center',
   },
-  secondary: {
-    fontSize: 12,
+  speedFoot: {
     fontWeight: '800',
-    letterSpacing: -0.05,
+    letterSpacing: -0.04,
+    textAlign: 'center',
+  },
+  reroutingNote: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: -0.04,
     textAlign: 'center',
   },
   endBtn: {
-    marginTop: 12,
+    marginTop: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 16,
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } },
@@ -391,5 +331,5 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
-  endBtnText: { color: '#fff', fontSize: 18, fontWeight: '800', letterSpacing: 0.2 },
+  endBtnText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.15 },
 });

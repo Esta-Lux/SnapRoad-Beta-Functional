@@ -43,7 +43,8 @@ type Args = {
  */
 export const NAV_TURN_CARD_RESERVE_PX = 152;
 
-export const NAV_MAP_BOTTOM_CHROME_PX = 284;
+/** Bottom reserve for condensed nav ETA strip + End button (+ safe inset). Keeps FAB / map chrome aligned when strip chrome changes. */
+export const NAV_MAP_BOTTOM_CHROME_PX = 246;
 
 /** @deprecated Use {@link NAV_TURN_CARD_RESERVE_PX} */
 export const NAV_UI_HEIGHT = NAV_TURN_CARD_RESERVE_PX;

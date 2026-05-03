@@ -5376,7 +5376,6 @@ export default function MapScreen() {
           onEndNavigation={nav.stopNavigation}
           bottomInset={insets.bottom}
           voiceMuted={navVoiceMuted}
-          drivenMiles={nav.traveledDistanceMeters / 1609.34}
           onVoiceToggle={handleNavVoiceToggle}
           onVoiceRepeat={() => {
             void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
