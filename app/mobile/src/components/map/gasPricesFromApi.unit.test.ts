@@ -14,8 +14,10 @@ test('gasPricePointsFromApiEnvelope: flat FastAPI body', () => {
     total: 1,
   });
   assert.equal(rows.length, 1);
-  assert.equal(rows[0]!.state, 'Ohio');
-  assert.ok(rows[0]!.regular?.includes('3'));
+  const first = rows[0];
+  assert.ok(first);
+  assert.equal(first.state, 'Ohio');
+  assert.ok(first.regular?.includes('3'));
 });
 
 test('gasPricePointsFromApiEnvelope: nested data envelope', () => {
@@ -24,7 +26,9 @@ test('gasPricePointsFromApiEnvelope: nested data envelope', () => {
     data: { success: true, data: [{ id: 'gas-tx', state: 'Texas', lat: 31.9, lng: -99.9, regular: '$2.99' }] },
   });
   assert.equal(rows.length, 1);
-  assert.equal(rows[0]!.state, 'Texas');
+  const first = rows[0];
+  assert.ok(first);
+  assert.equal(first.state, 'Texas');
 });
 
 test('gasPricePointsFromApiEnvelope: top-level array', () => {
@@ -32,7 +36,20 @@ test('gasPricePointsFromApiEnvelope: top-level array', () => {
     { name: 'Alabama', lat: 32.7, lng: -86.8, regular: '$2.81' },
   ]);
   assert.equal(rows.length, 1);
-  assert.equal(rows[0]!.state, 'Alabama');
+  const first = rows[0];
+  assert.ok(first);
+  assert.equal(first.state, 'Alabama');
+});
+
+test('gasPricePointsFromApiEnvelope: CollectAPI gasoline field maps to regular', () => {
+  const rows = gasPricePointsFromApiEnvelope([
+    { name: 'Washington', lat: 47.4, lng: -121.49, gasoline: '4.401', midGrade: '4.671' },
+  ]);
+  assert.equal(rows.length, 1);
+  const first = rows[0];
+  assert.ok(first);
+  assert.equal(first.regular, '4.401');
+  assert.equal(first.midGrade, '4.671');
 });
 
 test('nearestGasPricePointByLocation picks closer centroid', () => {

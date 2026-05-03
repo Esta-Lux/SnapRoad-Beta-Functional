@@ -1,7 +1,11 @@
 """
 HTTP helpers for CollectAPI Gas Price — retries alternate auth schemes and safe JSON decode.
-Refs: CollectAPI historically uses `authorization: apikey <token>`; some clients use Bearer.
-401 responses are often plaintext `Unauthorized` (not JSON) — decoding must never hard-fail the route.
+
+Official Python examples use lowercase `authorization: apikey <token>` plus `content-type: application/json`
+for `/gasPrice/stateUsaPrice?state=…`. Some curl snippets use bare `Authorization: <token>`.
+We try several shapes per request cycle.
+
+401 responses are often plaintext `Unauthorized` (not JSON) — decoding must never hard-fail routes.
 """
 from __future__ import annotations
 
@@ -9,25 +13,31 @@ from typing import Any
 
 import httpx
 
-_COLLECT_URL = "https://api.collectapi.com/gasPrice/allUsaPrice"
+_COLLECT_ALL_USA_URL = "https://api.collectapi.com/gasPrice/allUsaPrice"
+_COLLECT_STATE_USA_URL = "https://api.collectapi.com/gasPrice/stateUsaPrice"
 
 
 def _header_sets(key: str) -> list[dict[str, str]]:
+    k = key.strip()
+    base = {
+        "content-type": "application/json",
+        "accept": "application/json",
+        "User-Agent": "SnapRoad-backend/1.0 (+https://snaproad.app)",
+    }
     return [
-        {
-            "authorization": f"apikey {key}",
-            "accept": "application/json",
-            "User-Agent": "SnapRoad-backend/1.0",
-        },
-        {
-            "Authorization": f"Bearer {key}",
-            "accept": "application/json",
-            "User-Agent": "SnapRoad-backend/1.0",
-        },
+        {**base, "authorization": f"apikey {k}"},
+        {**base, "Authorization": k},
+        {**base, "Authorization": f"apikey {k}"},
+        {**base, "Authorization": f"Bearer {k}"},
     ]
 
 
-def get_collect_gas_json(timeout_sec: float, key: str) -> tuple[dict[str, Any] | None, str | None, int | None]:
+def _get_collect_json(
+    timeout_sec: float,
+    key: str,
+    url: str,
+    params: dict[str, str] | None = None,
+) -> tuple[dict[str, Any] | None, str | None, int | None]:
     """
     Return (parsed_body_or_none, error_hint, http_status_when_available).
     error_hint classification helps operators distinguish bad key vs shape vs outage.
@@ -38,7 +48,7 @@ def get_collect_gas_json(timeout_sec: float, key: str) -> tuple[dict[str, Any] |
     try:
         with httpx.Client(timeout=timeout_sec) as client:
             for hdrs in headers_variants:
-                resp = client.get(_COLLECT_URL, headers=hdrs)
+                resp = client.get(url, headers=hdrs, params=params)
                 last_status = resp.status_code
 
                 ct = (resp.headers.get("content-type") or "").lower()
@@ -81,3 +91,17 @@ def get_collect_gas_json(timeout_sec: float, key: str) -> tuple[dict[str, Any] |
         return None, "gas_prices_collectapi_transport_error", None
     except Exception:
         return None, "gas_prices_upstream_error", None
+
+
+def get_collect_gas_json(timeout_sec: float, key: str) -> tuple[dict[str, Any] | None, str | None, int | None]:
+    """Legacy/all-state CollectAPI endpoint used by older SnapRoad builds."""
+    return _get_collect_json(timeout_sec, key, _COLLECT_ALL_USA_URL)
+
+
+def get_collect_state_gas_json(
+    timeout_sec: float,
+    key: str,
+    state_code: str,
+) -> tuple[dict[str, Any] | None, str | None, int | None]:
+    """Documented CollectAPI endpoint: `/gasPrice/stateUsaPrice?state=WA`."""
+    return _get_collect_json(timeout_sec, key, _COLLECT_STATE_USA_URL, {"state": state_code.upper()})

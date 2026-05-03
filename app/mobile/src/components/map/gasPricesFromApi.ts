@@ -30,6 +30,7 @@ export function gasPricePointsFromApiEnvelope(apiRoot: unknown): GasPriceMapPoin
     const lat = Number(r.lat);
     const lng = Number(r.lng);
     const mid = r.midGrade ?? r.midgrade ?? r.mid_grade;
+    const regular = r.regular ?? r.gasoline ?? r.gas;
     if (!id || !state || !Number.isFinite(lat) || !Number.isFinite(lng)) continue;
     out.push({
       id,
@@ -37,7 +38,7 @@ export function gasPricePointsFromApiEnvelope(apiRoot: unknown): GasPriceMapPoin
       lat,
       lng,
       currency: typeof r.currency === 'string' ? r.currency : undefined,
-      regular: r.regular != null ? String(r.regular) : null,
+      regular: regular != null ? String(regular) : null,
       midGrade: mid != null ? String(mid) : null,
       premium: r.premium != null ? String(r.premium) : null,
       diesel: r.diesel != null ? String(r.diesel) : null,
