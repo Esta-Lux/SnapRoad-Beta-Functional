@@ -69,7 +69,17 @@ def _legacy_trips_guard() -> None:
 
 
 def _trip_user_id(user: dict) -> str:
-    return str(user.get("id") or user.get("user_id") or "").strip()
+    return str(user.get("user_id") or user.get("id") or "").strip()
+
+
+def _trip_owner_filter(query: Any, uid: str) -> Any:
+    """
+    Match trips stored under either legacy `profile_id`-only linkage or unified `user_id`.
+    Keeps Insights trip list + weekly recap aggregates aligned when older rows omit `user_id`.
+    """
+    if not uid:
+        return query
+    return query.or_(f"user_id.eq.{uid},profile_id.eq.{uid}")
 
 
 def _trip_row_to_client_shape(r: dict) -> dict:
@@ -110,18 +120,14 @@ def _get_trips_supabase(user: dict, page: int, limit: int) -> dict:
         raise HTTPException(status_code=401, detail="Invalid token")
     sb = get_supabase()
     count_res = (
-        sb.table("trips")
-        .select("*", count="exact")
-        .eq("user_id", uid)
+        _trip_owner_filter(sb.table("trips").select("*", count="exact"), uid)
         .execute()
     )
     total = int(count_res.count or 0)
     start = (page - 1) * limit
     end = start + limit - 1
     res = (
-        sb.table("trips")
-        .select("*")
-        .eq("user_id", uid)
+        _trip_owner_filter(sb.table("trips").select("*"), uid)
         .order("ended_at", desc=True)
         .range(start, end)
         .execute()
@@ -147,9 +153,7 @@ def _get_trip_history_supabase(user: dict, limit: int) -> dict:
         raise HTTPException(status_code=401, detail="Invalid token")
     sb = get_supabase()
     res = (
-        sb.table("trips")
-        .select("*")
-        .eq("user_id", uid)
+        _trip_owner_filter(sb.table("trips").select("*"), uid)
         .order("ended_at", desc=True)
         .limit(limit)
         .execute()
@@ -177,10 +181,7 @@ def _get_trip_by_id_supabase(user: dict, trip_id: str) -> dict:
         return {"success": False, "message": MSG_TRIP_NOT_FOUND}
     sb = get_supabase()
     res = (
-        sb.table("trips")
-        .select("*")
-        .eq("user_id", uid)
-        .eq("id", trip_id)
+        _trip_owner_filter(sb.table("trips").select("*").eq("id", trip_id), uid)
         .limit(1)
         .execute()
     )
@@ -276,13 +277,17 @@ def get_trip_history(user: OptionalUser, limit: Annotated[int, Query(ge=1, le=10
 @trips_history_router.get("/trips/analytics")
 def get_trip_analytics(user: CurrentUser):
     """Aggregate stats for the Rewards / Trip Analytics modal."""
-    user_id = str(user.get("id") or "")
+    user_id = _trip_user_id(user)
     try:
         sb = get_supabase()
         prof = sb.table("profiles").select("total_miles,total_trips,safety_score,gems").eq("id", user_id).limit(1).execute()
-        if prof.data:
+        if prof.data and user_id:
             p = prof.data[0]
-            trips_q = sb.table("trips").select("safety_score,gems_earned").eq("user_id", user_id).limit(500).execute()
+            trips_q = (
+                _trip_owner_filter(sb.table("trips").select("safety_score,gems_earned"), user_id)
+                .limit(500)
+                .execute()
+            )
             rows = trips_q.data or []
             n = len(rows)
             avg_safety = (
@@ -319,14 +324,14 @@ def get_recent_trips_mobile(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ):
     """Flat trip list for Route History modal (matches mobile `Trip` shape)."""
-    user_id = str(user.get("id") or "")
+    user_id = _trip_user_id(user)
     out: list = []
+    if not user_id:
+        return {"success": True, "data": []}
     try:
         sb = get_supabase()
         res = (
-            sb.table("trips")
-            .select("*")
-            .eq("user_id", user_id)
+            _trip_owner_filter(sb.table("trips").select("*"), user_id)
             .order("ended_at", desc=True)
             .limit(limit)
             .execute()
@@ -465,9 +470,7 @@ def _trip_gems_today_utc(user_id: str) -> int:
         sb = get_supabase()
         start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         r = (
-            sb.table("trips")
-            .select("gems_earned")
-            .eq("profile_id", user_id)
+            _trip_owner_filter(sb.table("trips").select("gems_earned"), user_id)
             .gte("created_at", start)
             .execute()
         )

@@ -799,7 +799,7 @@ def get_gem_activity_detail(wallet_tx_id: str, user: CurrentUser):
             sb.table("trips")
             .select("*")
             .eq("id", ref_id)
-            .eq("profile_id", user_id)
+            .or_(f"user_id.eq.{user_id},profile_id.eq.{user_id}")
             .limit(1)
             .execute()
             .data
@@ -829,7 +829,7 @@ def get_gem_activity_detail(wallet_tx_id: str, user: CurrentUser):
 # ==================== DRIVING SCORE ====================
 @router.get("/driving-score")
 def get_driving_score(user: CurrentUser):
-    user_id = str(user.get("id") or current_user_id)
+    user_id = str(user.get("user_id") or user.get("id") or "").strip() or current_user_id
     if not user_id_is_premium(user_id):
         raise HTTPException(status_code=403, detail=MSG_PREMIUM_REQUIRED)
     tip_templates = {"speed": "Try cruise control on highways.", "braking": "Start braking earlier for smoother stops.", "acceleration": "Ease into the gas pedal.", "following": "The 3-second rule is your friend!", "turns": "Keep signaling even when no one's around.", "focus": "Mount your phone for hands-free navigation!"}
@@ -842,7 +842,7 @@ def get_driving_score(user: CurrentUser):
         trips = (
             sb.table("trips")
             .select("safety_score, hard_braking_events, speeding_events, ended_at, created_at")
-            .eq("profile_id", user_id)
+            .or_(f"user_id.eq.{user_id},profile_id.eq.{user_id}")
             .order("ended_at", desc=True)
             .limit(50)
             .execute()
@@ -929,7 +929,7 @@ def get_weekly_recap(
     start: Annotated[Optional[str], Query(description="ISO8601 start; use with end")] = None,
     end: Annotated[Optional[str], Query(description="ISO8601 end")] = None,
 ):
-    user_id = str(user.get("id") or current_user_id)
+    user_id = str(user.get("user_id") or user.get("id") or "").strip() or current_user_id
     if not user_id_is_premium(user_id):
         raise HTTPException(status_code=403, detail=MSG_PREMIUM_REQUIRED)
     try:
@@ -943,7 +943,7 @@ def get_weekly_recap(
                 .select(
                     "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, ended_at, created_at, hard_braking_events, speeding_events, max_speed_mph, avg_speed_mph"
                 )
-                .eq("profile_id", user_id)
+                .or_(f"user_id.eq.{user_id},profile_id.eq.{user_id}")
                 .gte("ended_at", start)
                 .lte("ended_at", end)
             )
@@ -963,7 +963,7 @@ def get_weekly_recap(
                 .select(
                     "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, ended_at, created_at, hard_braking_events, speeding_events, max_speed_mph, avg_speed_mph"
                 )
-                .eq("profile_id", user_id)
+                .or_(f"user_id.eq.{user_id},profile_id.eq.{user_id}")
                 .gte("ended_at", cutoff)
                 .execute()
             )

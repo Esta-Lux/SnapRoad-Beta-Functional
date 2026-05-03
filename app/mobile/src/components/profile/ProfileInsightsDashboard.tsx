@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import SheetModal from '../common/Modal';
 import { useTheme } from '../../contexts/ThemeContext';
 import { api } from '../../api/client';
+import { unwrapApiData as unwrapProfileApiData } from '../../api/dto/profileWallet';
 import {
   bucketizeDaily,
   computeDeltas,
@@ -209,21 +210,17 @@ export default function ProfileInsightsDashboard({
     setDrivingLoading(true);
     setDrivingError(null);
     try {
-      const res = await api.get<{
-        data?: {
-          metrics?: DrivingMetric[];
-          orion_tips?: OrionTip[];
-          no_data?: boolean;
-        };
-      }>('/api/driving-score');
+      const res = await api.get<unknown>('/api/driving-score');
       if (!res.success) {
         setDrivingError(res.error || 'Could not load coaching');
         setDrivingMetrics([]);
         setOrionTips([]);
         return;
       }
-      const body = res.data as { data?: { metrics?: DrivingMetric[]; orion_tips?: OrionTip[] } };
-      const d = body?.data ?? (res.data as any)?.data;
+      const d = unwrapProfileApiData(res.data) as {
+        metrics?: DrivingMetric[];
+        orion_tips?: OrionTip[];
+      } | null;
       setDrivingMetrics(Array.isArray(d?.metrics) ? d.metrics : []);
       setOrionTips(Array.isArray(d?.orion_tips) ? d.orion_tips : []);
     } catch {

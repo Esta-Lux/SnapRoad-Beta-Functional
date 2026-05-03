@@ -104,8 +104,9 @@ export function getPreviousRange(range: InsightsRange): InsightsRange {
 /* ── Trip / gem timestamp helpers ──────────────────────────────────── */
 
 export function tripTimeMs(t: ProfileTripHistoryItem): number {
-  if (t.tripEndedAtIso) {
-    const ms = Date.parse(t.tripEndedAtIso);
+  const candidates = [t.tripEndedAtIso, t.startedAtIso].filter(Boolean) as string[];
+  for (const s of candidates) {
+    const ms = Date.parse(s);
     if (Number.isFinite(ms)) return ms;
   }
   return 0;

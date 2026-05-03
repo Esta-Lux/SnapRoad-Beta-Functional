@@ -54,6 +54,8 @@ export type ProfileTripHistoryItem = {
   hard_braking_events?: number;
   speeding_events?: number;
   tripEndedAtIso?: string;
+  /** When `tripEndedAtIso` missing, range filters can still anchor on trip start (server ISO). */
+  startedAtIso?: string;
 };
 
 export type ProfileGemTxItem = {
