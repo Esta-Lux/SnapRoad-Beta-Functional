@@ -64,6 +64,8 @@ type Props = {
   haversineMeters: (lat1: number, lng1: number, lat2: number, lng2: number) => number;
   placePhotoThumbUri: (photoRef?: string, maxWidth?: number) => string | undefined;
   searchResultPriceHint: (item: GeocodeResult) => string | null;
+  /** Statewide average regular (nearest centroid to GPS) — CollectAPI overlay, not pump price. */
+  gasChipAvgRegular?: string | null;
 };
 
 const CATEGORY_CHIPS: Chip[] = [
@@ -169,13 +171,34 @@ export default function MapSearchTopBar(props: Props) {
           keyExtractor={(c) => c.key}
           renderItem={({ item: chip }) => {
             const sel = props.activeChip === chip.key;
+            const gasShort = chip.key === 'gas' ? props.gasChipAvgRegular : null;
+            const a11y =
+              chip.key === 'gas' && gasShort
+                ? `${chip.label}, statewide average about ${gasShort} per gallon regular, not pump price`
+                : chip.label;
             return (
               <TouchableOpacity
                 style={[s.chip, { backgroundColor: sel ? props.colors.primary : props.colors.surface, borderColor: sel ? 'transparent' : props.colors.border }]}
                 onPress={() => props.onSelectChip(chip.key)}
+                accessibilityRole="button"
+                accessibilityLabel={a11y}
               >
                 <Ionicons name={chip.icon} size={13} color={sel ? '#fff' : props.colors.textSecondary} style={{ marginRight: 4 }} />
-                <Text style={{ color: sel ? '#fff' : props.colors.text, fontSize: 12, fontWeight: '600' }}>{chip.label}</Text>
+                <Text style={{ color: sel ? '#fff' : props.colors.text, fontSize: 12, fontWeight: '600' }}>
+                  {chip.label}
+                  {gasShort ? (
+                    <Text
+                      style={{
+                        color: sel ? 'rgba(255,255,255,0.88)' : props.colors.textSecondary,
+                        fontSize: 12,
+                        fontWeight: '700',
+                      }}
+                    >
+                      {' · '}
+                      {gasShort}
+                    </Text>
+                  ) : null}
+                </Text>
               </TouchableOpacity>
             );
           }}

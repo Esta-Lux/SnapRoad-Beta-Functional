@@ -32,7 +32,7 @@ export function markerCapForZoom(kind: MarkerDensityKind, zoomLevel: number): nu
     case 'report':
       return zoomLevel >= 15.5 ? 100 : zoomLevel >= 14 ? 70 : 40;
     case 'gasPrice':
-      if (zoomLevel < 12) return 0;
+      if (zoomLevel < 11) return 0;
       if (zoomLevel >= 15.5) return 56;
       if (zoomLevel >= 14) return 40;
       if (zoomLevel >= 13) return 28;

@@ -79,7 +79,7 @@ import FriendMarkers from '../components/map/FriendMarkers';
 import CameraMarkers from '../components/map/CameraMarkers';
 import type { CameraLocation, CameraViewFeed } from '../components/map/CameraMarkers';
 import GasPriceMarkers, { type GasPriceMapPoint } from '../components/map/GasPriceMarkers';
-import { gasPricePointsFromApiEnvelope } from '../components/map/gasPricesFromApi';
+import { gasPricePointsFromApiEnvelope, nearestGasPricePointByLocation, formatStateGasRegularSummary, formatUsdPerGalChip } from '../components/map/gasPricesFromApi';
 import TrafficCameraSheet from '../components/map/TrafficCameraSheet';
 import TrafficLayer from '../components/map/TrafficLayer';
 import IncidentHeatmap from '../components/map/IncidentHeatmap';
@@ -1968,6 +1968,8 @@ export default function MapScreen() {
 
   const [cameraLocations, setCameraLocations] = useState<CameraLocation[]>([]);
   const [gasPricePoints, setGasPricePoints] = useState<GasPriceMapPoint[]>([]);
+  /** Statewide avg regular for Gas category chip (nearest state centroid to GPS). */
+  const [gasChipAvgRegularShort, setGasChipAvgRegularShort] = useState<string | null>(null);
   const [selectedTrafficCamera, setSelectedTrafficCamera] = useState<CameraLocation | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<{
     name: string;
@@ -2495,8 +2497,9 @@ export default function MapScreen() {
   }, [cameraPoisWanted, mapTabFocused, Math.round(poiSearchCoord.lat * 100), Math.round(poiSearchCoord.lng * 100)]);
 
   useEffect(() => {
-    if (!showGasPrices || !mapTabFocused) {
+    if (!mapTabFocused) {
       setGasPricePoints([]);
+      setGasChipAvgRegularShort(null);
       return;
     }
     api
@@ -2504,13 +2507,28 @@ export default function MapScreen() {
       .then((r) => {
         if (!r.success || r.data == null) {
           if (!r.success) logMapDataIssue('GET /api/map/gas-prices', r.error);
+          setGasChipAvgRegularShort(null);
           return;
         }
         const mapped = gasPricePointsFromApiEnvelope(r.data);
-        setGasPricePoints(mapped);
+        const nearest = nearestGasPricePointByLocation(location.lat, location.lng, mapped);
+        setGasChipAvgRegularShort(nearest ? formatUsdPerGalChip(nearest.regular) : null);
+        if (showGasPrices) {
+          setGasPricePoints(mapped);
+        } else {
+          setGasPricePoints([]);
+        }
       })
-      .catch((e) => logMapDataIssue('GET /api/map/gas-prices', e));
-  }, [showGasPrices, mapTabFocused]);
+      .catch((e) => {
+        logMapDataIssue('GET /api/map/gas-prices', e);
+        setGasChipAvgRegularShort(null);
+      });
+  }, [
+    showGasPrices,
+    mapTabFocused,
+    Math.round(location.lat * 50),
+    Math.round(location.lng * 50),
+  ]);
 
   const refreshPhotoReportsNearby = useCallback(() => {
     if (!showPhotoReports) return;
@@ -3529,6 +3547,61 @@ export default function MapScreen() {
     const lat0 = location.lat;
     const lng0 = location.lng;
     const typeQs = cfg.type ? `&type=${encodeURIComponent(cfg.type)}` : '';
+
+    if (chipKey === 'gas') {
+      void Promise.all([
+        api.get<any>(
+          `/api/places/nearby?lat=${lat0}&lng=${lng0}&radius=${cfg.radius}${typeQs}&limit=${cfg.limit}`,
+        ),
+        api.get<Record<string, unknown>>('/api/map/gas-prices'),
+      ]).then(([r, rGas]) => {
+        let subtitleExpl = cfg.subtitle;
+        if (rGas.success && rGas.data != null) {
+          const pts = gasPricePointsFromApiEnvelope(rGas.data);
+          const nearest = nearestGasPricePointByLocation(lat0, lng0, pts);
+          if (nearest) {
+            subtitleExpl = `${cfg.subtitle ? `${cfg.subtitle}\n` : ''}${formatStateGasRegularSummary(nearest)}`;
+          }
+        }
+        if (!r.success) {
+          setCategoryExplore((prev) =>
+            prev ? { ...prev, loading: false, error: r.error || 'Could not load places.', results: [], subtitle: subtitleExpl } : null,
+          );
+          return;
+        }
+        const root = r.data as Record<string, unknown> | undefined;
+        if (root && root.success === false) {
+          const err = String((root as { error?: string }).error || 'Could not load places.');
+          setCategoryExplore((prev) =>
+            prev ? { ...prev, loading: false, error: err, results: [], subtitle: subtitleExpl } : null,
+          );
+          return;
+        }
+        const payload = root?.data ?? root;
+        const arr = Array.isArray(payload) ? payload : [];
+        const mapped = arr.map((p: Record<string, unknown>) => ({
+          name: String(p.name ?? ''),
+          address: String(p.address ?? ''),
+          lat: Number(p.lat) || 0,
+          lng: Number(p.lng) || 0,
+          place_id: p.place_id != null ? String(p.place_id) : undefined,
+          rating: typeof p.rating === 'number' ? p.rating : undefined,
+          placeType: Array.isArray(p.types) && p.types[0] ? String(p.types[0]) : undefined,
+          photo_reference: p.photo_reference != null ? String(p.photo_reference) : undefined,
+          open_now: typeof p.open_now === 'boolean' ? p.open_now : null,
+          price_level: typeof p.price_level === 'number' ? p.price_level : null,
+          business_status: p.business_status != null ? String(p.business_status) : undefined,
+        }));
+        mapped.sort(
+          (a, b) => haversineMeters(lat0, lng0, a.lat, a.lng) - haversineMeters(lat0, lng0, b.lat, b.lng),
+        );
+        setCategoryExplore((prev) =>
+          prev ? { ...prev, loading: false, error: null, results: mapped, subtitle: subtitleExpl } : null,
+        );
+      });
+      return;
+    }
+
     void api
       .get<any>(`/api/places/nearby?lat=${lat0}&lng=${lng0}&radius=${cfg.radius}${typeQs}&limit=${cfg.limit}`)
       .then((r) => {
@@ -4908,6 +4981,7 @@ export default function MapScreen() {
         haversineMeters={haversineMeters}
         placePhotoThumbUri={placePhotoThumbUri}
         searchResultPriceHint={searchResultPriceHint}
+        gasChipAvgRegular={gasChipAvgRegularShort}
       />
 
       {/* ═══ TURN CARD — 3-state model (preview / active / confirm + cruise); same gradients per mode ═ */}
