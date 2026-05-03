@@ -116,6 +116,18 @@ export function useSmoothedNavFraction(
       return;
     }
     if (freezeWhenStationary) {
+      const dn = next - displayedRef.current;
+      /** Reroute / geometry refresh can move the arc target a lot while GPS speed is still "crawling"; always snap through. */
+      if (Math.abs(dn) >= snapDeltaFraction) {
+        targetRef.current = next;
+        displayedRef.current = next;
+        setDisplayed(next);
+        lastTargetChangeMsRef.current =
+          typeof performance !== 'undefined' && typeof performance.now === 'function'
+            ? performance.now()
+            : Date.now();
+        return;
+      }
       targetRef.current = displayedRef.current;
       return;
     }

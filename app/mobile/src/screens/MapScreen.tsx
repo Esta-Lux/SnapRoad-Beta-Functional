@@ -900,12 +900,21 @@ export default function MapScreen() {
     nav.sdkNavLocation?.speed ??
     nav.navigationProgress?.displayCoord?.speedMps ??
     speed * 0.44704;
+  /** Matcher / NAV speed thinks we're creeping or stopped (~1.7 mph cutoff). */
   const stoppedForPuckSmoothing = navSpeedMpsForSmoothing < 0.75;
+  /** Tight stationary band + raw GPS sanity — freezes eased fraction + suppresses phantom DR. */
   const freezeNavSmoothing =
     nav.isNavigating &&
     Number.isFinite(navSpeedMpsForSmoothing) &&
     navSpeedMpsForSmoothing <= 0.42 &&
     speed <= 1.4;
+  /**
+   * When we're slow/stopped, hold the NAV target arc-length unless the matcher
+   * jumps a lot at once (geometry refresh / reroute). The old `< 6 m` gate let
+   * phantom forward creep stack across ticks and drive the eased puck toward
+   * the destination while the car was parked.
+   */
+  const NAV_STATIONARY_HOLD_MAX_DELTA_M = 42;
   const stabilizedTargetFraction = useMemo(() => {
     if (!nav.isNavigating || navPolylineLenMetersRaw <= 1) {
       stableNavTargetFractionRef.current = targetFraction;
@@ -913,7 +922,10 @@ export default function MapScreen() {
     }
     const prev = stableNavTargetFractionRef.current;
     const deltaMeters = Math.abs(targetFraction - prev) * navPolylineLenMetersRaw;
-    if (freezeNavSmoothing || (stoppedForPuckSmoothing && deltaMeters < 6)) {
+    const holdStoppedTarget =
+      stoppedForPuckSmoothing &&
+      deltaMeters < NAV_STATIONARY_HOLD_MAX_DELTA_M;
+    if (freezeNavSmoothing || holdStoppedTarget) {
       return prev;
     }
     stableNavTargetFractionRef.current = targetFraction;
@@ -927,10 +939,27 @@ export default function MapScreen() {
    */
   const lastKnownNavSpeedMps =
     nav.navigationProgress?.displayCoord?.speedMps ?? 0;
-  const deadReckoningSpeedMps =
-    Number.isFinite(lastKnownNavSpeedMps) && lastKnownNavSpeedMps > 1.2
-      ? lastKnownNavSpeedMps
+  const smoothingSpeedMps =
+    typeof navSpeedMpsForSmoothing === 'number' && Number.isFinite(navSpeedMpsForSmoothing)
+      ? Math.max(0, navSpeedMpsForSmoothing)
       : 0;
+  const displayCoordSpeedMps =
+    typeof lastKnownNavSpeedMps === 'number' && Number.isFinite(lastKnownNavSpeedMps)
+      ? Math.max(0, lastKnownNavSpeedMps)
+      : smoothingSpeedMps;
+  /**
+   * Require display + NAV speed to agree — stale `displayCoord.speed` alone
+   * must not extrapolate along the polyline while the matcher already reports
+   * near-zero ground speed at a stoplight/tunnel portal.
+   */
+  const consensusDrSpeedMps = Math.min(smoothingSpeedMps, displayCoordSpeedMps);
+  const deadReckoningSpeedMps =
+    freezeNavSmoothing ||
+    stoppedForPuckSmoothing ||
+    smoothingSpeedMps < 4.0 ||
+    !(consensusDrSpeedMps > 1.2)
+      ? 0
+      : consensusDrSpeedMps;
   /**
    * Scale the "teleport" threshold by route length so it's always bounded
    * in *meters*, not percent. A fixed 2% threshold on a 100-mile route is
@@ -950,12 +979,12 @@ export default function MapScreen() {
     timeConstantMs: drivingMode === 'calm' ? 152 : drivingMode === 'sport' ? 108 : 128,
     snapDeltaFraction,
     enabled: true,
-    freezeWhenStationary: freezeNavSmoothing,
+    freezeWhenStationary: freezeNavSmoothing || stoppedForPuckSmoothing,
     deadReckoning:
       navPolylineLenMetersRaw > 1
         ? {
             polylineLengthMeters: navPolylineLenMetersRaw,
-            speedMps: freezeNavSmoothing ? 0 : deadReckoningSpeedMps,
+            speedMps: deadReckoningSpeedMps,
             staleThresholdMs: drivingMode === 'sport' ? 90 : drivingMode === 'adaptive' ? 120 : 165,
             maxStaleMs: drivingMode === 'sport' ? 3000 : drivingMode === 'adaptive' ? 2800 : 2500,
           }
