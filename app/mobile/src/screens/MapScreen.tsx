@@ -3564,12 +3564,20 @@ export default function MapScreen() {
     const typeQs = cfg.type ? `&type=${encodeURIComponent(cfg.type)}` : '';
 
     if (chipKey === 'nearbyGas' || chipKey === 'gas') {
-      void Promise.all([
+      void Promise.allSettled([
         api.get<any>(
           `/api/places/nearby?lat=${lat0}&lng=${lng0}&radius=${cfg.radius}${typeQs}&limit=${cfg.limit}`,
         ),
         api.get<Record<string, unknown>>('/api/map/gas-prices'),
-      ]).then(([r, rGas]) => {
+      ]).then(([placesResult, gasResult]) => {
+        const r =
+          placesResult.status === 'fulfilled'
+            ? placesResult.value
+            : { success: false as const, error: 'Could not load places.' };
+        const rGas =
+          gasResult.status === 'fulfilled'
+            ? gasResult.value
+            : { success: false as const, error: String(gasResult.reason ?? 'Request failed') };
         let subtitleExpl = cfg.subtitle;
         if (rGas.success && rGas.data != null) {
           const pts = gasPricePointsFromApiEnvelope(rGas.data);
@@ -3577,10 +3585,20 @@ export default function MapScreen() {
           if (nearest) {
             subtitleExpl = `${cfg.subtitle ? `${cfg.subtitle}\n` : ''}${formatStateGasRegularSummary(nearest)}`;
           }
+          const gasEnvelope = rGas.data && typeof rGas.data === 'object' && !Array.isArray(rGas.data)
+            ? (rGas.data as Record<string, unknown>)
+            : {};
+          if (pts.length === 0 && typeof gasEnvelope.detail === 'string') {
+            logMapDataIssue('GET /api/map/gas-prices empty', gasEnvelope.detail);
+          }
+        } else if (!rGas.success) {
+          logMapDataIssue('GET /api/map/gas-prices', rGas.error);
         }
         if (!r.success) {
           setCategoryExplore((prev) =>
-            prev ? { ...prev, loading: false, error: r.error || 'Could not load places.', results: [], subtitle: subtitleExpl } : null,
+            prev
+              ? { ...prev, loading: false, error: r.error || 'Could not load places.', results: [], subtitle: subtitleExpl }
+              : null,
           );
           return;
         }

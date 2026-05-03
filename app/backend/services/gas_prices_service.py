@@ -29,8 +29,12 @@ _EMPTY_BODY_TTL_SEC = 3600
 def _normalize_collectapi_key(raw: str) -> str:
     key = (raw or "").strip()
     lower = key.lower()
-    if lower.startswith("apikey "):
-        return key.split(" ", 1)[1].strip()
+    if lower.startswith("authorization:"):
+        key = key.split(":", 1)[1].strip()
+        lower = key.lower()
+    for prefix in ("apikey ", "bearer "):
+        if lower.startswith(prefix):
+            return key.split(" ", 1)[1].strip()
     return key
 
 

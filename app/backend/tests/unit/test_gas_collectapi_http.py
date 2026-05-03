@@ -33,10 +33,18 @@ def test_get_collect_gas_json_retries_bearer_after_401() -> None:
 def test_fetch_gas_rows_with_mock_collect_api(monkeypatch) -> None:
     import services.gas_prices_service as gps
 
-    body = {"success": True, "result": [{"name": "Ohio", "regular": "3.05", "midGrade": None, "premium": None, "diesel": None}]}
+    body = {
+        "success": True,
+        "result": [{"name": "Ohio", "regular": "3.05", "midGrade": None, "premium": None, "diesel": None}],
+    }
+    seen: list[str] = []
 
-    monkeypatch.setattr(gps, "get_collect_gas_json", lambda *_a, **_k: (body, None, 200))
-    monkeypatch.setattr(gps, "COLLECTAPI_KEY", "dummy-token")
+    def fake_collect(_timeout: float, key: str):
+        seen.append(key)
+        return body, None, 200
+
+    monkeypatch.setattr(gps, "get_collect_gas_json", fake_collect)
+    monkeypatch.setattr(gps, "COLLECTAPI_KEY", "Bearer dummy-token")
 
     with gps._CACHE_LOCK:
         gps._cache_mono_until = 0.0
@@ -49,3 +57,13 @@ def test_fetch_gas_rows_with_mock_collect_api(monkeypatch) -> None:
     oh = next((r for r in rows if r.get("state") == "Ohio"), None)
     assert oh is not None
     assert oh.get("regular") in {"3.05", "3.050"}
+    assert seen == ["dummy-token"]
+
+
+def test_collectapi_key_normalization_accepts_common_header_values() -> None:
+    import services.gas_prices_service as gps
+
+    assert gps._normalize_collectapi_key("apikey abc123") == "abc123"
+    assert gps._normalize_collectapi_key("Bearer abc123") == "abc123"
+    assert gps._normalize_collectapi_key("authorization: apikey abc123") == "abc123"
+    assert gps._normalize_collectapi_key("Authorization: Bearer abc123") == "abc123"
