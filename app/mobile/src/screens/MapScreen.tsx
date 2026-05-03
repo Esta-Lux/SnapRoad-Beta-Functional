@@ -2511,6 +2511,12 @@ export default function MapScreen() {
           return;
         }
         const mapped = gasPricePointsFromApiEnvelope(r.data);
+        const envelope = r.data && typeof r.data === 'object' && !Array.isArray(r.data)
+          ? (r.data as Record<string, unknown>)
+          : {};
+        if (mapped.length === 0 && typeof envelope.detail === 'string') {
+          logMapDataIssue('GET /api/map/gas-prices empty', envelope.detail);
+        }
         const nearest = nearestGasPricePointByLocation(location.lat, location.lng, mapped);
         setGasChipAvgRegularShort(nearest ? formatUsdPerGalChip(nearest.regular) : null);
         if (showGasPrices) {

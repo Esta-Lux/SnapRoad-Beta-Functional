@@ -10,14 +10,12 @@ import threading
 import time
 from typing import Any
 
-import httpx
-
 from config import COLLECTAPI_KEY
+from services.gas_collectapi_http import get_collect_gas_json
 from services.us_state_centroids import canonical_state_name_for_centroid, centroid_for_state_name
 
 logger = logging.getLogger(__name__)
 
-_COLLECT_URL = "https://api.collectapi.com/gasPrice/allUsaPrice"
 _CACHE_LOCK = threading.Lock()
 _cache_mono_until: float = 0.0
 _cached_rows: list[dict[str, Any]] = []
@@ -130,25 +128,26 @@ def fetch_us_state_gas_prices() -> tuple[list[dict[str, Any]], str | None]:
             _cached_error = "gas_prices_unconfigured"
         return [], _cached_error
 
-    headers = {
-        "authorization": f"apikey {key}",
-        "content-type": "application/json",
-    }
-    try:
-        with httpx.Client(timeout=15.0) as client:
-            resp = client.get(_COLLECT_URL, headers=headers)
-            resp.raise_for_status()
-            body = resp.json()
-    except Exception as exc:
-        logger.warning("CollectAPI gas prices request failed: %s", exc)
+    body, http_err, status = get_collect_gas_json(15.0, key)
+
+    if http_err or body is None:
+        if http_err:
+            logger.warning(
+                "CollectAPI gas prices unavailable (%s)%s",
+                http_err,
+                f" HTTP {status}" if status is not None else "",
+            )
         with _CACHE_LOCK:
             _cache_mono_until = now + _ERROR_COOLDOWN_SEC
             _cached_rows = []
-            _cached_error = "gas_prices_upstream_error"
+            _cached_error = http_err or "gas_prices_upstream_error"
         return [], _cached_error
 
-    if not isinstance(body, dict) or not _truthy_collect_success(body):
-        logger.warning("CollectAPI gas prices bad envelope: %s", body)
+    if not _truthy_collect_success(body):
+        logger.warning(
+            "CollectAPI gas prices bad envelope (keys=%s)",
+            list(body.keys())[:20],
+        )
         with _CACHE_LOCK:
             _cache_mono_until = now + _ERROR_COOLDOWN_SEC
             _cached_rows = []

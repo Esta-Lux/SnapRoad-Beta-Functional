@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { FlatList, Image, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { FlatList, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   FadeIn,
@@ -69,15 +69,54 @@ type Props = {
 };
 
 const CATEGORY_CHIPS: Chip[] = [
-  { key: 'favorites', label: 'Favorites', icon: 'star-outline' },
+  /** Nearby places + Gas surfaced first — primary map discovery (scroll for more). */
   { key: 'nearby', label: 'Nearby', icon: 'location-outline' },
   { key: 'gas', label: 'Gas', icon: 'flash-outline' },
+  { key: 'favorites', label: 'Favorites', icon: 'star-outline' },
   { key: 'food', label: 'Food', icon: 'restaurant-outline' },
   { key: 'coffee', label: 'Coffee', icon: 'cafe-outline' },
   { key: 'parking', label: 'Parking', icon: 'car-outline' },
   { key: 'ev', label: 'EV', icon: 'battery-charging-outline' },
   { key: 'grocery', label: 'Grocery', icon: 'cart-outline' },
 ];
+
+function renderExploreChip(chip: Chip, props: Props, s: Record<string, any>): React.ReactElement {
+  const sel = props.activeChip === chip.key;
+  const gasShort = chip.key === 'gas' ? props.gasChipAvgRegular : null;
+  const a11y =
+    chip.key === 'gas' && gasShort
+      ? `${chip.label}, statewide average about ${gasShort} per gallon regular, not pump price`
+      : chip.label;
+  return (
+    <TouchableOpacity
+      key={chip.key}
+      style={[
+        s.chip,
+        { backgroundColor: sel ? props.colors.primary : props.colors.surface, borderColor: sel ? 'transparent' : props.colors.border },
+      ]}
+      onPress={() => props.onSelectChip(chip.key)}
+      accessibilityRole="button"
+      accessibilityLabel={a11y}
+    >
+      <Ionicons name={chip.icon} size={13} color={sel ? '#fff' : props.colors.textSecondary} style={{ marginRight: 4 }} />
+      <Text style={{ color: sel ? '#fff' : props.colors.text, fontSize: 12, fontWeight: '600' }}>
+        {chip.label}
+        {gasShort ? (
+          <Text
+            style={{
+              color: sel ? 'rgba(255,255,255,0.88)' : props.colors.textSecondary,
+              fontSize: 12,
+              fontWeight: '700',
+            }}
+          >
+            {' · '}
+            {gasShort}
+          </Text>
+        ) : null}
+      </Text>
+    </TouchableOpacity>
+  );
+}
 
 /**
  * Premium search bar with animated dropdown and segmented tabs.
@@ -163,46 +202,21 @@ export default function MapSearchTopBar(props: Props) {
       </View>
 
       {!props.isSearchFocused && (
-        <FlatList
+        <ScrollView
           horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ marginTop: 8 }}
-          data={CATEGORY_CHIPS}
-          keyExtractor={(c) => c.key}
-          renderItem={({ item: chip }) => {
-            const sel = props.activeChip === chip.key;
-            const gasShort = chip.key === 'gas' ? props.gasChipAvgRegular : null;
-            const a11y =
-              chip.key === 'gas' && gasShort
-                ? `${chip.label}, statewide average about ${gasShort} per gallon regular, not pump price`
-                : chip.label;
-            return (
-              <TouchableOpacity
-                style={[s.chip, { backgroundColor: sel ? props.colors.primary : props.colors.surface, borderColor: sel ? 'transparent' : props.colors.border }]}
-                onPress={() => props.onSelectChip(chip.key)}
-                accessibilityRole="button"
-                accessibilityLabel={a11y}
-              >
-                <Ionicons name={chip.icon} size={13} color={sel ? '#fff' : props.colors.textSecondary} style={{ marginRight: 4 }} />
-                <Text style={{ color: sel ? '#fff' : props.colors.text, fontSize: 12, fontWeight: '600' }}>
-                  {chip.label}
-                  {gasShort ? (
-                    <Text
-                      style={{
-                        color: sel ? 'rgba(255,255,255,0.88)' : props.colors.textSecondary,
-                        fontSize: 12,
-                        fontWeight: '700',
-                      }}
-                    >
-                      {' · '}
-                      {gasShort}
-                    </Text>
-                  ) : null}
-                </Text>
-              </TouchableOpacity>
-            );
+          showsHorizontalScrollIndicator
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="handled"
+          style={{ marginTop: 8, maxHeight: 48 }}
+          contentContainerStyle={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+            paddingRight: 16,
           }}
-        />
+        >
+          {CATEGORY_CHIPS.map((chip) => renderExploreChip(chip, props, s))}
+        </ScrollView>
       )}
 
       {!props.isSearchFocused && favoritesAndQuick.length > 0 && (

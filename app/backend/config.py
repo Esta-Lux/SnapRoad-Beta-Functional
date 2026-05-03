@@ -85,7 +85,22 @@ OHGO_API_KEY = (os.environ.get("OHGO_API_KEY") or os.environ.get("VITE_OHGO_API_
 OHGO_API_BASE = (os.environ.get("OHGO_API_URL") or "https://publicapi.ohgo.com").strip().rstrip("/")
 
 # CollectAPI — statewide US gas averages (mobile map layer via GET /api/map/gas-prices).
-COLLECTAPI_KEY = (os.environ.get("COLLECTAPI_KEY") or "").strip()
+# Prefer COLLECTAPI_KEY; hosting configs sometimes rename (support common aliases).
+def _pick_collectapi_key() -> str:
+    for k in (
+        "COLLECTAPI_KEY",
+        "COLLECT_API_KEY",
+        "COLLECTAPI_TOKEN",
+        "COLLECT_TOKEN",
+        "NEXT_PUBLIC_COLLECTAPI_KEY",
+    ):
+        raw = (os.environ.get(k) or "").strip()
+        if raw:
+            return raw.strip().strip("\"'").strip()
+    return ""
+
+
+COLLECTAPI_KEY = _pick_collectapi_key()
 
 _WEAK_JWT_SECRETS = {
     "",
