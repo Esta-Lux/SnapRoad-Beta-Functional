@@ -946,8 +946,8 @@ export default function MapScreen() {
       ? Math.max(0.005, Math.min(0.05, 100 / navPolylineLenMetersRaw))
       : 0.02;
   const smoothedFraction = useSmoothedNavFraction(stabilizedTargetFraction, nav.isNavigating, {
-    /** Tighter time constants so puck + trim seam catch GPS/SDK ticks faster (less “laggy” slide). */
-    timeConstantMs: drivingMode === 'calm' ? 118 : drivingMode === 'sport' ? 78 : 98,
+    /** Softer exponential τ between ticks — visibly smoother glide with modest extra lag vs the prior 78–118ms band. */
+    timeConstantMs: drivingMode === 'calm' ? 152 : drivingMode === 'sport' ? 108 : 128,
     snapDeltaFraction,
     enabled: true,
     freezeWhenStationary: freezeNavSmoothing,
