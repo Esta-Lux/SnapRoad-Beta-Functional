@@ -57,3 +57,12 @@ playwright-report/
 test-results/
 .vite/
 
+# Cursor IDE debug transcripts (never commit).
+.cursor/debug*.log
+
+# Vercel link metadata (machine-local).
+.vercel/
+
+# Supabase CLI ephemeral cache dirs.
+**/supabase/.temp/
+
