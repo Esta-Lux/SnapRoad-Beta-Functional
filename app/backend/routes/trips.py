@@ -493,7 +493,10 @@ def _compute_trip_rewards(
     gems = trip_gems_from_duration_minutes(duration_min, bool(is_premium))
     if profile_id:
         gems = apply_trip_gem_daily_cap(gems, _trip_gems_today_utc(profile_id))
-    xp = max(10, int(distance * 100)) + (100 if safety > 90 else 0)
+    # Bounded XP so Insights/recap stay readable (was distance*100 + large safety bonus).
+    xp_base = min(100, max(5, int(round(float(distance) * 2.0))))
+    bonus = 15 if safety >= 85 else (5 if safety >= 70 else 0)
+    xp = min(150, xp_base + bonus)
     return gems, xp
 
 
@@ -788,6 +791,7 @@ def complete_trip(request: Request, body: TripCompleteBody, user: CurrentUser):
         "origin": body.origin or "Start",
         "destination": body.destination or "End",
         "avg_speed_mph": trip_row.get("avg_speed_mph"),
+        "max_speed_mph": trip_row.get("max_speed_mph"),
         "fuel_used_gallons": trip_row.get("fuel_used_gallons"),
     }
     if profile_totals is not None:

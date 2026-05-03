@@ -6,7 +6,7 @@
 import type { CompositeNavigationProp, NavigatorScreenParams } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { StackNavigationProp } from '@react-navigation/stack';
-import type { TripSummary } from '../hooks/useDriveNavigation';
+import type { TripSummary } from '../types/tripSummary';
 import type { MapFocusFriendParams, NavigateToFriendParams } from '../types';
 import type { NativeNavRouteParams } from './nativeNavGuard';
 

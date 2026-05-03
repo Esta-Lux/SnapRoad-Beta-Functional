@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { Platform } from 'react-native';
-import { tripGemsFromDurationMinutes } from '../utils/tripGems';
+import { tripGemsFromDurationMinutes, previewXpForCountedTrip } from '../utils/tripGems';
 import type { TripSummary } from './useDriveNavigation';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
@@ -10,6 +10,7 @@ import {
   estimateFuelGallons,
   estimateMileageDeductionUsd,
 } from '../utils/driveMetrics';
+import { formatTripPlaceLabel } from '../utils/tripPlaceLabels';
 import {
   mergeTripCompleteResponse,
   raceWithTimeout,
@@ -24,6 +25,7 @@ export interface NativeNavDestination {
   lat: number;
   lng: number;
   name?: string;
+  address?: string;
 }
 
 export interface NativeNavParams {
@@ -94,7 +96,7 @@ export function useNativeNavBridge(params: {
   isPremium?: boolean;
 }) {
   const { destination, originName, isPremium } = params;
-  const { updateUser, refreshUserFromServer, bumpStatsVersion } = useAuth();
+  const { user, updateUser, refreshUserFromServer, bumpStatsVersion } = useAuth();
   const startTimeRef = useRef(Date.now());
   const lastProgressRef = useRef<NativeNavProgressEvent | null>(null);
   /**
@@ -164,6 +166,11 @@ export function useNativeNavBridge(params: {
       const metrics = getTripMetrics();
       const durationMin = Math.max(1, Math.round(metrics.durationSec / 60));
       const dist = metrics.roundedDistanceMiles;
+      const tripSafetyScore = Math.round(Math.max(0, Math.min(100, Number(user?.safetyScore ?? 85))));
+      const destLabel = formatTripPlaceLabel(
+        { name: destination.name, address: destination.address },
+        'Destination',
+      );
       const avgSpeed =
         metrics.durationSec > 0
           ? Math.round((dist / (metrics.durationSec / 3600)) * 10) / 10
@@ -176,11 +183,11 @@ export function useNativeNavBridge(params: {
         distance: dist,
         duration: durationMin,
         duration_seconds: metrics.durationSec,
-        safety_score: 85,
+        safety_score: tripSafetyScore,
         gems_earned: metrics.qualifiesTrip ? tripGemsFromDurationMinutes(durationMin, Boolean(isPremium)) : 0,
-        xp_earned: metrics.qualifiesTrip ? 100 : 0,
+        xp_earned: metrics.qualifiesTrip ? previewXpForCountedTrip(dist, tripSafetyScore) : 0,
         origin: originName ?? 'Current Location',
-        destination: destination.name ?? 'Destination',
+        destination: destLabel,
         date: new Date().toLocaleDateString(),
         started_at: metrics.startedAtIso,
         ended_at: metrics.endedAtIso,
@@ -196,7 +203,7 @@ export function useNativeNavBridge(params: {
         arrivedAtDestination: arrived,
       };
     },
-    [destination.name, getTripMetrics, originName, isPremium],
+    [destination.name, destination.address, getTripMetrics, originName, isPremium, user?.safetyScore],
   );
 
   /**
