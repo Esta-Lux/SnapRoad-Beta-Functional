@@ -3,8 +3,8 @@ import { View, Text, Pressable, StyleSheet, Platform, Alert } from 'react-native
 import MapboxGL, { isMapAvailable } from '../../utils/mapbox';
 import { sortAndCapMarkers, type MarkerCoordinate } from './markerDensity';
 
-/** Hide statewide average badges when zoomed out past city / regional scale (aligned with traffic cameras). */
-export const GAS_PRICE_LAYER_MIN_ZOOM = 12;
+/** Hide statewide average badges when zoomed out (see `markerDensity` gasPrice caps). */
+export const GAS_PRICE_LAYER_MIN_ZOOM = 11;
 
 export type GasPriceMapPoint = {
   id: string;

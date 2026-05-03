@@ -5,6 +5,8 @@ Names must match CollectAPI `name` strings (Title Case).
 """
 from __future__ import annotations
 
+from services.us_state_abbr import US_STATE_ABBREV_TO_NAME
+
 # (lat, lng) — approximate centers, good enough for map markers.
 US_STATE_CENTROIDS: dict[str, tuple[float, float]] = {
     "Alabama": (32.7391, -86.8284),
@@ -63,20 +65,46 @@ US_STATE_CENTROIDS: dict[str, tuple[float, float]] = {
 _NAME_ALIASES: dict[str, str] = {
     "dc": "District of Columbia",
     "d.c.": "District of Columbia",
+    "d c": "District of Columbia",
     "washington dc": "District of Columbia",
     "washington d.c.": "District of Columbia",
 }
 
+# `.title()` does not lowercase small words ("of"); fix known multi-word outliers.
+_TITLE_TO_CANON: dict[str, str] = {
+    "District Of Columbia": "District of Columbia",
+}
+
 
 def centroid_for_state_name(name: str) -> tuple[float, float] | None:
-    """Resolve CollectAPI-style state name to (lat, lng)."""
-    key = " ".join((name or "").split()).strip()
-    if not key:
+    """Resolve CollectAPI-style state name / abbreviation to (lat, lng)."""
+    raw = " ".join((name or "").split()).strip()
+    if not raw:
         return None
-    hit = US_STATE_CENTROIDS.get(key)
+    if raw in US_STATE_CENTROIDS:
+        return US_STATE_CENTROIDS[raw]
+    canon_alias = _NAME_ALIASES.get(raw.lower())
+    if canon_alias:
+        return US_STATE_CENTROIDS.get(canon_alias)
+
+    collapsed_alpha = "".join(ch for ch in raw if ch.isalpha())
+    if len(collapsed_alpha) == 2:
+        canon = US_STATE_ABBREV_TO_NAME.get(collapsed_alpha.upper())
+        if canon:
+            hit = US_STATE_CENTROIDS.get(canon)
+            if hit:
+                return hit
+
+    titled = _TITLE_TO_CANON.get(raw.title(), raw.title())
+    hit = US_STATE_CENTROIDS.get(titled)
     if hit:
         return hit
-    alias = _NAME_ALIASES.get(key.lower())
-    if alias:
-        return US_STATE_CENTROIDS.get(alias)
+    return None
+
+
+def canonical_state_name_for_centroid(lat: float, lng: float) -> str | None:
+    """Map an approximate centroid back to the state's canonical dict key."""
+    for name, c in US_STATE_CENTROIDS.items():
+        if abs(c[0] - lat) < 0.015 and abs(c[1] - lng) < 0.015:
+            return name
     return None
