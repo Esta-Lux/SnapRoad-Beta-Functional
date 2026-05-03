@@ -3527,10 +3527,19 @@ export default function MapScreen() {
     }
     const EXPLORE: Record<string, { title: string; subtitle?: string; type?: string; radius: number; limit: number }> = {
       nearby: { title: 'Nearby', subtitle: 'Places around your location', radius: 1200, limit: 15 },
-      gas: {
-        title: 'Gas',
+      nearbyGas: {
+        title: 'Nearby Gas',
         subtitle:
-          'Stations near you (typical cost tier when Google provides it). Live $/gal is not shown — confirm at the pump.',
+          'Gas stations near you (typical tier when Google provides it). Chip shows statewide regular avg — not pump price.',
+        type: 'gas_station',
+        radius: 15000,
+        limit: 20,
+      },
+      /** Legacy alias if anything still passes `gas` — kept in sync with `nearbyGas`. */
+      gas: {
+        title: 'Nearby Gas',
+        subtitle:
+          'Gas stations near you (typical tier when Google provides it). Chip shows statewide regular avg — not pump price.',
         type: 'gas_station',
         radius: 15000,
         limit: 20,
@@ -3554,7 +3563,7 @@ export default function MapScreen() {
     const lng0 = location.lng;
     const typeQs = cfg.type ? `&type=${encodeURIComponent(cfg.type)}` : '';
 
-    if (chipKey === 'gas') {
+    if (chipKey === 'nearbyGas' || chipKey === 'gas') {
       void Promise.all([
         api.get<any>(
           `/api/places/nearby?lat=${lat0}&lng=${lng0}&radius=${cfg.radius}${typeQs}&limit=${cfg.limit}`,

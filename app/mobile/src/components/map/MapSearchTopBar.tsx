@@ -69,10 +69,8 @@ type Props = {
 };
 
 const CATEGORY_CHIPS: Chip[] = [
-  /** Nearby places + Gas surfaced first — primary map discovery (scroll for more). */
-  { key: 'nearby', label: 'Nearby', icon: 'location-outline' },
-  { key: 'gas', label: 'Gas', icon: 'flash-outline' },
   { key: 'favorites', label: 'Favorites', icon: 'star-outline' },
+  { key: 'nearbyGas', label: 'Nearby Gas', icon: 'flash-outline' },
   { key: 'food', label: 'Food', icon: 'restaurant-outline' },
   { key: 'coffee', label: 'Coffee', icon: 'cafe-outline' },
   { key: 'parking', label: 'Parking', icon: 'car-outline' },
@@ -82,10 +80,10 @@ const CATEGORY_CHIPS: Chip[] = [
 
 function renderExploreChip(chip: Chip, props: Props, s: Record<string, any>): React.ReactElement {
   const sel = props.activeChip === chip.key;
-  const gasShort = chip.key === 'gas' ? props.gasChipAvgRegular : null;
+  const gasShort = chip.key === 'nearbyGas' ? props.gasChipAvgRegular : null;
   const a11y =
-    chip.key === 'gas' && gasShort
-      ? `${chip.label}, statewide average about ${gasShort} per gallon regular, not pump price`
+    chip.key === 'nearbyGas' && gasShort
+      ? `${chip.label}, statewide average regular about ${gasShort} per gallon, not pump price; opens nearby stations`
       : chip.label;
   return (
     <TouchableOpacity
