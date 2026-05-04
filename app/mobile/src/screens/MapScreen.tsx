@@ -181,7 +181,10 @@ import {
 } from '../navigation/navSdkAuthority';
 import { bucketSpeedMpsTo5Mph, maneuverDistanceBucketMeters } from '../navigation/cameraPresets';
 import { getNativeHeadlessFollowingPitch, getNativeHeadlessFollowingZoom } from '../navigation/nativeNavCameraMirror';
-import { getNavCameraFollowTuning } from '../navigation/navCameraFollowTuning';
+import {
+  getNavCameraFollowTuning,
+  shouldIssueNavCameraFollowCommand,
+} from '../navigation/navCameraFollowTuning';
 import NavSdkPuck from '../components/map/NavSdkPuck';
 import {
   INITIAL_STATIONARY_LOCK,
@@ -902,21 +905,21 @@ export default function MapScreen() {
     nav.sdkNavLocation?.speed ??
     nav.navigationProgress?.displayCoord?.speedMps ??
     speed * 0.44704;
-  /** Matcher / NAV speed thinks we're creeping or stopped (~2.35 mph cutoff). */
-  const stoppedForPuckSmoothing = navSpeedMpsForSmoothing < 1.05;
+  /** Matcher / NAV speed thinks we're creeping or stopped (~2.8 mph cutoff). */
+  const stoppedForPuckSmoothing = navSpeedMpsForSmoothing < 1.25;
   /** Tight stationary band + raw GPS sanity — freezes eased fraction + suppresses phantom DR. */
   const freezeNavSmoothing =
     nav.isNavigating &&
     Number.isFinite(navSpeedMpsForSmoothing) &&
-    navSpeedMpsForSmoothing <= 0.75 &&
-    speed <= 2.0;
+    navSpeedMpsForSmoothing <= 0.95 &&
+    speed <= 2.5;
   /**
    * When we're slow/stopped, hold the NAV target arc-length unless the matcher
    * jumps a lot at once (geometry refresh / reroute). The old `< 6 m` gate let
    * phantom forward creep stack across ticks and drive the eased puck toward
    * the destination while the car was parked.
    */
-  const NAV_STATIONARY_HOLD_MAX_DELTA_M = 42;
+  const NAV_STATIONARY_HOLD_MAX_DELTA_M = 60;
   const stabilizedTargetFraction = useMemo(() => {
     if (!nav.isNavigating || navPolylineLenMetersRaw <= 1) {
       stableNavTargetFractionRef.current = targetFraction;
@@ -958,8 +961,8 @@ export default function MapScreen() {
   const deadReckoningSpeedMps =
     freezeNavSmoothing ||
     stoppedForPuckSmoothing ||
-    smoothingSpeedMps < 1.35 ||
-    !(consensusDrSpeedMps > 1.2)
+    smoothingSpeedMps < 1.55 ||
+    !(consensusDrSpeedMps > 1.45)
       ? 0
       : consensusDrSpeedMps;
   /**
@@ -977,8 +980,8 @@ export default function MapScreen() {
       ? Math.max(0.005, Math.min(0.05, 100 / navPolylineLenMetersRaw))
       : 0.02;
   const smoothedFraction = useSmoothedNavFraction(stabilizedTargetFraction, nav.isNavigating, {
-    /** Short exponential τ: enough easing to glide, little enough to avoid visible puck/camera lag. */
-    timeConstantMs: drivingMode === 'calm' ? 112 : drivingMode === 'sport' ? 78 : 92,
+    /** Short exponential τ: smooth all modes while Sport remains the quickest to settle. */
+    timeConstantMs: drivingMode === 'calm' ? 140 : drivingMode === 'sport' ? 108 : 124,
     snapDeltaFraction,
     enabled: true,
     freezeWhenStationary: freezeNavSmoothing || stoppedForPuckSmoothing,
@@ -987,8 +990,8 @@ export default function MapScreen() {
         ? {
             polylineLengthMeters: navPolylineLenMetersRaw,
             speedMps: deadReckoningSpeedMps,
-            staleThresholdMs: drivingMode === 'sport' ? 70 : drivingMode === 'adaptive' ? 90 : 125,
-            maxStaleMs: drivingMode === 'sport' ? 3200 : drivingMode === 'adaptive' ? 3000 : 2800,
+            staleThresholdMs: drivingMode === 'sport' ? 105 : drivingMode === 'adaptive' ? 125 : 150,
+            maxStaleMs: drivingMode === 'sport' ? 2800 : drivingMode === 'adaptive' ? 2600 : 2400,
           }
         : undefined,
   });
@@ -1497,7 +1500,7 @@ export default function MapScreen() {
   ]);
   const routeOverlayCumMeters = useMemo(() => {
     if (!nav.isNavigating || !polylineToRender || polylineToRenderLenMeters <= 1) return 0;
-    const stepM = drivingMode === 'sport' ? 0.9 : drivingMode === 'adaptive' ? 1.05 : 1.2;
+    const stepM = drivingMode === 'sport' ? 0.45 : drivingMode === 'adaptive' ? 0.55 : 0.65;
     const rawMeters =
       routeOverlayPuckSnap?.withinCorridor && Number.isFinite(routeOverlayPuckSnap.cumFromStartMeters)
         ? routeOverlayPuckSnap.cumFromStartMeters
@@ -1797,7 +1800,7 @@ export default function MapScreen() {
     const anchor = { lat: navCameraAnchorLat, lng: navCameraAnchorLng };
     if (!Number.isFinite(anchor.lat) || !Number.isFinite(anchor.lng)) return;
     const last = lastNavCameraCommandRef.current;
-    const stoppedForCamera = (fusedSpeedMpsNav ?? 0) < 0.75;
+    const stoppedForCamera = (fusedSpeedMpsNav ?? 0) < 1.05;
     const h =
       stoppedForCamera && last?.heading != null
         ? last.heading
@@ -1827,21 +1830,23 @@ export default function MapScreen() {
       last?.heading != null && headingDeg != null
         ? Math.abs(((headingDeg - last.heading + 540) % 360) - 180)
         : Infinity;
-    const commandIsRedundant =
-      !isNewNavSession &&
-      !!last &&
-      movedM < navCameraFollowTuning.minMoveMeters &&
-      headingDelta < navCameraFollowTuning.minHeadingDeltaDeg &&
-      Math.abs(last.zoom - zoom) < 0.03 &&
-      Math.abs(last.pitch - pitch) < 0.5 &&
-      now - last.at < navCameraFollowTuning.minUpdateIntervalMs;
-    if (commandIsRedundant) return;
+    const shouldIssueCameraCommand = shouldIssueNavCameraFollowCommand({
+      isNewSession: isNewNavSession,
+      elapsedMs: last ? now - last.at : Number.POSITIVE_INFINITY,
+      movedMeters: movedM,
+      headingDeltaDeg: headingDelta,
+      zoomDelta: last ? Math.abs(last.zoom - zoom) : Number.POSITIVE_INFINITY,
+      pitchDelta: last ? Math.abs(last.pitch - pitch) : Number.POSITIVE_INFINITY,
+      stopped: stoppedForCamera,
+      tuning: navCameraFollowTuning,
+    });
+    if (!shouldIssueCameraCommand) return;
     const animationDuration = isNewNavSession
       ? 0
       : Math.max(
-          stoppedForCamera ? 140 : 55,
+          stoppedForCamera ? 180 : 95,
           Math.min(
-            stoppedForCamera ? 260 : 240,
+            stoppedForCamera ? 380 : 260,
             Math.min(
               Number.isFinite(navCameraAnimationDuration) ? navCameraAnimationDuration! : 420,
               navCameraFollowTuning.animationDurationMs,
@@ -1888,10 +1893,7 @@ export default function MapScreen() {
     navFollowPadLeft,
     navFollowPadRight,
     navCameraAnimationDuration,
-    navCameraFollowTuning.animationDurationMs,
-    navCameraFollowTuning.minHeadingDeltaDeg,
-    navCameraFollowTuning.minMoveMeters,
-    navCameraFollowTuning.minUpdateIntervalMs,
+    navCameraFollowTuning,
     navFallbackPad.paddingTop,
     navFallbackPad.paddingBottom,
     navFallbackPad.paddingLeft,
