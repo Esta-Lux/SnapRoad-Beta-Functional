@@ -1,9 +1,9 @@
 """
 HTTP helpers for CollectAPI Gas Price — retries alternate auth schemes and safe JSON decode.
 
-Official Python examples use lowercase `authorization: apikey <token>` plus `content-type: application/json`
-for `/gasPrice/stateUsaPrice?state=…`. Some curl snippets use bare `Authorization: <token>`.
-We try several shapes per request cycle.
+Official CollectAPI docs use bare `Authorization: <token>`. Some Python examples use
+`authorization: apikey <token>` plus `content-type: application/json` for `/gasPrice/…`.
+We try several shapes per request cycle (official shape first).
 
 401 responses are often plaintext `Unauthorized` (not JSON) — decoding must never hard-fail routes.
 """
@@ -24,9 +24,11 @@ def _header_sets(key: str) -> list[dict[str, str]]:
         "accept": "application/json",
         "User-Agent": "SnapRoad-backend/1.0 (+https://snaproad.app)",
     }
+    # CollectAPI official docs: `Authorization: {token}` (raw token, no "Bearer").
+    # Some SDKs/examples use `authorization: apikey {token}` — try both orders.
     return [
-        {**base, "authorization": f"apikey {k}"},
         {**base, "Authorization": k},
+        {**base, "authorization": f"apikey {k}"},
         {**base, "Authorization": f"apikey {k}"},
         {**base, "Authorization": f"Bearer {k}"},
     ]

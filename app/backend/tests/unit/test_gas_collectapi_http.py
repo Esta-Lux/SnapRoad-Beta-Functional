@@ -36,11 +36,11 @@ def test_get_collect_gas_json_eventually_succeeds_after_401s() -> None:
     assert mock_client_cm.__enter__.return_value.get.call_count == 4
 
 
-def test_header_sets_put_documented_apikey_first() -> None:
+def test_header_sets_put_official_authorization_first() -> None:
     h = gch._header_sets("  my-token  ")
-    assert h[0]["authorization"] == "apikey my-token"
+    assert h[0]["Authorization"] == "my-token"
     assert h[0]["content-type"] == "application/json"
-    assert h[1]["Authorization"] == "my-token"
+    assert h[1]["authorization"] == "apikey my-token"
 
 
 def test_get_collect_state_gas_json_uses_documented_state_endpoint() -> None:
@@ -79,7 +79,7 @@ def test_get_collect_state_gas_json_uses_documented_state_endpoint() -> None:
     assert _url.endswith("/gasPrice/stateUsaPrice")
     assert _kwargs["params"] == {"state": "WA"}
     hdrs = _kwargs["headers"]
-    assert hdrs.get("authorization") == "apikey secret-key"
+    assert hdrs.get("Authorization") == "secret-key"
     assert hdrs.get("content-type") == "application/json"
 
 
@@ -97,7 +97,7 @@ def test_fetch_gas_rows_with_mock_collect_api(monkeypatch) -> None:
         return body, None, 200
 
     monkeypatch.setattr(gps, "get_collect_gas_json", fake_collect)
-    monkeypatch.setattr(gps, "COLLECTAPI_KEY", "Bearer dummy-token")
+    monkeypatch.setattr(gps, "get_collectapi_key", lambda: "Bearer dummy-token")
 
     with gps._CACHE_LOCK:
         gps._cache_mono_until = 0.0
@@ -127,7 +127,7 @@ def test_fallback_state_iteration_starts_with_ohio(monkeypatch) -> None:
 
     monkeypatch.setattr(gps, "get_collect_gas_json", fake_all)
     monkeypatch.setattr(gps, "get_collect_state_gas_json", fake_state)
-    monkeypatch.setattr(gps, "COLLECTAPI_KEY", "dummy-token")
+    monkeypatch.setattr(gps, "get_collectapi_key", lambda: "dummy-token")
 
     with gps._CACHE_LOCK:
         gps._cache_mono_until = 0.0
@@ -169,7 +169,7 @@ def test_fallback_state_shapes_ohio_documented_gasoline(monkeypatch) -> None:
 
     monkeypatch.setattr(gps, "get_collect_gas_json", fake_all)
     monkeypatch.setattr(gps, "get_collect_state_gas_json", fake_state)
-    monkeypatch.setattr(gps, "COLLECTAPI_KEY", "dummy-token")
+    monkeypatch.setattr(gps, "get_collectapi_key", lambda: "dummy-token")
 
     with gps._CACHE_LOCK:
         gps._cache_mono_until = 0.0
@@ -208,7 +208,7 @@ def test_fetch_gas_rows_falls_back_to_documented_state_endpoint(monkeypatch) -> 
 
     monkeypatch.setattr(gps, "get_collect_gas_json", fake_all)
     monkeypatch.setattr(gps, "get_collect_state_gas_json", fake_state)
-    monkeypatch.setattr(gps, "COLLECTAPI_KEY", "dummy-token")
+    monkeypatch.setattr(gps, "get_collectapi_key", lambda: "dummy-token")
 
     with gps._CACHE_LOCK:
         gps._cache_mono_until = 0.0

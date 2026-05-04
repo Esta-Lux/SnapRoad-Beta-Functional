@@ -14,7 +14,7 @@ import threading
 import time
 from typing import Any
 
-from config import COLLECTAPI_KEY
+from config import get_collectapi_key
 from services.gas_collectapi_http import get_collect_gas_json, get_collect_state_gas_json
 from services.us_state_abbr import US_STATE_ABBREV_TO_NAME
 from services.us_state_centroids import canonical_state_name_for_centroid, centroid_for_state_name
@@ -216,7 +216,7 @@ def fetch_us_state_gas_prices() -> tuple[list[dict[str, Any]], str | None]:
         if _cache_mono_until > now:
             return list(_cached_rows), _cached_error
 
-    key = _normalize_collectapi_key(COLLECTAPI_KEY or "")
+    key = _normalize_collectapi_key(get_collectapi_key() or "")
     if not key:
         with _CACHE_LOCK:
             _cache_mono_until = now + 300

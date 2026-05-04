@@ -102,6 +102,17 @@ def _pick_collectapi_key() -> str:
 
 COLLECTAPI_KEY = _pick_collectapi_key()
 
+
+def get_collectapi_key() -> str:
+    """Latest CollectAPI token from env (aliases in `_pick_collectapi_key`).
+
+    Prefer this in request paths over the module-level `COLLECTAPI_KEY` snapshot
+    so hosting reloads / tests that patch this function behave predictably. The
+    OS still only updates `os.environ` on process start — add the var in Railway
+    then redeploy or restart the service.
+    """
+    return _pick_collectapi_key()
+
 _WEAK_JWT_SECRETS = {
     "",
     "changeme",
