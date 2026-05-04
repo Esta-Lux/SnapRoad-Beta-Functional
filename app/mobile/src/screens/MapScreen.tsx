@@ -1,8 +1,20 @@
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList,
-  Platform, Keyboard, Alert, Switch, Pressable, Image, Dimensions,
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  FlatList,
+  Platform,
+  Keyboard,
+  Alert,
+  Switch,
+  Pressable,
+  Image,
+  Dimensions,
   AppState,
+  InteractionManager,
 } from 'react-native';
 import Animated, {
   FadeIn, FadeOut, SlideInDown, SlideOutDown,
@@ -409,6 +421,39 @@ function timeAgo(iso: string): string {
   if (diff < 1) return 'just now';
   if (diff < 60) return `${diff}m ago`;
   return `${Math.round(diff / 60)}h ago`;
+}
+
+/** Normalize vertices from REST Directions, sticky SDK geometry, or `navLogicCoords`. */
+function coerceRouteOverviewPoint(p: {
+  lat?: unknown;
+  lng?: unknown;
+  latitude?: unknown;
+  longitude?: unknown;
+}): Coordinate | null {
+  const lat = typeof p.lat === 'number' ? p.lat : typeof p.latitude === 'number' ? p.latitude : NaN;
+  const lng = typeof p.lng === 'number' ? p.lng : typeof p.longitude === 'number' ? p.longitude : NaN;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
+
+function firstPolylineUsableForOverview(
+  candidates: (readonly unknown[] | Coordinate[] | null | undefined)[],
+): Coordinate[] | null {
+  for (const raw of candidates) {
+    if (!raw || raw.length < 2) continue;
+    const out: Coordinate[] = [];
+    for (const pt of raw) {
+      const c = coerceRouteOverviewPoint(pt as {
+        lat?: unknown;
+        lng?: unknown;
+        latitude?: unknown;
+        longitude?: unknown;
+      });
+      if (c) out.push(c);
+    }
+    if (out.length >= 2) return out;
+  }
+  return null;
 }
 
 function parseCameraViewsFromTraffic(raw: unknown): CameraViewFeed[] | undefined {
@@ -4204,19 +4249,29 @@ export default function MapScreen() {
   }, [location.lat, location.lng, nav.isNavigating]);
 
   const handleRouteOverview = useCallback(() => {
-    const restNav = nav.navigationData?.polyline;
-    const route =
-      restNav && restNav.length >= 2
-        ? restNav
-        : polylineToRender && polylineToRender.length >= 2
-          ? polylineToRender
-          : null;
-    if (!nav.isNavigating || !route || route.length < 2) return;
+    if (!nav.isNavigating) return;
 
     try {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {
       /* optional */
+    }
+
+    const route = firstPolylineUsableForOverview([
+      nav.navigationData?.polyline,
+      polylineToRender ?? undefined,
+      stickyRoutePolyline ?? undefined,
+      nav.sdkRoutePolyline?.length ? nav.sdkRoutePolyline : undefined,
+      nav.navigationProgress?.routePolyline,
+      navLogicCoords.length >= 2 ? navLogicCoords : undefined,
+    ]);
+
+    if (!route || route.length < 2) {
+      Alert.alert(
+        'Route overview',
+        'The full route shape is still loading. Try again in a few seconds.',
+      );
+      return;
     }
 
     const dest = nav.navigationData?.destination;
@@ -4230,7 +4285,10 @@ export default function MapScreen() {
       navDisplayCoord.lat,
       dest && Number.isFinite(dest.lat) ? dest.lat : NaN,
     ].filter(Number.isFinite) as number[];
-    if (lngs.length < 2 || lats.length < 2) return;
+    if (lngs.length < 2 || lats.length < 2) {
+      Alert.alert('Route overview', 'Could not frame this route right now.');
+      return;
+    }
 
     let maxLng = Math.max(...lngs);
     let minLng = Math.min(...lngs);
@@ -4249,6 +4307,7 @@ export default function MapScreen() {
     userInteracting.current = true;
     setCameraLocked(false);
     setFollowMode('free');
+
     const winH = Dimensions.get('window').height;
     const topPad = insets.top + 170;
     const sidePad = 40;
@@ -4256,22 +4315,41 @@ export default function MapScreen() {
       Math.round(winH * 0.48),
       MAP_NAV_BOTTOM_INSET + insets.bottom + 56,
     );
-    const cam = cameraRef.current;
-    if (cam?.fitBounds) {
-      const runFit = () => {
-        try {
-          cam.fitBounds(
-            [maxLng, maxLat],
-            [minLng, minLat],
-            [topPad, sidePad, bottomPad, sidePad],
-            520,
-          );
-        } catch (err) {
-          if (__DEV__) console.warn('[MapScreen] fitBounds overview failed', err);
+
+    const ne: [number, number] = [maxLng, maxLat];
+    const sw: [number, number] = [minLng, minLat];
+    const padding = {
+      paddingTop: topPad,
+      paddingRight: sidePad,
+      paddingBottom: bottomPad,
+      paddingLeft: sidePad,
+    };
+
+    const runOverviewCamera = () => {
+      const cam = cameraRef.current;
+      if (!cam) return;
+      try {
+        if (typeof cam.setCamera === 'function') {
+          cam.setCamera({
+            type: 'CameraStop',
+            bounds: { ne, sw },
+            padding,
+            animationDuration: 520,
+            animationMode: 'easeTo',
+            pitch: 28,
+          });
+        } else if (typeof cam.fitBounds === 'function') {
+          cam.fitBounds(ne, sw, [topPad, sidePad, bottomPad, sidePad], 520);
         }
-      };
-      requestAnimationFrame(() => requestAnimationFrame(runFit));
-    }
+      } catch (err) {
+        if (__DEV__) console.warn('[MapScreen] route overview camera failed', err);
+      }
+    };
+
+    InteractionManager.runAfterInteractions(() => {
+      requestAnimationFrame(() => requestAnimationFrame(runOverviewCamera));
+    });
+
     autoRelockTimer.current = setTimeout(() => {
       if (nav.isNavigating) {
         lastNavCameraCommandRef.current = null;
@@ -4288,9 +4366,13 @@ export default function MapScreen() {
     nav.navigationData?.polyline,
     nav.navigationData?.destination?.lat,
     nav.navigationData?.destination?.lng,
+    nav.sdkRoutePolyline,
+    nav.navigationProgress?.routePolyline,
     navDisplayCoord.lat,
     navDisplayCoord.lng,
     polylineToRender,
+    stickyRoutePolyline,
+    navLogicCoords,
   ]);
 
   const handleSubmitReport = useCallback(async (type: string) => {
