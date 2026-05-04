@@ -382,6 +382,23 @@ def _nearby_from_memory(lat: float, lng: float, radius_miles: float, now: dateti
     return out[:limit]
 
 
+@router.get("/osm-nearby", responses=OPENAPI_ERROR_RESPONSES)
+def get_osm_road_signals_nearby(
+    lat: Annotated[float, Query(...)],
+    lng: Annotated[float, Query(...)],
+    radius_miles: Annotated[float, Query(ge=0.25, le=25)] = 2.5,
+):
+    """
+    Optional OpenStreetMap-derived construction / traffic-calming pins (Overpass).
+    Disabled unless OSM_INCIDENTS_ENABLED is set in the API environment.
+    """
+    from services.osm_road_signals import fetch_osm_road_signals
+
+    r_m = float(radius_miles) * 1609.344
+    data = fetch_osm_road_signals(lat, lng, r_m)
+    return {"success": True, "data": data}
+
+
 @router.get("/nearby", responses=OPENAPI_ERROR_RESPONSES)
 def get_nearby_incidents(
     lat: Annotated[float, Query(...)],

@@ -14,8 +14,8 @@ import Animated, { SlideInDown, SlideOutDown } from 'react-native-reanimated';
 import * as ImagePicker from 'expo-image-picker';
 import { api } from '../../api/client';
 
-/** GPS often reads 1–4 mph while parked; cap keeps capture safe without blocking legitimate stopped reports. */
-const STATIONARY_MAX_MPH = 5;
+/** Tap-to-submit only after a stationary/slow capture; opening the camera requires speed ≤ ~10 mph. */
+const CAMERA_MAX_MPH_FOR_CAPTURE = 10;
 
 interface Props {
   visible: boolean;
@@ -52,11 +52,11 @@ export default function PhotoReportSheet({
   const chipBg = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.06)';
   const iconBg = isLight ? '#eff6ff' : 'rgba(59,130,246,0.15)';
 
-  function blockIfMoving(): boolean {
-    if (speedMph > STATIONARY_MAX_MPH) {
+  function blockIfMovingForLens(): boolean {
+    if (speedMph > CAMERA_MAX_MPH_FOR_CAPTURE) {
       Alert.alert(
-        'Stop to capture',
-        'Photo reports are only available while you are stopped or moving very slowly (about 5 mph or less). Pull over safely before opening the camera.',
+        'Slow down to capture',
+        `Photos from the driving camera unlock at ${CAMERA_MAX_MPH_FOR_CAPTURE} mph or slower. You can pick an existing photo from your library anytime to report conditions at your current pin.`,
       );
       return true;
     }
@@ -64,7 +64,7 @@ export default function PhotoReportSheet({
   }
 
   async function takePhoto() {
-    if (blockIfMoving()) return;
+    if (blockIfMovingForLens()) return;
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
       Alert.alert('Permission required', 'Camera access is needed to take a photo.');
@@ -76,7 +76,6 @@ export default function PhotoReportSheet({
   }
 
   async function chooseFromGallery() {
-    if (blockIfMoving()) return;
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       Alert.alert('Permission required', 'Photo library access is needed to choose an image.');
@@ -89,7 +88,6 @@ export default function PhotoReportSheet({
 
   async function submitReport() {
     if (!imageUri) return;
-    if (blockIfMoving()) return;
     setSubmitting(true);
     try {
       const formData = new FormData();
@@ -157,9 +155,9 @@ export default function PhotoReportSheet({
         </TouchableOpacity>
       </View>
 
-      {speedMph > STATIONARY_MAX_MPH && (
+      {speedMph > CAMERA_MAX_MPH_FOR_CAPTURE && (
         <Text style={[styles.stationaryHint, { color: subColor }]}>
-          Stay at ~{STATIONARY_MAX_MPH} mph or below to take or submit a photo report.
+          In-motion camera stays locked above ~{CAMERA_MAX_MPH_FOR_CAPTURE} mph — use Choose from Gallery to attach a photo for this pin.
         </Text>
       )}
       {!imageUri ? (

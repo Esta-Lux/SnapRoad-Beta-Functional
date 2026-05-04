@@ -22,7 +22,9 @@ interface Props {
 
 const MARKER_VIEW_MAX = 60;
 /** Circular thumbnail — matches larger incident tiles for tap targets. */
-const PIN_OUTER = 46;
+/** Match incident road-report puck (~28 px) — circular lens on map. */
+const PIN_OUTER = 28;
+
 const PURPLE = '#8B5CF6';
 const PURPLE_DEEP = '#6D28D9';
 
@@ -131,9 +133,9 @@ const styles = StyleSheet.create({
     }),
   },
   iconInner: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
+    width: 22,
+    height: 22,
+    borderRadius: 8,
     backgroundColor: PURPLE,
     alignItems: 'center',
     justifyContent: 'center',

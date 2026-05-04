@@ -143,6 +143,7 @@ import {
   tangentBearingAlongPolyline,
   type RouteSplitForOverlay,
 } from '../utils/distance';
+import { distanceAheadEffectiveMeters, isIncidentAheadSnapshot } from '../utils/navIncidentAhead';
 import { useSmoothedNavFraction } from '../hooks/useSmoothedNavFraction';
 import { formatDuration } from '../utils/format';
 import { formatUsd } from '../utils/driveMetrics';
@@ -2972,8 +2973,29 @@ export default function MapScreen() {
         `/api/incidents/nearby?lat=${loc.lat}&lng=${loc.lng}&radius_miles=2`,
       );
       if (!res.success || res.data == null) return;
-      const d = (res.data as { data?: Incident[] }).data;
-      if (Array.isArray(d)) setNearbyIncidents(d);
+      const payload = res.data as { success?: boolean; data?: Incident[] };
+      const d = payload.data;
+      let merged: Incident[] = Array.isArray(d) ? [...d] : [];
+      try {
+        const osm = await api.get<{ success?: boolean; data?: Incident[] }>(
+          `/api/incidents/osm-nearby?lat=${loc.lat}&lng=${loc.lng}&radius_miles=2`,
+        );
+        const op = osm.success && osm.data != null ? (osm.data as { success?: boolean; data?: Incident[] }) : null;
+        const raw = op?.data;
+        if (Array.isArray(raw)) {
+          const seen = new Set(merged.map((x) => String(x.id)));
+          for (const row of raw) {
+            const id = String((row as Incident).id);
+            if (!seen.has(id)) {
+              seen.add(id);
+              merged.push(row as Incident);
+            }
+          }
+        }
+      } catch {
+        /* OSM optional */
+      }
+      setNearbyIncidents(merged);
     } catch { /* offline / tunnel */ }
   }, []);
 
@@ -3026,33 +3048,60 @@ export default function MapScreen() {
     }
   }, [nav.isNavigating, recommendedNearbyOffers, location.lat, location.lng, drivingMode]);
 
-  // Report cards during navigation
+  // Police-only navigation alerts: ahead on route (or forward cone without geometry); ~2 mi then ~0.05 mi.
+  const navHeadingForIncidents = Number.isFinite(navPuckHeading) ? navPuckHeading : heading;
   useEffect(() => {
-    if (!nav.isNavigating || !nearbyIncidents.length) { setActiveReportCard(null); return; }
-    const ahead = nearbyIncidents.filter((inc) => {
-      if (announcedRef.current.has(`a:${inc.id}`)) return false;
-      const d = haversineMeters(location.lat, location.lng, inc.lat, inc.lng) / 1609.34;
-      return d > 0.1 && d < 1.0;
-    });
-    if (ahead.length > 0) {
-      const nearest = ahead[0];
-      announcedRef.current.add(`a:${nearest.id}`);
-      setActiveReportCard(nearest);
-      const voiceTypes = ['accident', 'police', 'crash', 'hazard', 'construction', 'closure', 'weather'];
-      if (voiceTypes.includes(nearest.type)) {
-        const dist = (haversineMeters(location.lat, location.lng, nearest.lat, nearest.lng) / 1609.34).toFixed(1);
-        // Advisory rate source: suppressed briefly around native turn cues to keep trip audio clean.
-        speak(
-          `Caution, ${nearest.title || nearest.type} reported ${dist} miles ahead.`,
-          'high',
-          drivingMode,
-          { rateSource: 'advisory' },
-        );
-      }
-      if (reportCardTimeoutRef.current) clearTimeout(reportCardTimeoutRef.current);
-      reportCardTimeoutRef.current = setTimeout(() => setActiveReportCard(null), 10000);
+    if (!nav.isNavigating || !nearbyIncidents.length) {
+      setActiveReportCard((c) => (c && String(c.type).toLowerCase() === 'police' ? null : c));
+      return;
     }
-  }, [nav.isNavigating, nearbyIncidents, location.lat, location.lng, drivingMode]);
+    const poly = nav.navigationData?.polyline;
+    const user: Coordinate = { lat: location.lat, lng: location.lng };
+    const MI_2_MIN = 1.75 * 1609.34;
+    const MI_2_MAX = 2.25 * 1609.34;
+    const MI_NEAR = 0.055 * 1609.34;
+
+    let bestNear: { inc: Incident; meters: number } | null = null;
+    let best2: { inc: Incident; meters: number } | null = null;
+
+    for (const inc of nearbyIncidents) {
+      if (String(inc.type).toLowerCase() !== 'police') continue;
+      const meters = distanceAheadEffectiveMeters(poly, user, { lat: inc.lat, lng: inc.lng }, navHeadingForIncidents);
+      if (meters == null) continue;
+      if (meters > 0 && meters <= MI_NEAR) {
+        if (!bestNear || meters < bestNear.meters) bestNear = { inc, meters };
+      } else if (meters >= MI_2_MIN && meters <= MI_2_MAX) {
+        if (!best2 || meters < best2.meters) best2 = { inc, meters };
+      }
+    }
+
+    const pick = bestNear ?? best2;
+    if (!pick) return;
+
+    const keyNear = `police_near:${pick.inc.id}`;
+    const key2 = `police_2mi:${pick.inc.id}`;
+    const isNearBand = bestNear != null && pick === bestNear;
+    const annKey = isNearBand ? keyNear : key2;
+    if (announcedRef.current.has(annKey)) return;
+    announcedRef.current.add(annKey);
+
+    if (isNearBand) {
+      speak('Police reported ahead.', 'high', drivingMode, { rateSource: 'advisory' });
+    } else {
+      speak('Police reported about two miles ahead.', 'high', drivingMode, { rateSource: 'advisory' });
+    }
+    setActiveReportCard(pick.inc);
+    if (reportCardTimeoutRef.current) clearTimeout(reportCardTimeoutRef.current);
+    reportCardTimeoutRef.current = setTimeout(() => setActiveReportCard(null), isNearBand ? 8000 : 10000);
+  }, [
+    nav.isNavigating,
+    nearbyIncidents,
+    location.lat,
+    location.lng,
+    drivingMode,
+    nav.navigationData?.polyline,
+    navHeadingForIncidents,
+  ]);
 
   // Fix 13: Confirmation prompt when passing a report (nav + ambient)
   useEffect(() => {
@@ -3108,15 +3157,14 @@ export default function MapScreen() {
       .catch((e) => logMapDataIssue('GET /api/navigation/nearby-offers', e));
   }, [nav.isNavigating, location.lat, location.lng, drivingMode]);
 
-  // Fix 13: Ambient mode with direction-based filtering
+  // Fix 13: Ambient mode with direction-based filtering (forward cone; ignore behind)
   useEffect(() => {
     if (!isAmbient || !nearbyIncidents.length) return;
+    const user: Coordinate = { lat: location.lat, lng: location.lng };
     const hp = nearbyIncidents.filter((inc) => {
       if (inc.type !== 'accident' && inc.type !== 'police') return false;
       if (announcedRef.current.has(`amb:${inc.id}`)) return false;
-      const bearing = Math.atan2(inc.lng - location.lng, inc.lat - location.lat) * 180 / Math.PI;
-      const diff = Math.abs(((bearing - heading + 540) % 360) - 180);
-      return diff < 30;
+      return isIncidentAheadSnapshot(undefined, user, { lat: inc.lat, lng: inc.lng }, heading);
     });
     if (hp.length > 0) {
       const n = hp[0];
@@ -4117,6 +4165,10 @@ export default function MapScreen() {
   }, [nav.isNavigating]);
 
   const handleRecenter = useCallback(() => {
+    if (autoRelockTimer.current) {
+      clearTimeout(autoRelockTimer.current);
+      autoRelockTimer.current = null;
+    }
     if (nav.isNavigating) {
       setCameraLocked(true);
       userInteracting.current = false;
@@ -5828,15 +5880,17 @@ export default function MapScreen() {
 
       {nav.isNavigating && !nav.showRoutePreview && !activeTripSummary && (
         <View style={[s.navFabCol, { bottom: MAP_NAV_BOTTOM_INSET + insets.bottom + 10 }]}>
-          {!cameraLocked && (
-            <TouchableOpacity
-              style={[s.navFab, { backgroundColor: '#3B82F6' }]}
-              onPress={handleRecenter}
-              accessibilityLabel="Recenter"
-            >
-              <Ionicons name="navigate" size={20} color="#fff" />
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={[s.navFab, {
+              backgroundColor: '#2563EB',
+              borderWidth: 1,
+              borderColor: 'rgba(255,255,255,0.35)',
+            }]}
+            onPress={handleRecenter}
+            accessibilityLabel="Recenter and lock camera"
+          >
+            <Ionicons name="navigate" size={20} color="#fff" />
+          </TouchableOpacity>
           <TouchableOpacity
             style={[s.navFab, {
               backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(30,41,59,0.94)',

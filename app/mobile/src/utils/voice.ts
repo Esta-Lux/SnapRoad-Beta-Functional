@@ -299,6 +299,7 @@ export function speakOrionReply(text: string, onFinish?: () => void, mode: Drivi
   }
   void (async () => {
     try {
+      Speech.stop();
       await configureAudioSessionForSpeechOutput();
       const voiceId = await getPreferredTtsVoiceIdentifier();
       const profile = getTtsSpeechProfile(mode);

@@ -381,6 +381,29 @@ export function alongRouteDistanceMeters(
   return haversineMeters(from.lat, from.lng, to.lat, to.lng);
 }
 
+/**
+ * Meters ahead of the driver's route snapshot to `target`, or `null` if off-route / behind /
+ * snapped too far from the polyline. Used for alerts that should ignore hazards already passed.
+ */
+export function aheadMetersAlongDrivingRoute(
+  polyline: Coordinate[] | null | undefined,
+  user: Coordinate,
+  target: Coordinate,
+  opts?: { maxSnapMetersUser?: number; maxSnapMetersTarget?: number; minAheadMeters?: number },
+): number | null {
+  const maxUser = opts?.maxSnapMetersUser ?? 180;
+  const maxTarget = opts?.maxSnapMetersTarget ?? 150;
+  const minAhead = opts?.minAheadMeters ?? 20;
+  if (!polyline || polyline.length < 2) return null;
+  const u = projectOntoPolyline(user, polyline);
+  const v = projectOntoPolyline(target, polyline);
+  if (!u || !v) return null;
+  if (u.distanceToRouteMeters > maxUser || v.distanceToRouteMeters > maxTarget) return null;
+  const d = v.cumFromStartMeters - u.cumFromStartMeters;
+  if (d < minAhead) return null;
+  return d;
+}
+
 /** Single progress snapshot for turn-by-turn: ties ETA, split, off-route, and maneuver distances together. */
 export type NavigationRouteProgress = PolylineProjection & {
   remainingRouteMeters: number;
