@@ -223,6 +223,44 @@ def test_fetch_gas_rows_falls_back_to_documented_state_endpoint(monkeypatch) -> 
     assert wa.get("midGrade") == "4.671"
 
 
+def test_fetch_raw_rows_skips_state_fallback_on_collectapi_429(monkeypatch) -> None:
+    import services.gas_prices_service as gps
+
+    state_calls = {"n": 0}
+
+    def fake_all(_timeout: float, _key: str):
+        return None, gps._ERR_RATE_LIMITED, 429
+
+    def fake_state(_timeout: float, _key: str, _state_code: str):
+        state_calls["n"] += 1
+        return None, None, None
+
+    monkeypatch.setattr(gps, "get_collect_gas_json", fake_all)
+    monkeypatch.setattr(gps, "get_collect_state_gas_json", fake_state)
+
+    rows, err = gps._fetch_collectapi_raw_rows("dummy-key")
+    assert rows == []
+    assert err == gps._ERR_RATE_LIMITED
+    assert state_calls["n"] == 0
+
+
+def test_state_fallback_stops_after_first_state_429(monkeypatch) -> None:
+    import services.gas_prices_service as gps
+
+    codes_seen: list[str] = []
+
+    def fake_state(_timeout: float, _key: str, state_code: str):
+        codes_seen.append(state_code)
+        return None, gps._ERR_RATE_LIMITED, 429
+
+    monkeypatch.setattr(gps, "get_collect_state_gas_json", fake_state)
+
+    rows, err = gps._fetch_collectapi_state_endpoint_rows("dummy-key")
+    assert rows == []
+    assert err == gps._ERR_RATE_LIMITED
+    assert codes_seen == ["OH"]
+
+
 def test_collectapi_key_normalization_accepts_common_header_values() -> None:
     import services.gas_prices_service as gps
 

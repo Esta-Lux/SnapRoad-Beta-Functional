@@ -27,6 +27,8 @@ _cached_rows: list[dict[str, Any]] = []
 _cached_error: str | None = None
 _DEFAULT_TTL_SEC = 6 * 3600
 _ERROR_COOLDOWN_SEC = 120
+# CollectAPI free tiers 429 easily; do not retry the whole pipeline for a long beat.
+_RATE_LIMIT_COOLDOWN_SEC = 30 * 60
 _MISMATCH_COOLDOWN_SEC = 15 * 60
 _EMPTY_BODY_TTL_SEC = 3600
 _STATE_ENDPOINT_TIMEOUT_SEC = 8.0
@@ -34,6 +36,9 @@ _AUTH_ERRORS = {
     "gas_prices_collectapi_unauthorized",
     "gas_prices_collectapi_forbidden",
 }
+# Never chain more HTTP after these — e.g. 429 + 50-state fallback was hundreds of calls.
+_ERR_RATE_LIMITED = "gas_prices_collectapi_rate_limited"
+_STOP_UPSTREAM_ERRORS = frozenset({_ERR_RATE_LIMITED})
 
 
 def _normalize_collectapi_key(raw: str) -> str:
@@ -151,6 +156,8 @@ def _fetch_collectapi_state_endpoint_rows(key: str) -> tuple[list[dict[str, Any]
     for state_code in _state_codes_ordered_for_fallback():
         body, err, status = get_collect_state_gas_json(_STATE_ENDPOINT_TIMEOUT_SEC, key, state_code)
         if err or body is None:
+            if err in _STOP_UPSTREAM_ERRORS:
+                return [], err
             if err in _AUTH_ERRORS:
                 return [], err
             if first_err is None:
@@ -175,6 +182,11 @@ def _fetch_collectapi_state_endpoint_rows(key: str) -> tuple[list[dict[str, Any]
 def _fetch_collectapi_raw_rows(key: str) -> tuple[list[Any], str | None]:
     """Try all-states endpoint first, then documented per-state endpoint."""
     body, http_err, status = get_collect_gas_json(15.0, key)
+
+    # Critical: do not run the 50-state fallback after 429 — that was hundreds of
+    # extra CollectAPI calls and kept accounts permanently throttled.
+    if http_err in _STOP_UPSTREAM_ERRORS:
+        return [], http_err
 
     if http_err or body is None:
         if http_err:
@@ -226,8 +238,12 @@ def fetch_us_state_gas_prices() -> tuple[list[dict[str, Any]], str | None]:
 
     raw_list, upstream_err = _fetch_collectapi_raw_rows(key)
     if upstream_err and not raw_list:
+        if upstream_err == _ERR_RATE_LIMITED:
+            cooldown = _RATE_LIMIT_COOLDOWN_SEC
+        else:
+            cooldown = _ERROR_COOLDOWN_SEC
         with _CACHE_LOCK:
-            _cache_mono_until = now + _ERROR_COOLDOWN_SEC
+            _cache_mono_until = now + cooldown
             _cached_rows = []
             _cached_error = upstream_err
         return [], _cached_error
