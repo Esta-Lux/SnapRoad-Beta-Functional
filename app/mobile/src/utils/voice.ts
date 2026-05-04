@@ -7,6 +7,7 @@ import { markNavVoiceFromJs, msSinceLastSdkVoice } from '../navigation/navSdkSto
 import type { LaneInfo, ManeuverKind, RoadSignal } from '../navigation/navModel';
 import { navLaneGuidanceUiEnabled } from '../navigation/navFeatureFlags';
 import { getPreferredTtsVoiceIdentifier } from './ttsVoicePreference';
+import { DRIVING_MODES } from '../constants/modes';
 
 let lastSpokenPhrase = '';
 let lastSpokenAt = 0;
@@ -100,19 +101,25 @@ export type TtsSpeechProfile = {
 
 /**
  * One house voice for navigation + Orion: calm, clear, young-adult male when
- * the device exposes a matching voice. Keep the profile steady across driving
- * modes so HUD mic replies and turn cues sound like the same assistant.
+ * the device exposes a matching voice. Expo treats `rate: 1.0` as normal speed;
+ * keep mode differences subtle so turn cues stay easy to parse in a car.
  */
-const CALM_MALE_SPEECH_PROFILE: TtsSpeechProfile = {
-  rate: 0.96,
-  pitch: 0.96,
-  language: 'en-US',
-};
-
 const MODE_SPEECH_PROFILE: Record<DrivingMode, TtsSpeechProfile> = {
-  calm: CALM_MALE_SPEECH_PROFILE,
-  adaptive: CALM_MALE_SPEECH_PROFILE,
-  sport: CALM_MALE_SPEECH_PROFILE,
+  calm: {
+    rate: DRIVING_MODES.calm.speechRate,
+    pitch: DRIVING_MODES.calm.speechPitch,
+    language: 'en-US',
+  },
+  adaptive: {
+    rate: DRIVING_MODES.adaptive.speechRate,
+    pitch: DRIVING_MODES.adaptive.speechPitch,
+    language: 'en-US',
+  },
+  sport: {
+    rate: DRIVING_MODES.sport.speechRate,
+    pitch: DRIVING_MODES.sport.speechPitch,
+    language: 'en-US',
+  },
 };
 
 export type SpeakRateSource = 'driving' | 'navigation_fixed' | 'advisory';

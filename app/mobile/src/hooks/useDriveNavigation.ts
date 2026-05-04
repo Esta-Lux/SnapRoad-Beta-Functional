@@ -1309,6 +1309,8 @@ export type { TripSummary };export function useDriveNavigation(params: {
       avg_speed_mph: avgSpeed,
       max_speed_mph: maxSpeed,
       fuel_used_gallons: Math.round(estimateFuelGallons(roundedDist) * 1000) / 1000,
+      fuel_cost_estimate: Math.round(estimateFuelCostUsd(roundedDist) * 100) / 100,
+      mileage_value_estimate: Math.round(estimateMileageDeductionUsd(roundedDist) * 100) / 100,
       hard_braking_events: 0,
       speeding_events: 0,
       incidents_reported: 0,

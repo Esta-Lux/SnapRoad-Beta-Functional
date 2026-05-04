@@ -173,7 +173,7 @@ test('formatTurnInstruction strips street and shield names from spoken guidance'
   assert.doesNotMatch(phrase, /Silver Dust Lane|I-75/);
 });
 
-test('HUD and Orion speech profiles use the same calm US male-style settings', () => {
+test('HUD and Orion speech profiles use normal-rate clear US male-style settings', () => {
   const calm = getTtsSpeechProfile('calm');
   const adaptive = getTtsSpeechProfile('adaptive');
   const sport = getTtsSpeechProfile('sport');
@@ -181,10 +181,11 @@ test('HUD and Orion speech profiles use the same calm US male-style settings', (
   assert.equal(calm.language, 'en-US');
   assert.equal(adaptive.language, 'en-US');
   assert.equal(sport.language, 'en-US');
-  assert.deepEqual(adaptive, calm);
-  assert.deepEqual(sport, calm);
-  assert.equal(calm.rate, 0.96);
-  assert.equal(calm.pitch, 0.96);
-  assert.ok(calm.rate <= 1);
-  assert.ok(calm.pitch <= 1);
+  assert.equal(calm.rate, 1);
+  assert.equal(adaptive.rate, 1.03);
+  assert.equal(sport.rate, 1.06);
+  assert.equal(calm.pitch, 0.98);
+  assert.equal(adaptive.pitch, calm.pitch);
+  assert.equal(sport.pitch, calm.pitch);
+  assert.ok(sport.rate <= 1.08);
 });

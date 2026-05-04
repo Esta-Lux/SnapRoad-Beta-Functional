@@ -114,8 +114,8 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     /** Approx. nav bottom chrome (see `NAV_MAP_BOTTOM_CHROME_PX` in cameraPresets); follow padding uses presets. */
     cameraPaddingBottom: 198,
 
-    speechRate: 0.88,
-    speechPitch: 0.95,
+    speechRate: 1.0,
+    speechPitch: 0.98,
 
     lightPreset: 'dawn',
     terrainExaggeration: 1.2,
@@ -176,8 +176,8 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     /** Aligned with `NAV_MAP_BOTTOM_CHROME_PX` in cameraPresets for nav follow framing. */
     cameraPaddingBottom: 198,
 
-    speechRate: 1.02,
-    speechPitch: 1.0,
+    speechRate: 1.03,
+    speechPitch: 0.98,
 
     lightPreset: 'day',
     terrainExaggeration: 1.0,
@@ -240,8 +240,8 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     exploreZoom: 15.5,
     cameraPaddingBottom: 198,
 
-    speechRate: 1.14,
-    speechPitch: 1.05,
+    speechRate: 1.06,
+    speechPitch: 0.98,
 
     lightPreset: 'dusk',
     terrainExaggeration: 1.4,

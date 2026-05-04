@@ -231,6 +231,8 @@ export function useNativeNavBridge(params: {
           avg_speed_mph: base.avg_speed_mph,
           max_speed_mph: base.max_speed_mph,
           fuel_used_gallons: base.fuel_used_gallons,
+          fuel_cost_estimate: base.fuel_cost_estimate,
+          mileage_value_estimate: base.mileage_value_estimate,
           hard_braking_events: 0,
           speeding_events: 0,
           incidents_reported: 0,

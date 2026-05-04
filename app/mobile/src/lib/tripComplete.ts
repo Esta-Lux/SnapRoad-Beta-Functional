@@ -18,6 +18,8 @@ export interface TripCompleteApiData {
   avg_speed_mph?: number;
   max_speed_mph?: number;
   fuel_used_gallons?: number;
+  fuel_cost_estimate?: number;
+  mileage_value_estimate?: number;
   origin?: string;
   destination?: string;
   profile?: {
@@ -74,6 +76,9 @@ export function mergeTripCompleteResponse(base: TripSummary, body: unknown): Tri
     avg_speed_mph: d.avg_speed_mph != null ? Number(d.avg_speed_mph) : base.avg_speed_mph,
     max_speed_mph: d.max_speed_mph != null ? Number(d.max_speed_mph) : base.max_speed_mph,
     fuel_used_gallons: d.fuel_used_gallons != null ? Number(d.fuel_used_gallons) : base.fuel_used_gallons,
+    fuel_cost_estimate: d.fuel_cost_estimate != null ? Number(d.fuel_cost_estimate) : base.fuel_cost_estimate,
+    mileage_value_estimate:
+      d.mileage_value_estimate != null ? Number(d.mileage_value_estimate) : base.mileage_value_estimate,
     counted: apiCounted,
     profile_totals: profileSnap ?? base.profile_totals,
   };

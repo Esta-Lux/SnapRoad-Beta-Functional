@@ -82,8 +82,30 @@ def _trip_owner_filter(query: Any, uid: str) -> Any:
     return query.or_(f"user_id.eq.{uid},profile_id.eq.{uid}")
 
 
+def _first_present(r: dict, *keys: str) -> Any:
+    for key in keys:
+        value = r.get(key)
+        if value is not None and value != "":
+            return value
+    return None
+
+
+def _float_or_zero(value: Any) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _int_or_zero(value: Any) -> int:
+    try:
+        return int(float(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _trip_row_to_client_shape(r: dict) -> dict:
-    """Map a Supabase `trips` row to the legacy JSON shape used by mobile Rewards."""
+    """Map a Supabase `trips` row to the JSON shape consumed by mobile Insights."""
     dur_sec = int(r.get("duration_seconds") or 0)
     if not dur_sec and r.get("duration_minutes") is not None:
         dur_sec = int(r.get("duration_minutes") or 0) * 60
@@ -95,22 +117,51 @@ def _trip_row_to_client_shape(r: dict) -> dict:
             time_part = ended.split("T", 1)[1].replace("Z", "")[:8]
         except Exception:
             time_part = ""
+    origin = _first_present(r, "origin", "origin_label", "start_address", "start_location", "startLocation", "from")
+    destination = _first_present(
+        r,
+        "destination",
+        "destination_label",
+        "dest_label",
+        "end_address",
+        "end_location",
+        "endLocation",
+        "to",
+    )
+    distance = _float_or_zero(_first_present(r, "distance_miles", "distance"))
+    avg_speed = _float_or_zero(_first_present(r, "avg_speed_mph", "avg_speed", "average_speed_mph"))
+    max_speed = _float_or_zero(_first_present(r, "max_speed_mph", "top_speed_mph", "max_speed"))
+    fuel_used = _float_or_zero(_first_present(r, "fuel_used_gallons", "fuel_gallons"))
+    fuel_cost = _float_or_zero(_first_present(r, "fuel_cost_estimate", "fuel_cost_usd", "fuel_cost"))
+    mileage_value = _float_or_zero(
+        _first_present(r, "mileage_value_estimate", "mileage_value_usd", "mileage_value"),
+    )
+    hard_braking = _int_or_zero(_first_present(r, "hard_braking_events", "hard_brakes"))
+    speeding = _int_or_zero(_first_present(r, "speeding_events", "speeding"))
     return {
         "id": str(r.get("id")),
         "date": date_part,
         "time": time_part,
-        "origin": r.get("origin") or "Start",
-        "destination": r.get("destination") or "End",
-        "distance_miles": float(r.get("distance_miles") or 0),
+        "started_at": r.get("started_at") or "",
+        "ended_at": r.get("ended_at") or "",
+        "origin": origin or "Start",
+        "destination": destination or "End",
+        "distance": distance,
+        "distance_miles": distance,
+        "duration": dur_sec,
+        "duration_seconds": dur_sec,
         "duration_minutes": max(0, dur_sec // 60),
-        "safety_score": float(r.get("safety_score") or 0),
-        "gems_earned": int(r.get("gems_earned") or 0),
-        "xp_earned": int(r.get("xp_earned") or 0),
-        "avg_speed_mph": float(r.get("avg_speed_mph") or r.get("avg_speed") or 0),
-        "max_speed_mph": float(r.get("max_speed_mph") or 0),
-        "fuel_used_gallons": float(r.get("fuel_used_gallons") or 0),
-        "hard_braking_events": int(r.get("hard_braking_events") or 0),
-        "speeding_events": int(r.get("speeding_events") or 0),
+        "safety_score": _float_or_zero(r.get("safety_score")),
+        "gems_earned": _int_or_zero(r.get("gems_earned")),
+        "xp_earned": _int_or_zero(r.get("xp_earned")),
+        "avg_speed_mph": avg_speed,
+        "max_speed_mph": max_speed,
+        "fuel_used_gallons": fuel_used,
+        "fuel_cost_estimate": fuel_cost,
+        "mileage_value_estimate": mileage_value,
+        "hard_braking_events": hard_braking,
+        "speeding_events": speeding,
+        "incidents_reported": _int_or_zero(r.get("incidents_reported")),
     }
 
 
@@ -337,31 +388,9 @@ def get_recent_trips_mobile(
             .execute()
         )
         for r in res.data or []:
-            dur_sec = r.get("duration_seconds")
-            if dur_sec is None and r.get("duration_minutes") is not None:
-                dur_sec = int(r["duration_minutes"] or 0) * 60
-            else:
-                dur_sec = int(dur_sec or 0)
-            out.append({
-                "id": str(r.get("id")),
-                "date": r.get("ended_at") or r.get("started_at") or "",
-                "started_at": r.get("started_at") or "",
-                "ended_at": r.get("ended_at") or "",
-                "origin": r.get("origin") or "Start",
-                "destination": r.get("destination") or "End",
-                "distance": float(r.get("distance_miles") or 0),
-                "distance_miles": float(r.get("distance_miles") or 0),
-                "duration": dur_sec,
-                "duration_minutes": max(0, dur_sec // 60),
-                "safety_score": float(r.get("safety_score") or 0),
-                "gems_earned": int(r.get("gems_earned") or 0),
-                "xp_earned": int(r.get("xp_earned") or 0),
-                "avg_speed_mph": float(r.get("avg_speed_mph") or r.get("avg_speed") or 0),
-                "max_speed_mph": float(r.get("max_speed_mph") or 0),
-                "fuel_used_gallons": float(r.get("fuel_used_gallons") or 0),
-                "hard_braking_events": int(r.get("hard_braking_events") or 0),
-                "speeding_events": int(r.get("speeding_events") or 0),
-            })
+            trip = _trip_row_to_client_shape(r)
+            trip["date"] = r.get("ended_at") or r.get("started_at") or trip.get("date") or ""
+            out.append(trip)
         return {"success": True, "data": out}
     except Exception as exc:
         _trips_log.warning("trips/history/recent: %s", exc)
@@ -453,6 +482,8 @@ class TripCompleteBody(BaseModel):
     avg_speed_mph: Optional[float] = None
     max_speed_mph: Optional[float] = None
     fuel_used_gallons: Optional[float] = None
+    fuel_cost_estimate: Optional[float] = None
+    mileage_value_estimate: Optional[float] = None
     hard_braking_events: int = 0
     speeding_events: int = 0
     incidents_reported: int = 0
@@ -537,6 +568,16 @@ def _build_trip_row(
         if body.fuel_used_gallons is not None and math.isfinite(float(body.fuel_used_gallons))
         else (float(distance) / 25.0 if distance > 0 else 0.0)
     )
+    fuel_cost = (
+        float(body.fuel_cost_estimate)
+        if body.fuel_cost_estimate is not None and math.isfinite(float(body.fuel_cost_estimate))
+        else fuel_used * 3.60
+    )
+    mileage_value = (
+        float(body.mileage_value_estimate)
+        if body.mileage_value_estimate is not None and math.isfinite(float(body.mileage_value_estimate))
+        else float(distance) * 0.67
+    )
     # INTEGER columns: use real Python int so JSON is 85 not 85.0 (invalid input for integer in Postgres).
     return {
         "id": trip_id,
@@ -553,6 +594,8 @@ def _build_trip_row(
         "avg_speed_mph": round(max(0.0, avg_speed), 1),
         "max_speed_mph": round(max(0.0, max_speed), 1),
         "fuel_used_gallons": round(max(0.0, fuel_used), 3),
+        "fuel_cost_estimate": round(max(0.0, fuel_cost), 2),
+        "mileage_value_estimate": round(max(0.0, mileage_value), 2),
         "started_at": body.started_at or now_iso,
         "ended_at": body.ended_at or now_iso,
         "hard_braking_events": _int_for_pg(body.hard_braking_events),
@@ -591,6 +634,8 @@ def _strip_missing_trip_optional_column(trip_row: dict, exc: BaseException) -> b
         "avg_speed_mph",
         "max_speed_mph",
         "fuel_used_gallons",
+        "fuel_cost_estimate",
+        "mileage_value_estimate",
     )
     for col in optional_columns:
         if col in trip_row and _is_missing_trip_column_error(exc, col):
@@ -796,6 +841,8 @@ def complete_trip(request: Request, body: TripCompleteBody, user: CurrentUser):
         "avg_speed_mph": trip_row.get("avg_speed_mph"),
         "max_speed_mph": trip_row.get("max_speed_mph"),
         "fuel_used_gallons": trip_row.get("fuel_used_gallons"),
+        "fuel_cost_estimate": trip_row.get("fuel_cost_estimate"),
+        "mileage_value_estimate": trip_row.get("mileage_value_estimate"),
     }
     if profile_totals is not None:
         payload["profile"] = profile_totals

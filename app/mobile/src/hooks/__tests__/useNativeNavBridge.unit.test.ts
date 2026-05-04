@@ -64,6 +64,8 @@ test('mergeTripCompleteResponse: merges tracking metrics used by trip summary', 
       avg_speed_mph: 24.36,
       max_speed_mph: 58.5,
       fuel_used_gallons: 0.5,
+      fuel_cost_estimate: 1.8,
+      mileage_value_estimate: 8.34,
       origin: 'Downtown pickup',
       destination: 'Airport dropoff',
     },
@@ -74,6 +76,8 @@ test('mergeTripCompleteResponse: merges tracking metrics used by trip summary', 
   assert.equal(merged.avg_speed_mph, 24.36);
   assert.equal(merged.max_speed_mph, 58.5);
   assert.equal(merged.fuel_used_gallons, 0.5);
+  assert.equal(merged.fuel_cost_estimate, 1.8);
+  assert.equal(merged.mileage_value_estimate, 8.34);
   assert.equal(merged.origin, 'Downtown pickup');
   assert.equal(merged.destination, 'Airport dropoff');
 });

@@ -50,9 +50,13 @@ export type ProfileTripHistoryItem = {
   /** Smoothed peak speed (mph) observed on this trip. */
   max_speed_mph?: number;
   fuel_used_gallons?: number;
+  fuel_cost_estimate?: number;
+  mileage_value_estimate?: number;
+  duration_seconds?: number;
   /** Behavioral counts forwarded from the trip row when present. */
   hard_braking_events?: number;
   speeding_events?: number;
+  incidents_reported?: number;
   tripEndedAtIso?: string;
   /** When `tripEndedAtIso` missing, range filters can still anchor on trip start (server ISO). */
   startedAtIso?: string;

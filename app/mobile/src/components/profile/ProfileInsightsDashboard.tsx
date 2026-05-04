@@ -28,6 +28,7 @@ import {
   tripTimeMs,
   type TimeRangePreset,
 } from './insightsAggregations';
+import { formatUsd } from '../../utils/driveMetrics';
 import type {
   ProfileBadgeItem,
   ProfileGemTxItem,
@@ -889,6 +890,14 @@ export default function ProfileInsightsDashboard({
                   {(tripDetail.fuel_used_gallons ?? 0).toFixed(2)} gal
                 </Text>
               </View>
+              {(tripDetail.mileage_value_estimate ?? 0) > 0 ? (
+                <View style={styles.tripStatCell}>
+                  <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Mileage value</Text>
+                  <Text style={{ color: colors.success, fontSize: 18, fontWeight: '900' }}>
+                    {formatUsd(tripDetail.mileage_value_estimate ?? 0)}
+                  </Text>
+                </View>
+              ) : null}
               <View style={styles.tripStatCell}>
                 <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Safety</Text>
                 <Text style={{ color: colors.text, fontSize: 18, fontWeight: '900' }}>
@@ -900,6 +909,14 @@ export default function ProfileInsightsDashboard({
                   <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Gems</Text>
                   <Text style={{ color: colors.warning, fontSize: 18, fontWeight: '900' }}>
                     +{tripDetail.gems_earned ?? 0}
+                  </Text>
+                </View>
+              ) : null}
+              {(tripDetail.xp_earned ?? 0) > 0 ? (
+                <View style={styles.tripStatCell}>
+                  <Text style={{ color: colors.textSecondary, fontSize: 11 }}>XP</Text>
+                  <Text style={{ color: colors.primary, fontSize: 18, fontWeight: '900' }}>
+                    +{tripDetail.xp_earned ?? 0}
                   </Text>
                 </View>
               ) : null}
