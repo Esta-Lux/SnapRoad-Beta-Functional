@@ -10,6 +10,7 @@ import { test } from 'node:test';
 import {
   HEADING_FLIP_REJECT_DEG,
   HEADING_MAX_STEP_DEG,
+  INITIAL_DISPLAY_POSITION_STATE,
   INITIAL_STATIONARY_LOCK,
   LEASH_HARD_MAX_M,
   MOTION_RELEASE_DWELL_MS,
@@ -17,6 +18,7 @@ import {
   STATIONARY_DWELL_MS,
   STATIONARY_RAW_SPEED_MPS,
   STATIONARY_SPEED_MPH,
+  stabilizeDisplayPosition,
   resolvePuckCoord,
   resolvePuckHeading,
   updateStationaryLock,
@@ -360,4 +362,58 @@ test('resolvePuckHeading: invalid candidate holds prev', () => {
 test('constants sanity', () => {
   assert.ok(HEADING_FLIP_REJECT_DEG > HEADING_MAX_STEP_DEG);
   assert.ok(LEASH_HARD_MAX_M > 0);
+});
+
+/* ── Display-position filter ───────────────────────────────────────── */
+
+test('stabilizeDisplayPosition: seeds first finite candidate immediately', () => {
+  const out = stabilizeDisplayPosition({
+    candidate: SF,
+    prev: INITIAL_DISPLAY_POSITION_STATE,
+    speedMps: 8,
+    nowMs: 1_000,
+  });
+  assert.deepEqual(out.coord, SF);
+  assert.equal(out.updatedAtMs, 1_000);
+});
+
+test('stabilizeDisplayPosition: ignores tiny slow-speed movement', () => {
+  const prev = { coord: SF, updatedAtMs: 1_000 };
+  const out = stabilizeDisplayPosition({
+    // ~2.2 m north: below slow threshold.
+    candidate: { lat: SF.lat + 0.00002, lng: SF.lng },
+    prev,
+    speedMps: 0.6,
+    nowMs: 1_200,
+  });
+  assert.deepEqual(out.coord, SF);
+  assert.equal(out.updatedAtMs, 1_200);
+});
+
+test('stabilizeDisplayPosition: interpolates accepted movement instead of jumping', () => {
+  const prev = { coord: SF, updatedAtMs: 1_000 };
+  const candidate = { lat: SF.lat + 0.00012, lng: SF.lng };
+  const out = stabilizeDisplayPosition({
+    candidate,
+    prev,
+    speedMps: 8,
+    nowMs: 1_260,
+    timeConstantMs: 260,
+  });
+  assert.ok(out.coord);
+  assert.ok(out.coord!.lat > SF.lat);
+  assert.ok(out.coord!.lat < candidate.lat);
+});
+
+test('stabilizeDisplayPosition: snaps reroute-scale jumps', () => {
+  const prev = { coord: SF, updatedAtMs: 1_000 };
+  const candidate = { lat: SF.lat + 0.003, lng: SF.lng };
+  const out = stabilizeDisplayPosition({
+    candidate,
+    prev,
+    speedMps: 18,
+    nowMs: 1_080,
+    snapJumpMeters: 180,
+  });
+  assert.deepEqual(out.coord, candidate);
 });

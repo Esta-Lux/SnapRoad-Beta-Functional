@@ -201,7 +201,9 @@ import {
 } from '../navigation/navCameraFollowTuning';
 import NavSdkPuck from '../components/map/NavSdkPuck';
 import {
+  INITIAL_DISPLAY_POSITION_STATE,
   INITIAL_STATIONARY_LOCK,
+  stabilizeDisplayPosition,
   resolvePuckCoord as resolvePuckCoordSync,
   resolvePuckHeading as resolvePuckHeadingSync,
   updateStationaryLock,
@@ -1099,22 +1101,12 @@ export default function MapScreen() {
   const navDisplayCoordCandidate = smoothedNavPuckCoord ?? navDisplayCoordRaw;
 
   /**
-   * Raw matched coord — preferred truth signal when feeding the puck to
-   * `snapPuckToRoute`. We use the **un-eased** SDK matched lat/lng when
-   * available so the route projection is computed from the actual GPS
-   * fix, not from the dead-reckoned arc-length point. Only when no SDK
-   * matched coord exists do we fall back to the candidate.
+   * Route-snap input for the render path. This intentionally uses the
+   * already-selected display candidate instead of raw SDK lat/lng so the
+   * visible puck/camera/route split do not alternate between uneased matcher
+   * ticks and the RAF-smoothed along-route point.
    */
   const navMatchedRaw = useMemo<Coordinate | null>(() => {
-    const sdk = nav.sdkNavLocation;
-    if (
-      sdk &&
-      Number.isFinite(sdk.latitude) &&
-      Number.isFinite(sdk.longitude) &&
-      !(Math.abs(sdk.latitude) < 1e-7 && Math.abs(sdk.longitude) < 1e-7)
-    ) {
-      return { lat: sdk.latitude, lng: sdk.longitude };
-    }
     if (
       navDisplayCoordCandidate &&
       Number.isFinite(navDisplayCoordCandidate.lat) &&
@@ -1123,12 +1115,7 @@ export default function MapScreen() {
       return { lat: navDisplayCoordCandidate.lat, lng: navDisplayCoordCandidate.lng };
     }
     return null;
-  }, [
-    nav.sdkNavLocation?.latitude,
-    nav.sdkNavLocation?.longitude,
-    navDisplayCoordCandidate.lat,
-    navDisplayCoordCandidate.lng,
-  ]);
+  }, [navDisplayCoordCandidate.lat, navDisplayCoordCandidate.lng]);
 
   /**
    * Snap the matched coord onto the active route polyline. When inside
@@ -1156,6 +1143,8 @@ export default function MapScreen() {
   const stationaryLockRef = useRef(INITIAL_STATIONARY_LOCK);
   const lastPublishedPuckCoordRef = useRef<Coordinate | null>(null);
   const lastPublishedPuckHeadingRef = useRef<number | null>(null);
+  /** Cross-render state for {@link stabilizeDisplayPosition} (final puck/camera point). */
+  const navDisplayPositionRef = useRef(INITIAL_DISPLAY_POSITION_STATE);
 
   const navStablePuck = useMemo(() => {
     const nowMs = Date.now();
@@ -1315,12 +1304,72 @@ export default function MapScreen() {
     nav.navigationProgress?.displayCoord?.speedMps,
   ]);
 
+  /** Fused ground speed for nav camera + display-position filter (matches `useCameraController` input). */
+  const fusedSpeedMpsNav =
+    nav.isNavigating
+      ? Math.max(0, nav.fusedNavState?.displayCoord?.speedMps ?? speed * 0.44704)
+      : null;
+
+  useEffect(() => {
+    if (!nav.isNavigating) {
+      navDisplayPositionRef.current = INITIAL_DISPLAY_POSITION_STATE;
+    }
+  }, [nav.isNavigating]);
+
   /**
-   * Puck/camera/route-split all read this value. Stabilized through the
-   * stationary lock + true-location leash so the puck can't drift while
-   * stopped or run away on a phantom snap.
+   * Single display position for puck, camera anchor, and route overlay while navigating:
+   * {@link navStablePuck} (leash + stationary lock) then {@link stabilizeDisplayPosition}
+   * (sub‑5 m dead zone + short ease + reroute snap). Browse mode uses the stable puck path
+   * which already tracks smoothed `useLocation`.
    */
-  const navDisplayCoord = navStablePuck.coord;
+  const navDisplayCoord = useMemo((): Coordinate => {
+    const fromStable =
+      navStablePuck.coord &&
+      Number.isFinite(navStablePuck.coord.lat) &&
+      Number.isFinite(navStablePuck.coord.lng)
+        ? { lat: navStablePuck.coord.lat, lng: navStablePuck.coord.lng }
+        : navDisplayCoordCandidate &&
+            Number.isFinite(navDisplayCoordCandidate.lat) &&
+            Number.isFinite(navDisplayCoordCandidate.lng)
+          ? { lat: navDisplayCoordCandidate.lat, lng: navDisplayCoordCandidate.lng }
+          : null;
+
+    if (!nav.isNavigating) {
+      if (fromStable) return fromStable;
+      return { lat: location.lat, lng: location.lng };
+    }
+
+    if (
+      !fromStable ||
+      !Number.isFinite(fromStable.lat) ||
+      !Number.isFinite(fromStable.lng) ||
+      (Math.abs(fromStable.lat) < 1e-7 && Math.abs(fromStable.lng) < 1e-7)
+    ) {
+      return { lat: Number.NaN, lng: Number.NaN };
+    }
+
+    const spd =
+      fusedSpeedMpsNav != null && Number.isFinite(fusedSpeedMpsNav) ? fusedSpeedMpsNav : 0;
+    const next = stabilizeDisplayPosition({
+      candidate: fromStable,
+      prev: navDisplayPositionRef.current,
+      speedMps: spd,
+      accuracyM: accuracy ?? null,
+      nowMs: Date.now(),
+    });
+    navDisplayPositionRef.current = next;
+    return next.coord ?? fromStable;
+  }, [
+    nav.isNavigating,
+    navStablePuck.coord?.lat,
+    navStablePuck.coord?.lng,
+    navDisplayCoordCandidate.lat,
+    navDisplayCoordCandidate.lng,
+    fusedSpeedMpsNav,
+    accuracy,
+    location.lat,
+    location.lng,
+  ]);
   /** True iff the stationary lock is currently engaged (frozen puck). */
   const navPuckStationary = navStablePuck.locked;
 
@@ -1528,41 +1577,13 @@ export default function MapScreen() {
     () => (polylineToRender && polylineToRender.length >= 2 ? polylineLengthMeters(polylineToRender) : 0),
     [polylineToRender],
   );
-  const routeOverlayPuckSnap = useMemo(() => {
-    if (!nav.isNavigating || !navStablePuck.glued) return null;
-    if (!polylineToRender || polylineToRender.length < 2) return null;
-    if (!Number.isFinite(navDisplayCoord.lat) || !Number.isFinite(navDisplayCoord.lng)) return null;
-    return snapPuckToRoute(
-      { lat: navDisplayCoord.lat, lng: navDisplayCoord.lng },
-      polylineToRender,
-      { accuracyM: accuracy ?? null, tangentLookAheadM: 22 },
-    );
-  }, [
-    nav.isNavigating,
-    navStablePuck.glued,
-    polylineToRender,
-    navDisplayCoord.lat,
-    navDisplayCoord.lng,
-    accuracy,
-  ]);
   const routeOverlayCumMeters = useMemo(() => {
     if (!nav.isNavigating || !polylineToRender || polylineToRenderLenMeters <= 1) return 0;
     const stepM = drivingMode === 'sport' ? 0.45 : drivingMode === 'adaptive' ? 0.55 : 0.65;
-    const rawMeters =
-      routeOverlayPuckSnap?.withinCorridor && Number.isFinite(routeOverlayPuckSnap.cumFromStartMeters)
-        ? routeOverlayPuckSnap.cumFromStartMeters
-        : smoothedFraction * polylineToRenderLenMeters;
+    const rawMeters = smoothedFraction * polylineToRenderLenMeters;
     const meters = Math.max(0, Math.min(polylineToRenderLenMeters, rawMeters));
     return Math.max(0, Math.min(polylineToRenderLenMeters, Math.round(meters / stepM) * stepM));
-  }, [
-    nav.isNavigating,
-    polylineToRender,
-    polylineToRenderLenMeters,
-    drivingMode,
-    routeOverlayPuckSnap?.withinCorridor,
-    routeOverlayPuckSnap?.cumFromStartMeters,
-    smoothedFraction,
-  ]);
+  }, [nav.isNavigating, polylineToRender, polylineToRenderLenMeters, drivingMode, smoothedFraction]);
   const navigationRouteSplit = useMemo((): RouteSplitForOverlay | null => {
     if (!nav.isNavigating) return null;
     if (polylineToRender && polylineToRender.length >= 2) {
@@ -1616,10 +1637,6 @@ export default function MapScreen() {
     return displaySpeedMph > 10 ? 'course' : 'heading';
   }, [nav.isNavigating, nav.sdkNavLocation, displaySpeedMph, navLogicEffective]);
 
-  const fusedSpeedMpsNav =
-    nav.isNavigating
-      ? Math.max(0, nav.fusedNavState?.displayCoord?.speedMps ?? speed * 0.44704)
-      : null;
   const navFetchRef = useRef(nav.fetchDirections);
   const navSetDestRef = useRef(nav.setSelectedDestination);
   useEffect(() => {
@@ -4654,22 +4671,14 @@ export default function MapScreen() {
           onPress={handleMapPress}
         >
           {/*
-            Location provider strategy — single frame, Navigation SDK authority:
+            Location provider — single **display** coordinate while navigating:
 
-            Headless SDK trips: `navigationProgressCoord` / `navDisplayCoordRaw`
-            follow the **native map-matched** fix from `onNavigationLocationUpdate`
-            (see `navSdkMinimalAdapter` + `useDriveNavigation`). Route travelled /
-            remaining split still uses the SDK’s `fractionTraveled` on the native
-            polyline (`RouteOverlay`), so the line trim stays locked to the same
-            session the matcher uses; the chevron may sit a few metres laterally
-            from the decoded polyline vertex — that is preferable to a puppet
-            puck interpolated only along arc length (laggy vs real motion and
-            wrong through reroutes).
+            `useDriveNavigation.navigationProgressCoord` is fused matcher / snap
+            truth; `navDisplayCoord` is the stabilized point (fraction ease + leash
+            + `stabilizeDisplayPosition`) fed here, to `NavSdkPuck`, and to the JS
+            nav camera anchor so puck, provider, split, and camera stay aligned.
 
-            JS-only trips: feed the snap-blended on-polyline puck (RAF-smoothed
-            fraction) so the camera + `NavSdkPuck` + split share one point.
-
-            Explore: default Mapbox GPS via browse `CustomLocationProvider` below.
+            Explore: smoothed `useLocation` via browse `CustomLocationProvider` below.
 
             Mount as soon as `nav.isNavigating` with a finite `navDisplayCoord`.
           */}
@@ -4769,10 +4778,10 @@ export default function MapScreen() {
                 : undefined
             }
             followPitch={
-              camCtrlForNav
-                ? camCtrlForNav.followPitch
-                : nav.isNavigating && cameraLocked
-                  ? modeConfig.navPitch
+              nav.isNavigating
+                ? undefined
+                : camCtrlForNav
+                  ? camCtrlForNav.followPitch
                   : exploreTracksUser
                     ? modeConfig.explorePitch
                     : compassMode
@@ -4780,10 +4789,10 @@ export default function MapScreen() {
                       : undefined
             }
             followZoomLevel={
-              camCtrlForNav
-                ? camCtrlForNav.followZoomLevel
-                : nav.isNavigating && cameraLocked
-                  ? modeConfig.navZoom
+              nav.isNavigating
+                ? undefined
+                : camCtrlForNav
+                  ? camCtrlForNav.followZoomLevel
                   : exploreTracksUser
                     ? modeConfig.exploreZoom
                     : compassMode
@@ -4791,10 +4800,10 @@ export default function MapScreen() {
                       : undefined
             }
             followPadding={
-              camCtrlForNav
-                ? camCtrlForNav.followPadding
-                : nav.isNavigating && cameraLocked
-                  ? navFallbackFollowPadding(modeConfig, insets.bottom)
+              nav.isNavigating
+                ? undefined
+                : camCtrlForNav
+                  ? camCtrlForNav.followPadding
                   : MAPBOX_DEFAULT_FOLLOW_PADDING
             }
           />
@@ -5009,8 +5018,8 @@ export default function MapScreen() {
                 for 500 ms while the SDK warms up" seam.
             The hidden `MapboxNavigationView` still provides matched points; a
             single RAF-smoothed route fraction above feeds the provider,
-            route split, camera anchor, and `NavSdkPuck`. The marker itself
-            mirrors that coordinate so we do not double-ease and lag behind.
+            route split, camera anchor, and `NavSdkPuck`. `NavSdkPuck` eases
+            MarkerView coords lightly so small upstream ticks do not pop the chevron.
           */}
           <MapboxGL.LocationPuck
             visible={!nav.isNavigating}
@@ -5035,7 +5044,6 @@ export default function MapScreen() {
                 nav.navigationProgress?.displayCoord?.speedMps ??
                 0
               }
-              mirrorNativePosition
             />
           ) : null}
         </MapboxGL.MapView>

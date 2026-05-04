@@ -398,6 +398,21 @@ export type { TripSummary };export function useDriveNavigation(params: {
     return sdkBuiltNavigationProgress;
   }, [sdkActive, sdkBuiltNavigationProgress, jsNavigationProgress]);
 
+  /**
+   * Fused **navigation truth** coordinate for this hook — matched / snapped /
+   * blended toward the active route, **not** a synonym for raw device GPS.
+   *
+   * - **Logic SDK on:** native map-matched location when available; until then,
+   *   smoothed `userLocation` so consumers do not snap to route origin.
+   * - **Logic SDK off:** on-route snapped `puckCoord` / polyline point when
+   *   navigating; otherwise `userLocation`.
+   *
+   * `MapScreen` builds `navDisplayCoord` on top (along-route fraction ease,
+   * leash, stationary lock, `stabilizeDisplayPosition` from `navPuckSync`) for
+   * **presentation** (puck, camera anchor, route split). Prefer that layer for
+   * anything drawn on the map; keep this value for progress, ETA, and polyline
+   * projection inputs.
+   */
   const navigationProgressCoord: Coordinate = useMemo(() => {
     if (sdkActive) {
       const matched = getSdkMatchedCoordinate();
@@ -460,8 +475,6 @@ export type { TripSummary };export function useDriveNavigation(params: {
     navigationProgress?.snapped?.point?.lat,
     navigationProgress?.snapped?.point?.lng,
     navigationProgress?.snapped?.distanceMeters,
-    navigationProgress?.puckCoord?.lat,
-    navigationProgress?.puckCoord?.lng,
     navigationProgress?.isOffRoute,
     navSdkSnapshot.routePolyline,
   ]);
@@ -2108,7 +2121,10 @@ export type { TripSummary };export function useDriveNavigation(params: {
     navigationProgressGuidance,
     /** Same as {@link navigationProgress} — kept for callers expecting `fusedNavState`. */
     fusedNavState: navigationProgress,
-    /** Raw GPS while navigating (matches native puck / route progress). */
+    /**
+     * Fused map position while navigating: native matched coordinate when the logic SDK
+     * is active, otherwise snapped-route / smoothed-GPS from the JS pipeline — not raw OS fixes.
+     */
     navigationProgressCoord,
     /** Device heading (matches native course/heading follow). */
     navigationDisplayHeading,

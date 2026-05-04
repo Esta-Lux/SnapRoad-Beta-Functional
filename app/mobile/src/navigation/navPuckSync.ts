@@ -71,6 +71,17 @@ export const HEADING_MAX_STEP_DEG = 14;
 /** Reject single-tick flips ≥ this when the device is below 12 mph. */
 export const HEADING_FLIP_REJECT_DEG = 90;
 
+/* ── Display-position filter ───────────────────────────────────────── */
+
+/** Ignore tiny display-position deltas while moving; below this is visual jitter. */
+export const DISPLAY_POSITION_MIN_MOVE_M = 3.2;
+/** Wider dead-zone at low speed / stoplights where GPS and matcher wander most. */
+export const DISPLAY_POSITION_SLOW_MIN_MOVE_M = 4.8;
+/** Route handoff / reroute scale jumps should snap, not slowly scrub across the map. */
+export const DISPLAY_POSITION_SNAP_JUMP_M = 180;
+/** Time constant for accepted display-position interpolation. */
+export const DISPLAY_POSITION_TIME_CONSTANT_MS = 260;
+
 /* ── Types ──────────────────────────────────────────────────────────── */
 
 export type StationaryLockState = {
@@ -91,6 +102,11 @@ export type StationaryLockState = {
   movingSinceMs: number | null;
 };
 
+export type DisplayPositionState = {
+  coord: Coordinate | null;
+  updatedAtMs: number;
+};
+
 export const INITIAL_STATIONARY_LOCK: StationaryLockState = {
   locked: false,
   anchor: null,
@@ -98,6 +114,11 @@ export const INITIAL_STATIONARY_LOCK: StationaryLockState = {
   updatedAtMs: 0,
   stillSinceMs: null,
   movingSinceMs: null,
+};
+
+export const INITIAL_DISPLAY_POSITION_STATE: DisplayPositionState = {
+  coord: null,
+  updatedAtMs: 0,
 };
 
 /* ── Helpers ────────────────────────────────────────────────────────── */
@@ -129,6 +150,16 @@ function blendCoord(a: Coordinate, b: Coordinate, t: number): Coordinate {
     lat: a.lat + (b.lat - a.lat) * k,
     lng: a.lng + (b.lng - a.lng) * k,
   };
+}
+
+function displayPositionMinMoveMeters(speedMps: number, accuracyM?: number | null): number {
+  const speed = Number.isFinite(speedMps) ? Math.max(0, speedMps) : 0;
+  const base = speed < 1.4 ? DISPLAY_POSITION_SLOW_MIN_MOVE_M : DISPLAY_POSITION_MIN_MOVE_M;
+  const accExtra =
+    typeof accuracyM === 'number' && Number.isFinite(accuracyM)
+      ? Math.min(1.4, Math.max(0, (accuracyM - 12) * 0.045))
+      : 0;
+  return base + accExtra;
 }
 
 /* ── Pure resolvers ─────────────────────────────────────────────────── */
@@ -367,10 +398,76 @@ export function resolvePuckHeading(input: {
   return clampStep(prevHeading, candidate, maxStepDeg ?? HEADING_MAX_STEP_DEG);
 }
 
+/**
+ * Final display-position filter for the visible navigation puck/camera point.
+ *
+ * Upstream route progress may arrive at low frequency, while native matched
+ * fixes can wobble a few meters around the same road position. This helper
+ * holds sub-threshold movement, eases accepted movement, and snaps only for
+ * route-handoff / reroute scale jumps.
+ */
+export function stabilizeDisplayPosition(input: {
+  candidate: Coordinate | null;
+  prev: DisplayPositionState;
+  speedMps: number;
+  accuracyM?: number | null;
+  nowMs: number;
+  minMoveMeters?: number;
+  slowMinMoveMeters?: number;
+  snapJumpMeters?: number;
+  timeConstantMs?: number;
+}): DisplayPositionState {
+  const {
+    candidate,
+    prev,
+    speedMps,
+    accuracyM,
+    nowMs,
+    minMoveMeters,
+    slowMinMoveMeters,
+    snapJumpMeters = DISPLAY_POSITION_SNAP_JUMP_M,
+    timeConstantMs = DISPLAY_POSITION_TIME_CONSTANT_MS,
+  } = input;
+
+  if (!isFiniteCoord(candidate)) {
+    return {
+      coord: isFiniteCoord(prev.coord) ? prev.coord : null,
+      updatedAtMs: Number.isFinite(prev.updatedAtMs) ? prev.updatedAtMs : nowMs,
+    };
+  }
+
+  if (!isFiniteCoord(prev.coord) || !Number.isFinite(prev.updatedAtMs) || prev.updatedAtMs <= 0) {
+    return { coord: candidate, updatedAtMs: nowMs };
+  }
+
+  const movedM = haversineMeters(prev.coord.lat, prev.coord.lng, candidate.lat, candidate.lng);
+  const speed = Number.isFinite(speedMps) ? Math.max(0, speedMps) : 0;
+  const threshold =
+    speed < 1.4
+      ? slowMinMoveMeters ?? displayPositionMinMoveMeters(speed, accuracyM)
+      : minMoveMeters ?? displayPositionMinMoveMeters(speed, accuracyM);
+
+  if (movedM < threshold) {
+    return { coord: prev.coord, updatedAtMs: nowMs };
+  }
+
+  if (movedM >= snapJumpMeters) {
+    return { coord: candidate, updatedAtMs: nowMs };
+  }
+
+  const dtMs = Math.max(16, Math.min(1000, nowMs - prev.updatedAtMs));
+  const alpha = 1 - Math.exp(-dtMs / Math.max(16, timeConstantMs));
+  return {
+    coord: blendCoord(prev.coord, candidate, alpha),
+    updatedAtMs: nowMs,
+  };
+}
+
 /* ── Test-only exports ─────────────────────────────────────────────── */
 
 export const __testOnly__ = {
   shortestAngleDeltaDeg,
   clampStep,
   blendCoord,
+  displayPositionMinMoveMeters,
 };

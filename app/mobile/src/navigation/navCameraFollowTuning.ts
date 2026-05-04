@@ -43,27 +43,27 @@ export function getNavCameraFollowTuning(
 
   if (speed < 1.05) {
     return {
-      minUpdateIntervalMs: 780,
-      minMoveMeters: 4.8,
+      minUpdateIntervalMs: 920,
+      minMoveMeters: 5.5,
       minHeadingDeltaDeg: 18,
-      animationDurationMs: mode === 'sport' ? 260 : mode === 'adaptive' ? 320 : 380,
+      animationDurationMs: mode === 'sport' ? 280 : mode === 'adaptive' ? 340 : 400,
     };
   }
 
   const modeBase =
     mode === 'sport'
-      ? { interval: 150, move: 1.2, heading: 2.4, anim: 140 }
+      ? { interval: 380, move: 11, heading: 10, anim: 240 }
       : mode === 'calm'
-        ? { interval: 190, move: 1.7, heading: 3.2, anim: 185 }
-        : { interval: 170, move: 1.45, heading: 2.8, anim: 160 };
+        ? { interval: 520, move: 13, heading: 12, anim: 300 }
+        : { interval: 450, move: 12, heading: 11, anim: 270 };
 
   const speed01 = clamp(speed / 24, 0, 1);
-  const minAnim = mode === 'sport' ? 110 : mode === 'adaptive' ? 118 : 132;
+  const minAnim = mode === 'sport' ? 200 : mode === 'adaptive' ? 210 : 230;
   return {
-    minUpdateIntervalMs: Math.round(clamp(modeBase.interval - speed01 * 30 - nearTurn01 * 24, 105, 260)),
-    minMoveMeters: Number(clamp(modeBase.move + speed01 * 0.18 - nearTurn01 * 0.32, 0.85, 2.4).toFixed(2)),
-    minHeadingDeltaDeg: Number(clamp(modeBase.heading - nearTurn01 * 0.7, 1.6, 4.8).toFixed(1)),
-    animationDurationMs: Math.round(clamp(modeBase.anim - speed01 * 25 - nearTurn01 * 16, minAnim, 260)),
+    minUpdateIntervalMs: Math.round(clamp(modeBase.interval - speed01 * 35 - nearTurn01 * 28, 260, 560)),
+    minMoveMeters: Number(clamp(modeBase.move + speed01 * 0.4 - nearTurn01 * 1.5, 8, 14).toFixed(2)),
+    minHeadingDeltaDeg: Number(clamp(modeBase.heading - nearTurn01 * 1.0, 9, 13).toFixed(1)),
+    animationDurationMs: Math.round(clamp(modeBase.anim - speed01 * 35 - nearTurn01 * 20, minAnim, 340)),
   };
 }
 
@@ -92,8 +92,8 @@ export function shouldIssueNavCameraFollowCommand({
   const zoom = Number.isFinite(zoomDelta) ? Math.max(0, zoomDelta) : Infinity;
   const pitch = Number.isFinite(pitchDelta) ? Math.max(0, pitchDelta) : Infinity;
 
-  const urgentMoveM = Math.max(tuning.minMoveMeters * (stopped ? 2.5 : 3), stopped ? 10 : 8);
-  const urgentHeadingDeg = Math.max(tuning.minHeadingDeltaDeg * 3, stopped ? 28 : 12);
+  const urgentMoveM = Math.max(tuning.minMoveMeters * (stopped ? 2.4 : 2.2), stopped ? 12 : 22);
+  const urgentHeadingDeg = Math.max(tuning.minHeadingDeltaDeg * 2.6, stopped ? 28 : 22);
   const urgentCameraFrame = zoom >= 0.18 || pitch >= 2.5;
 
   if (elapsedMs < tuning.minUpdateIntervalMs) {
