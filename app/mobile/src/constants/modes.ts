@@ -68,18 +68,23 @@ export interface ModeConfig {
   showPerfData: boolean;
 }
 
+const HUD_ROUTE_BLUE = '#0A84FF';
+const HUD_ROUTE_CASING = '#063B82';
+const HUD_ROUTE_PASSED = 'rgba(148,163,184,0.62)';
+const HUD_ROUTE_GLOW = '#38BDF8';
+
 export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
   calm: {
     label: 'Calm',
     color: '#6BA4E8',
     icon: 'leaf-outline',
 
-    routeColor: '#5BA3F7',
-    routeCasing: '#2E5A96',
-    passedColor: '#7C8FA8',
+    routeColor: HUD_ROUTE_BLUE,
+    routeCasing: HUD_ROUTE_CASING,
+    passedColor: HUD_ROUTE_PASSED,
     routeWidth: 9,
-    routeGlowColor: '#7AB8FF',
-    routeGlowOpacity: 0.18,
+    routeGlowColor: HUD_ROUTE_GLOW,
+    routeGlowOpacity: 0.24,
 
     turnCardGradient: ['#17202B', '#101620'],
     turnCardRadius: 18,
@@ -137,12 +142,12 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     color: '#3B82F6',
     icon: 'pulse-outline',
 
-    routeColor: '#2F8CFF',
-    routeCasing: '#153E75',
-    passedColor: '#7E8C9E',
+    routeColor: HUD_ROUTE_BLUE,
+    routeCasing: HUD_ROUTE_CASING,
+    passedColor: HUD_ROUTE_PASSED,
     routeWidth: 9,
-    routeGlowColor: '#4DA3FF',
-    routeGlowOpacity: 0.22,
+    routeGlowColor: HUD_ROUTE_GLOW,
+    routeGlowOpacity: 0.24,
 
     turnCardGradient: ['#17202B', '#101722'],
     turnCardRadius: 16,
@@ -199,13 +204,13 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     color: '#4A4063',
     icon: 'speedometer-outline',
 
-    /** High-saturation core + near-black casing so the line reads on Standard night / dusk. */
-    routeColor: '#FF7A2E',
-    routeCasing: '#050308',
-    passedColor: '#9DB0C4',
+    /** Same high-visibility SnapRoad blue as the other modes; Sport changes behavior, not route color. */
+    routeColor: HUD_ROUTE_BLUE,
+    routeCasing: HUD_ROUTE_CASING,
+    passedColor: HUD_ROUTE_PASSED,
     routeWidth: 11,
-    routeGlowColor: '#FFB366',
-    routeGlowOpacity: 0.46,
+    routeGlowColor: HUD_ROUTE_GLOW,
+    routeGlowOpacity: 0.34,
 
     turnCardGradient: ['#181B22', '#101218'],
     turnCardRadius: 14,

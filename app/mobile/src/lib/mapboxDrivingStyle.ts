@@ -2,11 +2,6 @@ import type { DrivingMode } from '../types';
 import type { ModeConfig } from '../constants/modes';
 import { DRIVING_MODES } from '../constants/modes';
 
-function passthroughRouteColors(modeConfig: ModeConfig): EffectiveRouteColors {
-  const { routeColor, routeCasing, passedColor, routeGlowColor, routeGlowOpacity } = modeConfig;
-  return { routeColor, routeCasing, passedColor, routeGlowColor, routeGlowOpacity };
-}
-
 export type MapboxLightPreset = 'dawn' | 'day' | 'dusk' | 'night';
 
 export type EffectiveRouteColors = {
@@ -24,8 +19,8 @@ function isNearWhiteRouteLine(hex: string): boolean {
 
 /**
  * Keeps the driven route readable on Mapbox Standard (night / dusk) and on satellite.
- * Sport uses a dedicated high-contrast palette from {@link DRIVING_MODES.sport} — do not
- * remap it to the generic “night blue” line.
+ * Driving modes now share one SnapRoad-blue route language; mode differences live in
+ * routing behavior, camera, and HUD framing instead of changing the route core color.
  */
 export function effectiveNavRouteColors(
   modeConfig: ModeConfig,
@@ -34,53 +29,13 @@ export function effectiveNavRouteColors(
   drivingMode?: DrivingMode,
   options?: { speedMphForRoute?: number },
 ): EffectiveRouteColors {
+  void drivingMode;
+  void options;
   const { routeColor, routeCasing, passedColor, routeGlowColor, routeGlowOpacity } = modeConfig;
   const whiteCore = isNearWhiteRouteLine(routeColor);
   const dawnOrDay = mapLightPreset === 'dawn' || mapLightPreset === 'day';
   const dusk = mapLightPreset === 'dusk';
   const night = mapLightPreset === 'night';
-  const sportLowLight = drivingMode === 'sport' && (night || dusk || isSatellite);
-  const speedMph = options?.speedMphForRoute ?? 0;
-  const sportFast = drivingMode === 'sport' && speedMph > 70;
-
-  if (drivingMode === 'sport' && sportLowLight) {
-    return {
-      /** Brighter core + light casing so the line reads on Mapbox Standard dusk / night and satellite. */
-      routeColor: sportFast
-        ? isSatellite
-          ? '#FF7A4D'
-          : night
-            ? '#FF5C33'
-            : '#FF6B3D'
-        : isSatellite
-          ? '#FFCAA3'
-          : night
-            ? '#FFB184'
-            : '#FF8C52',
-      routeCasing: isSatellite ? '#0A1628' : 'rgba(255,255,255,0.88)',
-      passedColor: isSatellite ? 'rgba(148,163,184,0.7)' : 'rgba(203, 213, 225, 0.65)',
-      routeGlowColor: isSatellite ? '#FDE68A' : night ? '#FEF3C7' : '#FDE68A',
-      routeGlowOpacity: Math.max(
-        routeGlowOpacity,
-        isSatellite ? 0.48 : night ? 0.46 : 0.44,
-        sportFast ? 0.06 : 0,
-      ),
-    };
-  }
-
-  if (drivingMode === 'sport' && sportFast) {
-    return {
-      routeColor: '#E63E16',
-      routeCasing: '#1C1917',
-      passedColor: '#94A3B8',
-      routeGlowColor: '#FB923C',
-      routeGlowOpacity: Math.max(routeGlowOpacity, 0.36),
-    };
-  }
-
-  if (drivingMode === 'sport') {
-    return passthroughRouteColors(modeConfig);
-  }
 
   if (isSatellite) {
     if (whiteCore) {
@@ -133,11 +88,11 @@ export function effectiveNavRouteColors(
 
   if (night && !whiteCore) {
     return {
-      routeColor: '#60A5FA',
-      routeCasing: '#0C1A3D',
+      routeColor,
+      routeCasing: 'rgba(219,234,254,0.78)',
       passedColor: 'rgba(148,163,184,0.55)',
-      routeGlowColor: '#93C5FD',
-      routeGlowOpacity: Math.max(routeGlowOpacity, 0.28),
+      routeGlowColor,
+      routeGlowOpacity: Math.max(routeGlowOpacity, 0.3),
     };
   }
 

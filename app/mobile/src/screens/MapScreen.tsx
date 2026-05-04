@@ -4707,8 +4707,7 @@ export default function MapScreen() {
                     congestion={nav.navigationData?.congestion}
                     showCongestion={
                       modeConfig.showCongestion &&
-                      !nav.isNavigating &&
-                      nav.showRoutePreview
+                      (nav.isNavigating || nav.showRoutePreview)
                     }
                     isRerouting={nav.isRerouting || sdkRouteHandoffUi}
                     belowLayerID={buildingsBelowLayerId}

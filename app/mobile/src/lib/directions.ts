@@ -2,6 +2,20 @@ import type { Coordinate, DrivingMode } from '../types';
 import { getMapboxPublicToken, isMapboxPublicTokenConfigured } from '../config/mapbox';
 import { api } from '../api/client';
 import { routeSummaryFromMapboxMetersSeconds } from '../utils/routeDisplay';
+import {
+  fastestBaseReasonForMode,
+  fastestLabelForMode,
+  rankDirectionsRoutesForMode,
+  routeRankingPenalty,
+} from './routeScoring';
+
+/** Re-export pure scoring helpers (also used by `directionsRouteScoring.unit.test.ts`). */
+export {
+  fastestBaseReasonForMode,
+  fastestLabelForMode,
+  rankDirectionsRoutesForMode,
+  routeRankingPenalty,
+};
 
 /** True when Mapbox Directions / Geocoding can run (token present in env or Expo extra). */
 export function isMapboxDirectionsConfigured(): boolean {
@@ -102,7 +116,7 @@ export interface RouteParseMeta {
 }
 
 const ROUTE_DEFAULTS: Record<RouteKind, { label: string; reason: string }> = {
-  fastest: { label: 'Fastest', reason: 'Fastest with live traffic' },
+  fastest: { label: 'Fastest', reason: 'Fastest clear route' },
   no_highways: { label: 'No Highways', reason: 'Avoids motorways & highways' },
   avoid_tolls: { label: 'Avoid Tolls', reason: 'No toll roads' },
   eco: { label: 'Eco', reason: 'Shorter distance, less fuel' },
@@ -636,13 +650,6 @@ interface RouteStrategy {
   preferShortest: boolean;
 }
 
-function routeRankingPenalty(route: Pick<DirectionsResult, 'duration' | 'distance' | 'congestionScore' | 'closureEdgeCount'>): number {
-  const closurePenalty = (route.closureEdgeCount ?? 0) * 9000;
-  const congestionPenalty = route.congestionScore * 180;
-  const distancePenalty = route.distance / 1609.34;
-  return route.duration + closurePenalty + congestionPenalty + distancePenalty;
-}
-
 const ROUTE_STRATEGIES: RouteStrategy[] = [
   { type: 'fastest', alternatives: true, preferShortest: false },
   { type: 'no_highways', exclude: 'motorway', alternatives: false, preferShortest: false },
@@ -830,7 +837,7 @@ async function executeRouteStrategy(
           : ROUTE_DEFAULTS[strategy.type].reason,
     }),
   );
-  parsedRoutes.sort((a, b) => routeRankingPenalty(a) - routeRankingPenalty(b));
+  parsedRoutes.sort((a, b) => routeRankingPenalty(a, mode) - routeRankingPenalty(b, mode));
 
   if (strategy.type === 'eco' && strategy.preferShortest) {
     const fastest = parsedRoutes[0]!;
@@ -848,7 +855,12 @@ async function executeRouteStrategy(
     const out: DirectionsResult[] = [];
     for (const route of parsedRoutes) {
       const candidate: DirectionsResult = out.length === 0
-        ? { ...route, routeType: 'fastest', routeLabel: ROUTE_DEFAULTS.fastest.label, routeReason: ROUTE_DEFAULTS.fastest.reason }
+        ? {
+            ...route,
+            routeType: 'fastest',
+            routeLabel: fastestLabelForMode(mode),
+            routeReason: fastestBaseReasonForMode(mode),
+          }
         : route;
       if (!isDuplicateDirectionsResult(candidate, out)) out.push(candidate);
       if (out.length >= MAX_FASTEST_ROUTE_VARIANTS) break;
@@ -861,90 +873,6 @@ async function executeRouteStrategy(
   return [
     { ...primary, routeType: strategy.type, routeLabel: d.label, routeReason: d.reason } as DirectionsResult,
   ];
-}
-
-function scoreAndRankRoutes(routes: DirectionsResult[]): DirectionsResult[] {
-  if (routes.length === 0) return [];
-  let slowestDuration = 0;
-  for (const r of routes) {
-    if (r.duration > slowestDuration) slowestDuration = r.duration;
-  }
-  const scored = routes.map((r) => ({
-    ...r,
-    timeSavedSeconds: Math.round(slowestDuration - r.duration),
-  }));
-  scored.sort((a, b) => {
-    const penaltyDiff = routeRankingPenalty(a) - routeRankingPenalty(b);
-    if (Math.abs(penaltyDiff) > 1e-6) return penaltyDiff;
-    const timeDiff = a.duration - b.duration;
-    if (Math.abs(timeDiff) > 5) return timeDiff;
-    const distDiff = a.distance - b.distance;
-    if (Math.abs(distDiff) > 25) return distDiff;
-    return a.congestionScore - b.congestionScore;
-  });
-  const best = scored[0];
-  if (best) {
-    best.routeType = 'fastest';
-    best.routeLabel = ROUTE_DEFAULTS.fastest.label;
-    best.routeReason = ROUTE_DEFAULTS.fastest.reason;
-  }
-  return scored;
-}
-
-function enrichRouteReasons(routes: DirectionsResult[]): DirectionsResult[] {
-  if (routes.length <= 1) return routes;
-  const fastest = routes.find((r) => r.routeType === 'fastest');
-  if (!fastest) return routes;
-
-  return routes.map((r) => {
-    if (r.routeType === 'fastest') {
-      const cong = r.congestionScore;
-      if (cong < 0.05) return { ...r, routeReason: 'Fastest · Clear roads' };
-      if (cong < 0.15) return { ...r, routeReason: 'Fastest · Light traffic' };
-      if (cong < 0.35) return { ...r, routeReason: 'Fastest · Moderate traffic' };
-      return { ...r, routeReason: 'Fastest · Heavy traffic ahead' };
-    }
-
-    if (r.routeType === 'no_highways') {
-      const timeDiffMin = Math.round((r.duration - fastest.duration) / 60);
-      if (timeDiffMin <= 0) return { ...r, routeReason: 'No highways · Same travel time' };
-      return { ...r, routeReason: `No highways · ${timeDiffMin} min longer` };
-    }
-
-    if (r.routeType === 'avoid_tolls') {
-      const timeDiffMin = Math.round((r.duration - fastest.duration) / 60);
-      if (timeDiffMin <= 0) return { ...r, routeReason: 'No tolls · Same travel time' };
-      return { ...r, routeReason: `No tolls · ${timeDiffMin} min longer` };
-    }
-
-    if (r.routeType === 'eco') {
-      const distSavedMi = Math.round(((fastest.distance - r.distance) / 1609.34) * 10) / 10;
-      const timeDiffMin = Math.round((r.duration - fastest.duration) / 60);
-      if (distSavedMi > 0.5 && timeDiffMin <= 2) {
-        return {
-          ...r,
-          routeReason:
-            `${distSavedMi} mi shorter · ${timeDiffMin <= 0 ? 'same time' : `${timeDiffMin} min longer`}`,
-        };
-      }
-      if (timeDiffMin <= 0) return { ...r, routeReason: 'Shortest distance · Same time' };
-      return { ...r, routeReason: `Shorter distance · ${timeDiffMin} min longer` };
-    }
-
-    if (r.routeType === 'alt') {
-      const timeDiffMin = Math.round((r.duration - fastest.duration) / 60);
-      if (r.congestionScore < fastest.congestionScore * 0.7 && timeDiffMin <= 3) {
-        return {
-          ...r,
-          routeReason: `Less congestion · ${timeDiffMin <= 0 ? 'same time' : `${timeDiffMin} min longer`}`,
-        };
-      }
-      if (timeDiffMin <= 0) return { ...r, routeReason: 'Alternative · Same travel time' };
-      return { ...r, routeReason: `Alternative · ${timeDiffMin} min longer` };
-    }
-
-    return r;
-  });
 }
 
 export async function getMapboxRouteOptions(
@@ -972,21 +900,32 @@ export async function getMapboxRouteOptions(
       routeLabel: 'Walking',
       routeReason: 'Pedestrian route',
     });
-    return enrichRouteReasons(scoreAndRankRoutes([r]));
+    return rankDirectionsRoutesForMode([r]).map((route) => ({
+      ...route,
+      routeLabel: 'Walking',
+      routeReason: 'Pedestrian route',
+    }));
   }
 
   if (options?.fastSingleRoute) {
     const raw = await fetchMapboxTrafficRoutesRaw(origin, destination, {
       exclude: undefined,
-      alternatives: false,
+      alternatives: true,
       maxHeightMeters: maxH,
       mode: options?.mode,
-      timeoutMs: 18000,
+      timeoutMs: options?.mode === 'sport' ? 21000 : 19000,
       profile: 'driving-traffic',
     });
     if (!raw.length) return [];
-    const r = parseMapboxDirectionsRoute(raw[0]!, 'fastest');
-    return enrichRouteReasons(scoreAndRankRoutes([r]));
+    const parsed = raw.map((route, idx) =>
+      parseMapboxDirectionsRoute(route, {
+        routeType: idx === 0 ? 'fastest' : 'alt',
+        routeLabel: idx === 0 ? fastestLabelForMode(options?.mode) : `Alternate ${idx}`,
+        routeReason: idx === 0 ? fastestBaseReasonForMode(options?.mode) : ROUTE_DEFAULTS.alt.reason,
+      }),
+    );
+    const ranked = rankDirectionsRoutesForMode(parsed, options?.mode);
+    return ranked.length ? [ranked[0]!] : [];
   }
 
   const settled = await Promise.allSettled(
@@ -1006,7 +945,6 @@ export async function getMapboxRouteOptions(
 
   if (!allRoutes.length) return [];
 
-  const ranked = scoreAndRankRoutes(allRoutes);
-  const enriched = enrichRouteReasons(ranked);
+  const enriched = rankDirectionsRoutesForMode(allRoutes, options?.mode);
   return enriched.slice(0, MAX_PREVIEW_ROUTES);
 }
