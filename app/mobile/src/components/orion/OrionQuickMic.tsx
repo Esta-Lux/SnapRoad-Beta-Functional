@@ -351,7 +351,7 @@ export default function OrionQuickMic({
       : 'Open Orion chat';
 
   return (
-    <View style={styles.wrap}>
+    <View style={compactHudFab ? styles.wrapCluster : styles.wrapExplore}>
       {(isListening || isThinking) && (
         <View style={[styles.statePill, { backgroundColor: glowColor }]}>
           {isThinking ? <ActivityIndicator size="small" color="#EEF2FF" /> : <Ionicons name="mic" size={14} color="#FECACA" />}
@@ -383,7 +383,8 @@ export default function OrionQuickMic({
 }
 
 const styles = StyleSheet.create({
-  wrap: { alignItems: 'center' },
+  wrapCluster: { alignItems: 'center' },
+  wrapExplore: { alignItems: 'flex-end' },
   fabTap: { borderRadius: 24 },
   grad: {
     width: 48,
