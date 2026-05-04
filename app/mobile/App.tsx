@@ -40,7 +40,7 @@ import {
   logMapboxAccessDiagnostics,
   logMapboxStartupSourceOnce,
 } from './src/config/mapbox';
-import { preloadTtsVoicePreference } from './src/utils/ttsVoicePreference';
+import { preloadNavTurnTtsVoicePreference, preloadTtsVoicePreference } from './src/utils/ttsVoicePreference';
 
 const APP_IS_PRODUCTION =
   String(process.env.APP_ENV || process.env.ENVIRONMENT || process.env.NODE_ENV || '').toLowerCase() === 'production';
@@ -734,6 +734,7 @@ export default function App() {
       /* @rnmapbox optional in Expo Go */
     }
     preloadTtsVoicePreference();
+    preloadNavTurnTtsVoicePreference();
   }, []);
 
   if (apiConfigErr) {

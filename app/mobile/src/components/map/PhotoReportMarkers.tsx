@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Image, StyleSheet, Pressable, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MapboxGL, { isMapAvailable } from '../../utils/mapbox';
+import { absolutizeMediaUrl } from '../../utils/mediaUrl';
 
 export interface PhotoReport {
   id: string | number;
@@ -21,12 +22,35 @@ interface Props {
 }
 
 const MARKER_VIEW_MAX = 60;
-/** Circular thumbnail — matches larger incident tiles for tap targets. */
-/** Match incident road-report puck (~28 px) — circular lens on map. */
 const PIN_OUTER = 28;
+/** Inner image size: explicit pixels so MarkerView renders on Android (percentage sizes often paint black). */
+const THUMB_PIXEL = 22;
 
 const PURPLE = '#8B5CF6';
 const PURPLE_DEEP = '#6D28D9';
+
+function PhotoReportThumb({
+  uri,
+  placeholder,
+}: {
+  uri: string;
+  placeholder: React.ReactNode;
+}) {
+  const [failed, setFailed] = useState(false);
+  const abs = useMemo(() => absolutizeMediaUrl(uri) ?? uri, [uri]);
+  if (!abs || failed) {
+    return <>{placeholder}</>;
+  }
+  return (
+    <Image
+      source={{ uri: abs }}
+      style={styles.thumbImg}
+      resizeMode="cover"
+      accessibilityIgnoresInvertColors
+      onError={() => setFailed(true)}
+    />
+  );
+}
 
 /**
  * Photo reports: MarkerView only — thumbnail when available, else camera icon tile (no CircleLayer).
@@ -40,7 +64,8 @@ export default React.memo(function PhotoReportMarkers({ reports, onReportTap }: 
   const thumbById = useMemo(() => {
     const m = new Map<string, string>();
     for (const r of list) {
-      const u = r.photo_url || r.thumbnail_url;
+      const raw = r.photo_url || r.thumbnail_url;
+      const u = raw ? absolutizeMediaUrl(raw) ?? raw : undefined;
       if (u) m.set(String(r.id), u);
     }
     return m;
@@ -48,6 +73,14 @@ export default React.memo(function PhotoReportMarkers({ reports, onReportTap }: 
 
   if (!isMapAvailable() || !MapboxGL || !list.length) return null;
   const MB = MapboxGL;
+
+  const iconFallback = (
+    <View style={styles.iconOuter}>
+      <View style={styles.iconInner}>
+        <Ionicons name="camera" size={12} color="#FFFFFF" />
+      </View>
+    </View>
+  );
 
   return (
     <>
@@ -60,8 +93,6 @@ export default React.memo(function PhotoReportMarkers({ reports, onReportTap }: 
             coordinate={[r.lng, r.lat]}
             anchor={{ x: 0.5, y: 0.5 }}
             allowOverlap
-            // Keep photo-report thumbs visible above Standard 3D buildings at
-            // pitched navigation camera angles.
             allowOverlapWithPuck
           >
             <Pressable
@@ -70,18 +101,15 @@ export default React.memo(function PhotoReportMarkers({ reports, onReportTap }: 
               accessibilityRole="button"
               accessibilityLabel={r.description ? `Photo report: ${r.description}` : 'Photo road report'}
               hitSlop={8}
+              collapsable={false}
             >
-              {uri ? (
-                <View style={styles.thumbRing}>
-                  <Image source={{ uri }} style={styles.thumb} resizeMode="cover" accessibilityIgnoresInvertColors />
-                </View>
-              ) : (
-                <View style={styles.iconOuter}>
-                  <View style={styles.iconInner}>
-                    <Ionicons name="camera" size={12} color="#FFFFFF" />
-                  </View>
-                </View>
-              )}
+              <View style={styles.thumbRing} collapsable={false}>
+                {uri ? (
+                  <PhotoReportThumb uri={uri} placeholder={iconFallback} />
+                ) : (
+                  iconFallback
+                )}
+              </View>
             </Pressable>
           </MB.MarkerView>
         );
@@ -100,6 +128,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 3,
     borderColor: 'rgba(255,255,255,0.95)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1e1b4b',
     ...Platform.select({
       ios: {
         shadowColor: PURPLE_DEEP,
@@ -111,7 +142,7 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
-  thumb: { width: '100%', height: '100%' },
+  thumbImg: { width: THUMB_PIXEL, height: THUMB_PIXEL, backgroundColor: 'transparent' },
   iconOuter: {
     width: PIN_OUTER,
     height: PIN_OUTER,

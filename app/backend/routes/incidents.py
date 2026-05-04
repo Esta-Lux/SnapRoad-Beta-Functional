@@ -389,8 +389,9 @@ def get_osm_road_signals_nearby(
     radius_miles: Annotated[float, Query(ge=0.25, le=25)] = 2.5,
 ):
     """
-    Optional OpenStreetMap-derived construction / traffic-calming pins (Overpass).
-    Disabled unless OSM_INCIDENTS_ENABLED is set in the API environment.
+    OpenStreetMap-derived construction / traffic-calming pins (Overpass).
+
+    Enabled by default in the API environment; set `OSM_INCIDENTS_ENABLED=0` to disable.
     """
     from services.osm_road_signals import fetch_osm_road_signals
 

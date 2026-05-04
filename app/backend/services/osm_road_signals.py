@@ -1,7 +1,8 @@
 """
 Optional OpenStreetMap road signals near a coordinate (Overpass).
 
-Used only when OSM_INCIDENTS_ENABLED is truthy — keeps latency bounded and avoids hammering Overpass when disabled.
+OpenStreetMap incidents are **enabled by default** once the backend ships this module. Set `OSM_INCIDENTS_ENABLED=0`
+to disable Overpass calls (local dev, outages, or etiquette).
 
 Mapbox-incident ingestion is intentionally not bundled here (product / token dependent); callers may merge separately.
 """
@@ -24,8 +25,27 @@ def _truthy(raw: str | None) -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _falsy(raw: str | None) -> bool:
+    """Explicit opt-out: 0, false, off, no."""
+    if not raw or not str(raw).strip():
+        return False
+    return str(raw).strip().lower() in ("0", "false", "no", "off")
+
+
+def _osm_incidents_enabled() -> bool:
+    raw = os.environ.get("OSM_INCIDENTS_ENABLED")
+    if raw is None or not str(raw).strip():
+        return True
+    if _falsy(raw):
+        return False
+    if _truthy(raw):
+        return True
+    # Unknown tokens default to enabled (avoid accidental disables from typos).
+    return True
+
+
 def fetch_osm_road_signals(lat: float, lng: float, radius_meters: float = 3500) -> list[dict[str, Any]]:
-    if not _truthy(os.environ.get("OSM_INCIDENTS_ENABLED")):
+    if not _osm_incidents_enabled():
         return []
     r = max(800, min(6500, int(radius_meters)))
     # Construction / proposed works and calming nodes — coarse community-level signals only.

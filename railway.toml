@@ -2,6 +2,7 @@
 # Service root directory should stay the repo root (default) so paths in Dockerfile match.
 # Variables (production): CORS_ORIGINS, CHECKOUT_ALLOWED_ORIGINS, JWT_SECRET, SUPABASE_*, NVIDIA_*/OPENAI_*, etc.
 # Example: CORS_ORIGINS=https://app.snaproad.app
+# OSM-backed road hints default ON in FastAPI (`OSM_INCIDENTS_ENABLED` unset); set OSM_INCIDENTS_ENABLED=0 to opt out.
 # Example: CHECKOUT_ALLOWED_ORIGINS=https://app.snaproad.app/driver
 #
 # startCommand forces a real shell so PORT expands. If the dashboard has

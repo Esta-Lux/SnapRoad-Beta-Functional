@@ -2,11 +2,11 @@ import type { Voice } from 'expo-speech';
 import * as Speech from 'expo-speech';
 
 /**
- * Prefer a clear US male TTS voice for navigation + Orion (`expo-speech`).
+ * Orion / conversational cues: {@link pickMaleEnglishVoiceIdentifier}.
+ * Turn-by-turn (SDK captions → expo-speech): {@link pickMaleEnglishVoiceIdentifierForNavigation}
+ * for a distinct, calmer US-male preset when available.
  *
- * Mapbox Navigation SDK (headless native) uses its own speech pipeline; it is not
- * configurable from JS in this app. On iOS/Android, system / engine TTS settings
- * may still affect that path.
+ * Native Mapbox Navigation may still attach its own engine; our headless bridge speaks via JS `speak`.
  */
 
 const MALE_NAME_HINTS = [
@@ -103,7 +103,23 @@ const FEMALE_NAME_HINTS = [
   'siri',
 ];
 
+/** Prefer slightly warmer names for motorway-style cues (distinct from conversational Orion when possible). */
+const NAV_TURN_NAME_PRIORITY = [
+  'oliver',
+  'james',
+  'daniel',
+  'alex',
+  'nathan',
+  'evan',
+  'josh',
+  'aaron',
+  'ryan',
+  'justin',
+  'tyler',
+] as const;
+
 let voiceLoadPromise: Promise<string | undefined> | null = null;
+let navVoiceLoadPromise: Promise<string | undefined> | null = null;
 
 function scoreVoice(v: Voice): number {
   const n = `${v.name || ''} ${v.identifier || ''}`.toLowerCase();
@@ -124,6 +140,18 @@ function scoreVoice(v: Voice): number {
   for (const h of ACCENTED_OR_HARD_TO_HEAR_HINTS) if (n.includes(h) && language !== 'en-us') s -= 45;
   for (const f of FEMALE_NAME_HINTS) if (n.includes(f)) s -= 55;
   if (n.includes('compact')) s -= 20;
+  return s;
+}
+
+function scoreVoiceNavTurn(v: Voice): number {
+  const n = `${v.name || ''} ${v.identifier || ''}`.toLowerCase();
+  const language = (v.language || '').toLowerCase();
+  const quality = String(v.quality || '').toLowerCase();
+  let s = scoreVoice(v);
+  if (quality.includes('enhanced')) s += 12;
+  if (quality.includes('premium')) s += 14;
+  const navPri = NAV_TURN_NAME_PRIORITY.findIndex((h) => n.includes(h));
+  if (navPri >= 0) s += 55 - navPri * 3;
   return s;
 }
 
@@ -150,6 +178,32 @@ export function pickMaleEnglishVoiceIdentifier(voices: Voice[]): string | undefi
   return ranked[0]?.v.identifier;
 }
 
+/**
+ * Separate preset for spoken turn cues. Set `EXPO_PUBLIC_NAV_TTS_VOICE_IDENTIFIER`
+ * or falls back to a second-ranked male English voice vs Orion when two exist.
+ */
+export function pickMaleEnglishVoiceIdentifierForNavigation(voices: Voice[]): string | undefined {
+  const forced = process.env.EXPO_PUBLIC_NAV_TTS_VOICE_IDENTIFIER?.trim();
+  if (forced) {
+    const byId = voices.find((v) => v.identifier === forced);
+    if (byId) return byId.identifier;
+    const byName = voices.find((v) => v.name === forced);
+    if (byName) return byName.identifier;
+  }
+
+  const en = voices.filter((v) => typeof v.language === 'string' && /^en/i.test(v.language));
+  if (!en.length) return undefined;
+
+  const navRanked = en
+    .map((v) => ({ v, score: scoreVoiceNavTurn(v) }))
+    .sort((a, b) => b.score - a.score);
+  const navPick = navRanked[0]?.v.identifier;
+
+  const convPick = pickMaleEnglishVoiceIdentifier(voices);
+  if (navPick && convPick && navPick !== convPick) return navPick;
+  return navRanked[1]?.v.identifier ?? navPick ?? convPick;
+}
+
 /** Cached promise so concurrent `speak` calls share one voice resolution. */
 export function getPreferredTtsVoiceIdentifier(): Promise<string | undefined> {
   if (!voiceLoadPromise) {
@@ -168,4 +222,23 @@ export function getPreferredTtsVoiceIdentifier(): Promise<string | undefined> {
 /** Optional warm-up (e.g. after app load) so first cue does not await voice enumeration. */
 export function preloadTtsVoicePreference(): void {
   void getPreferredTtsVoiceIdentifier();
+}
+
+/** Cached expo-speech voice id for SDK-sourced turn lines (`navigation_fixed` rate source). */
+export function getNavTurnTtsVoiceIdentifier(): Promise<string | undefined> {
+  if (!navVoiceLoadPromise) {
+    navVoiceLoadPromise = (async () => {
+      try {
+        const voices = await Speech.getAvailableVoicesAsync();
+        return pickMaleEnglishVoiceIdentifierForNavigation(voices);
+      } catch {
+        return undefined;
+      }
+    })();
+  }
+  return navVoiceLoadPromise;
+}
+
+export function preloadNavTurnTtsVoicePreference(): void {
+  void getNavTurnTtsVoiceIdentifier();
 }

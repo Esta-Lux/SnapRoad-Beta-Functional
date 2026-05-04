@@ -6,7 +6,7 @@ import { isSdkTripAuthoritative } from '../navigation/navSdkAuthority';
 import { markNavVoiceFromJs, msSinceLastSdkVoice } from '../navigation/navSdkStore';
 import type { LaneInfo, ManeuverKind, RoadSignal } from '../navigation/navModel';
 import { navLaneGuidanceUiEnabled } from '../navigation/navFeatureFlags';
-import { getPreferredTtsVoiceIdentifier } from './ttsVoicePreference';
+import { getNavTurnTtsVoiceIdentifier, getPreferredTtsVoiceIdentifier } from './ttsVoicePreference';
 import { DRIVING_MODES } from '../constants/modes';
 
 let lastSpokenPhrase = '';
@@ -274,7 +274,7 @@ export function speakGuidance(
   void (async () => {
     Speech.stop();
     await configureAudioSessionForSpeechOutput();
-    const voiceId = await getPreferredTtsVoiceIdentifier();
+    const voiceId = await getNavTurnTtsVoiceIdentifier();
     const profile = getTtsSpeechProfile(mode);
     Speech.speak(phrase, {
       rate: profile.rate,

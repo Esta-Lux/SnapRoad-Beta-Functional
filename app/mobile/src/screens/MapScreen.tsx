@@ -149,6 +149,7 @@ import { formatDuration } from '../utils/format';
 import { formatUsd } from '../utils/driveMetrics';
 import { speak, stopSpeaking } from '../utils/voice';
 import { api, API_BASE_URL } from '../api/client';
+import { absolutizeMediaUrl } from '../utils/mediaUrl';
 import {
   parseNearbyOffers,
   parseRedeemOfferPayload,
@@ -1635,6 +1636,8 @@ export default function MapScreen() {
   const [followMode, setFollowMode] = useState<'free' | 'follow' | 'heading'>('follow');
   /** Bumps when a nav session starts so Mapbox Camera remounts (clears preview fitBounds stuck state). */
   const [navCameraSessionKey, setNavCameraSessionKey] = useState(0);
+  /** User tapped recenter — forces the next follow `setCamera` even if follow was already locked. */
+  const [navFollowKick, setNavFollowKick] = useState(0);
   /** Single distance field for maneuver-aware presets (must match banner/speech). */
   const nextManeuverDistanceMeters = useMemo(() => {
     if (isNativeSdkPassThrough) {
@@ -1880,6 +1883,7 @@ export default function MapScreen() {
     nav.isNavigating,
     cameraLocked,
     navCameraSessionKey,
+    navFollowKick,
     navDisplayCoord.lat,
     navDisplayCoord.lng,
     navPuckHeading,
@@ -2602,8 +2606,10 @@ export default function MapScreen() {
             type: p.type ?? 'photo',
             description: p.description,
             created_at: p.created_at ?? new Date().toISOString(),
-            photo_url: typeof p.photo_url === 'string' ? p.photo_url : undefined,
-            thumbnail_url: typeof p.thumbnail_url === 'string' ? p.thumbnail_url : undefined,
+            photo_url:
+              typeof p.photo_url === 'string' ? absolutizeMediaUrl(p.photo_url) : undefined,
+            thumbnail_url:
+              typeof p.thumbnail_url === 'string' ? absolutizeMediaUrl(p.thumbnail_url) : undefined,
             upvotes: typeof p.upvotes === 'number' ? p.upvotes : 0,
           })),
         );
@@ -4170,6 +4176,13 @@ export default function MapScreen() {
       autoRelockTimer.current = null;
     }
     if (nav.isNavigating) {
+      try {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {
+        /* optional */
+      }
+      lastNavCameraCommandRef.current = null;
+      setNavFollowKick((k) => k + 1);
       setCameraLocked(true);
       userInteracting.current = false;
       setIsExploring(false);
@@ -4191,11 +4204,47 @@ export default function MapScreen() {
   }, [location.lat, location.lng, nav.isNavigating]);
 
   const handleRouteOverview = useCallback(() => {
-    const route = nav.navigationData?.polyline;
+    const restNav = nav.navigationData?.polyline;
+    const route =
+      restNav && restNav.length >= 2
+        ? restNav
+        : polylineToRender && polylineToRender.length >= 2
+          ? polylineToRender
+          : null;
     if (!nav.isNavigating || !route || route.length < 2) return;
-    const lngs = route.map((c) => c.lng).filter(Number.isFinite);
-    const lats = route.map((c) => c.lat).filter(Number.isFinite);
-    if (!lngs.length || !lats.length) return;
+
+    try {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {
+      /* optional */
+    }
+
+    const dest = nav.navigationData?.destination;
+    const lngs = [
+      ...route.map((c) => c.lng),
+      navDisplayCoord.lng,
+      dest && Number.isFinite(dest.lng) ? dest.lng : NaN,
+    ].filter(Number.isFinite) as number[];
+    const lats = [
+      ...route.map((c) => c.lat),
+      navDisplayCoord.lat,
+      dest && Number.isFinite(dest.lat) ? dest.lat : NaN,
+    ].filter(Number.isFinite) as number[];
+    if (lngs.length < 2 || lats.length < 2) return;
+
+    let maxLng = Math.max(...lngs);
+    let minLng = Math.min(...lngs);
+    let maxLat = Math.max(...lats);
+    let minLat = Math.min(...lats);
+    const spanLng = Math.max(maxLng - minLng, 0.00035);
+    const spanLat = Math.max(maxLat - minLat, 0.00035);
+    const padLng = Math.max(spanLng * 0.12, 0.001);
+    const padLat = Math.max(spanLat * 0.12, 0.001);
+    maxLng += padLng;
+    minLng -= padLng;
+    maxLat += padLat;
+    minLat -= padLat;
+
     if (autoRelockTimer.current) clearTimeout(autoRelockTimer.current);
     userInteracting.current = true;
     setCameraLocked(false);
@@ -4207,20 +4256,42 @@ export default function MapScreen() {
       Math.round(winH * 0.48),
       MAP_NAV_BOTTOM_INSET + insets.bottom + 56,
     );
-    cameraRef.current?.fitBounds(
-      [Math.max(...lngs), Math.max(...lats)],
-      [Math.min(...lngs), Math.min(...lats)],
-      [topPad, sidePad, bottomPad, sidePad],
-      520,
-    );
+    const cam = cameraRef.current;
+    if (cam?.fitBounds) {
+      const runFit = () => {
+        try {
+          cam.fitBounds(
+            [maxLng, maxLat],
+            [minLng, minLat],
+            [topPad, sidePad, bottomPad, sidePad],
+            520,
+          );
+        } catch (err) {
+          if (__DEV__) console.warn('[MapScreen] fitBounds overview failed', err);
+        }
+      };
+      requestAnimationFrame(() => requestAnimationFrame(runFit));
+    }
     autoRelockTimer.current = setTimeout(() => {
       if (nav.isNavigating) {
+        lastNavCameraCommandRef.current = null;
+        setNavFollowKick((k) => k + 1);
         setCameraLocked(true);
         userInteracting.current = false;
         setFollowMode('follow');
       }
     }, 9000);
-  }, [insets.bottom, insets.top, nav.isNavigating, nav.navigationData?.polyline]);
+  }, [
+    insets.bottom,
+    insets.top,
+    nav.isNavigating,
+    nav.navigationData?.polyline,
+    nav.navigationData?.destination?.lat,
+    nav.navigationData?.destination?.lng,
+    navDisplayCoord.lat,
+    navDisplayCoord.lng,
+    polylineToRender,
+  ]);
 
   const handleSubmitReport = useCallback(async (type: string) => {
     setShowReportPicker(false);
@@ -5879,35 +5950,106 @@ export default function MapScreen() {
       {/* ═══ FLOATING BUTTONS (navigation) ════════════════════════════════ */}
 
       {nav.isNavigating && !nav.showRoutePreview && !activeTripSummary && (
-        <View style={[s.navFabCol, { bottom: MAP_NAV_BOTTOM_INSET + insets.bottom + 10 }]}>
+        <View
+          style={[
+            s.navHudCluster,
+            {
+              bottom: MAP_NAV_BOTTOM_INSET + insets.bottom + 10,
+              backgroundColor: isLight ? 'rgba(255,255,255,0.96)' : 'rgba(23,31,51,0.96)',
+              borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.12)',
+            },
+          ]}
+        >
+          <View style={{ position: 'relative', alignItems: 'center' }}>
+            <OrionQuickMic
+              visible={!showOrion}
+              interactionMode="navigation"
+              compactHudFab
+              isPremium={Boolean(user?.isPremium)}
+              context={orionContext}
+              onOpenChat={() => setShowOrion(true)}
+              onSuggestions={(items) => setOrionPendingSuggestions(items)}
+              onReply={(text) => setOrionQuickReply(text)}
+              onAction={(action: {
+                type: string;
+                name?: string;
+                lat?: number;
+                lng?: number;
+                address?: string;
+              }) => {
+                if (action.type === 'navigate' && action.lat != null && action.lng != null) {
+                  const dest = {
+                    name: action.name ?? 'Destination',
+                    address: typeof action.address === 'string' ? action.address : '',
+                    lat: action.lat,
+                    lng: action.lng,
+                  };
+                  handleStartDirections(dest);
+                } else if (action.type === 'add_stop' && action.lat && action.lng) {
+                  nav.addWaypoint({ lat: action.lat, lng: action.lng, name: action.name ?? 'Stop' });
+                } else if (action.type === 'mode' && action.name) {
+                  const m = action.name.toLowerCase();
+                  if (m === 'calm' || m === 'adaptive' || m === 'sport') setDrivingMode(m as DrivingMode);
+                } else if (action.type === 'mute_voice') {
+                  setNavVoiceMuted(true);
+                  stopSpeaking();
+                } else if (action.type === 'unmute_voice') {
+                  setNavVoiceMuted(false);
+                }
+              }}
+            />
+            {!user?.isPremium && (
+              <View
+                style={{
+                  position: 'absolute',
+                  top: -2,
+                  right: -2,
+                  backgroundColor: '#3B82F6',
+                  borderRadius: 8,
+                  width: 16,
+                  height: 16,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Ionicons name="navigate" size={8} color="#fff" />
+              </View>
+            )}
+          </View>
           <TouchableOpacity
-            style={[s.navFab, {
-              backgroundColor: '#2563EB',
-              borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.35)',
-            }]}
+            style={[
+              s.navHudBtn,
+              {
+                backgroundColor: '#2563EB',
+                borderColor: 'rgba(255,255,255,0.35)',
+              },
+            ]}
             onPress={handleRecenter}
             accessibilityLabel="Recenter and lock camera"
           >
             <Ionicons name="navigate" size={20} color="#fff" />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[s.navFab, {
-              backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(30,41,59,0.94)',
-              borderWidth: 1,
-              borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
-            }]}
+            style={[
+              s.navHudBtn,
+              {
+                backgroundColor: isLight ? 'rgba(255,255,255,0.98)' : 'rgba(30,41,59,0.98)',
+                borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
+              },
+            ]}
             onPress={handleRouteOverview}
             accessibilityLabel="Show route overview"
           >
             <Ionicons name="map-outline" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[s.navFab, {
-              backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(30,41,59,0.94)',
-              borderWidth: 1,
-              borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
-            }]}
+            style={[
+              s.navHudBtn,
+              {
+                backgroundColor: isLight ? 'rgba(255,255,255,0.98)' : 'rgba(30,41,59,0.98)',
+                borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
+              },
+            ]}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               setShowReportPicker(true);
@@ -5917,11 +6059,13 @@ export default function MapScreen() {
             <Ionicons name="warning-outline" size={20} color="#F59E0B" />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[s.navFab, {
-              backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(30,41,59,0.94)',
-              borderWidth: 1,
-              borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
-            }]}
+            style={[
+              s.navHudBtn,
+              {
+                backgroundColor: isLight ? 'rgba(255,255,255,0.98)' : 'rgba(30,41,59,0.98)',
+                borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
+              },
+            ]}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               setShowPhotoReport(true);
@@ -5967,7 +6111,7 @@ export default function MapScreen() {
         </TouchableOpacity>
       )}
 
-      {!nav.showRoutePreview && !activeTripSummary && (
+      {!nav.showRoutePreview && !activeTripSummary && !nav.isNavigating && (
         <View
           style={[s.orionFab, { top: insets.top + 236, right: 20 }]}
         >
@@ -6007,11 +6151,6 @@ export default function MapScreen() {
               }
             }}
           />
-          {!user?.isPremium && nav.isNavigating && (
-            <View style={{ position: 'absolute', top: -2, right: -2, backgroundColor: '#3B82F6', borderRadius: 8, width: 16, height: 16, alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="navigate" size={8} color="#fff" />
-            </View>
-          )}
         </View>
       )}
 
@@ -6741,9 +6880,35 @@ const s = StyleSheet.create({
   tripDone: { borderRadius: 16, paddingVertical: 16, alignItems: 'center', ...shadow(12, 0.3) },
   tripDoneT: { color: '#fff', fontSize: 16, fontWeight: '800' },
 
-  // Floating buttons
-  navFabCol: { position: 'absolute', right: 16, zIndex: 12, gap: 12, alignItems: 'center' as const },
-  navFab: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center' as const, alignItems: 'center' as const, ...shadow(8, 0.18) },
+  // Floating navigation HUD cluster (Orion mic + controls)
+  navHudCluster: {
+    position: 'absolute',
+    right: 11,
+    zIndex: 12,
+    gap: 10,
+    alignItems: 'center' as const,
+    paddingVertical: 11,
+    paddingHorizontal: 9,
+    borderRadius: 28,
+    borderWidth: StyleSheet.hairlineWidth,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#020617',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.22,
+        shadowRadius: 18,
+      },
+      android: { elevation: 14 },
+      default: {},
+    }),
+  },
+  navHudBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+  },
   reportFab: { position: 'absolute', width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.94)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', ...shadow(8, 0.12) },
   communityBtn: { position: 'absolute', minHeight: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.94)', paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', ...shadow(8, 0.12) },
   communityT: { fontSize: 12, fontWeight: '700' },

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, PermissionsAndroid, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, PermissionsAndroid, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Speech from 'expo-speech';
@@ -53,6 +53,8 @@ interface Props {
   isPremium: boolean;
   /** Explore: tap opens full Orion chat; long-press starts voice. Navigation: tap is voice only (backend + TTS). */
   interactionMode?: OrionQuickInteractionMode;
+  /** When true, FAB matches map HUD stack (44px circle, centered in column). */
+  compactHudFab?: boolean;
   context?: OrionContext;
   onOpenChat: () => void;
   onSuggestions?: (items: OrionPlaceSuggestion[]) => void;
@@ -64,6 +66,7 @@ export default function OrionQuickMic({
   visible,
   isPremium,
   interactionMode = 'navigation',
+  compactHudFab = false,
   context,
   onOpenChat,
   onSuggestions,
@@ -75,6 +78,7 @@ export default function OrionQuickMic({
   const [partialTranscript, setPartialTranscript] = useState('');
   const transcriptRef = useRef('');
   const orionSpeakingRef = useRef(false);
+  const speechFinalizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const requestMicPermission = useCallback(async () => {
     if (Platform.OS !== 'android') return true;
@@ -168,7 +172,24 @@ export default function OrionQuickMic({
     }
   }, [partialTranscript, sendPrompt]);
 
+  const clearSpeechFinalizeTimer = useCallback(() => {
+    if (speechFinalizeTimerRef.current != null) {
+      clearTimeout(speechFinalizeTimerRef.current);
+      speechFinalizeTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleFinalizeAfterSpeechEnd = useCallback(() => {
+    clearSpeechFinalizeTimer();
+    const delayMs = Platform.OS === 'android' ? 400 : 140;
+    speechFinalizeTimerRef.current = setTimeout(() => {
+      speechFinalizeTimerRef.current = null;
+      finalizeTranscript();
+    }, delayMs);
+  }, [clearSpeechFinalizeTimer, finalizeTranscript]);
+
   const stopListening = useCallback(async () => {
+    clearSpeechFinalizeTimer();
     if (!Voice) return;
     try {
       await Voice.stop();
@@ -177,36 +198,49 @@ export default function OrionQuickMic({
     }
     setIsListening(false);
     finalizeTranscript();
-  }, [finalizeTranscript]);
+  }, [clearSpeechFinalizeTimer, finalizeTranscript]);
 
   const startListening = useCallback(async () => {
     if (!Voice || Platform.OS === 'web' || isThinking) return;
     const ok = await requestMicPermission();
-    if (!ok) return;
+    if (!ok) {
+      Alert.alert('Microphone', 'Enable microphone access in Settings to speak with Orion.');
+      return;
+    }
     try {
       if (typeof Voice.isAvailable === 'function') {
         const avail = await Voice.isAvailable();
-        if (!avail) return;
+        if (!avail) {
+          Alert.alert('Voice input', 'Speech recognition is not available on this device right now.');
+          return;
+        }
       }
     } catch {
       /* continue */
     }
     transcriptRef.current = '';
     setPartialTranscript('');
+    clearSpeechFinalizeTimer();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Speech.stop();
     await configureAudioSessionForVoiceInput();
     setIsListening(true);
-    try {
-      await Voice.start('en-US');
-    } catch {
-      setIsListening(false);
+    const tryLocales = Platform.OS === 'android' ? ['en_US', 'en-US', 'en_US.UTF-8'] : ['en-US', 'en_US'];
+    for (const locale of tryLocales) {
+      try {
+        await Voice.start(locale);
+        return;
+      } catch {
+        /* try next */
+      }
     }
-  }, [isThinking, requestMicPermission]);
+    setIsListening(false);
+  }, [isThinking, requestMicPermission, clearSpeechFinalizeTimer]);
 
   useEffect(() => {
     if (!Voice || !visible) return;
     Voice.onSpeechStart = () => {
+      clearSpeechFinalizeTimer();
       transcriptRef.current = '';
       setPartialTranscript('');
     };
@@ -220,19 +254,22 @@ export default function OrionQuickMic({
     };
     Voice.onSpeechResults = (e) => {
       if (orionSpeakingRef.current) return;
+      clearSpeechFinalizeTimer();
       const t = e?.value?.[0]?.trim();
       if (t) transcriptRef.current = t;
     };
     Voice.onSpeechEnd = () => {
       setIsListening(false);
-      finalizeTranscript();
+      scheduleFinalizeAfterSpeechEnd();
     };
     Voice.onSpeechError = () => {
+      clearSpeechFinalizeTimer();
       setIsListening(false);
       transcriptRef.current = '';
       setPartialTranscript('');
     };
     return () => {
+      clearSpeechFinalizeTimer();
       Voice.onSpeechStart = null;
       Voice.onSpeechPartialResults = null;
       Voice.onSpeechResults = null;
@@ -240,7 +277,7 @@ export default function OrionQuickMic({
       Voice.onSpeechError = null;
       void Voice.cancel().catch(() => {});
     };
-  }, [finalizeTranscript, visible]);
+  }, [clearSpeechFinalizeTimer, scheduleFinalizeAfterSpeechEnd, visible]);
 
   useEffect(() => {
     if (visible) return;
@@ -249,7 +286,8 @@ export default function OrionQuickMic({
     setIsListening(false);
     setIsThinking(false);
     void Voice?.cancel().catch(() => {});
-  }, [visible]);
+    clearSpeechFinalizeTimer();
+  }, [visible, clearSpeechFinalizeTimer]);
 
   const glowColor = useMemo(() => {
     if (isListening) return 'rgba(239,68,68,0.28)';
@@ -260,6 +298,8 @@ export default function OrionQuickMic({
   if (!visible) return null;
 
   const navMode = interactionMode === 'navigation';
+  const fabSize = compactHudFab ? 44 : 48;
+  const iconSize = compactHudFab ? 20 : 22;
 
   const handleFabPress = () => {
     if (!navMode) {
@@ -328,8 +368,14 @@ export default function OrionQuickMic({
         accessibilityLabel={fabA11y}
         accessibilityHint={!navMode ? 'Long press for voice without opening chat' : undefined}
       >
-        <LinearGradient colors={isPremium ? ['#7C3AED', '#5B21B6'] : ['#6366F1', '#4F46E5']} style={styles.grad}>
-          <Ionicons name={fabIcon} size={22} color="#fff" />
+        <LinearGradient
+          colors={isPremium ? ['#7C3AED', '#5B21B6'] : ['#6366F1', '#4F46E5']}
+          style={[
+            styles.grad,
+            compactHudFab ? { width: fabSize, height: fabSize, borderRadius: fabSize / 2 } : null,
+          ]}
+        >
+          <Ionicons name={fabIcon} size={iconSize} color="#fff" />
         </LinearGradient>
       </TouchableOpacity>
     </View>
@@ -337,7 +383,7 @@ export default function OrionQuickMic({
 }
 
 const styles = StyleSheet.create({
-  wrap: { alignItems: 'flex-end' },
+  wrap: { alignItems: 'center' },
   fabTap: { borderRadius: 24 },
   grad: {
     width: 48,
