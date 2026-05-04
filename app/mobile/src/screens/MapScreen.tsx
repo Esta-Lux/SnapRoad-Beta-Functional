@@ -1478,12 +1478,41 @@ export default function MapScreen() {
     () => (polylineToRender && polylineToRender.length >= 2 ? polylineLengthMeters(polylineToRender) : 0),
     [polylineToRender],
   );
+  const routeOverlayPuckSnap = useMemo(() => {
+    if (!nav.isNavigating || !navStablePuck.glued) return null;
+    if (!polylineToRender || polylineToRender.length < 2) return null;
+    if (!Number.isFinite(navDisplayCoord.lat) || !Number.isFinite(navDisplayCoord.lng)) return null;
+    return snapPuckToRoute(
+      { lat: navDisplayCoord.lat, lng: navDisplayCoord.lng },
+      polylineToRender,
+      { accuracyM: accuracy ?? null, tangentLookAheadM: 22 },
+    );
+  }, [
+    nav.isNavigating,
+    navStablePuck.glued,
+    polylineToRender,
+    navDisplayCoord.lat,
+    navDisplayCoord.lng,
+    accuracy,
+  ]);
   const routeOverlayCumMeters = useMemo(() => {
     if (!nav.isNavigating || !polylineToRender || polylineToRenderLenMeters <= 1) return 0;
-    const stepM = drivingMode === 'sport' ? 0.4 : drivingMode === 'adaptive' ? 0.5 : 0.65;
-    const meters = Math.max(0, Math.min(polylineToRenderLenMeters, smoothedFraction * polylineToRenderLenMeters));
+    const stepM = drivingMode === 'sport' ? 0.9 : drivingMode === 'adaptive' ? 1.05 : 1.2;
+    const rawMeters =
+      routeOverlayPuckSnap?.withinCorridor && Number.isFinite(routeOverlayPuckSnap.cumFromStartMeters)
+        ? routeOverlayPuckSnap.cumFromStartMeters
+        : smoothedFraction * polylineToRenderLenMeters;
+    const meters = Math.max(0, Math.min(polylineToRenderLenMeters, rawMeters));
     return Math.max(0, Math.min(polylineToRenderLenMeters, Math.round(meters / stepM) * stepM));
-  }, [nav.isNavigating, polylineToRender, polylineToRenderLenMeters, drivingMode, smoothedFraction]);
+  }, [
+    nav.isNavigating,
+    polylineToRender,
+    polylineToRenderLenMeters,
+    drivingMode,
+    routeOverlayPuckSnap?.withinCorridor,
+    routeOverlayPuckSnap?.cumFromStartMeters,
+    smoothedFraction,
+  ]);
   const navigationRouteSplit = useMemo((): RouteSplitForOverlay | null => {
     if (!nav.isNavigating) return null;
     if (polylineToRender && polylineToRender.length >= 2) {
@@ -2131,6 +2160,7 @@ export default function MapScreen() {
 
   const isCalm = drivingMode === 'calm';
   const isSport = drivingMode === 'sport';
+  const useModeHudBorder = Boolean(modeConfig.turnCardBorderColor);
 
   /** Smooth ~800ms+ transitions when switching driving modes (explore); nav keeps snappy follow. */
   const animDuration = nav.isNavigating
@@ -5054,7 +5084,7 @@ export default function MapScreen() {
                 lanesJson={undefined}
                 step={undefined}
                 roadDisambiguationLabel={null}
-                isSportBorder={isSport}
+                isSportBorder={useModeHudBorder}
                 speedMph={displaySpeedMph}
               />
             </View>
@@ -5151,7 +5181,7 @@ export default function MapScreen() {
                 lanesJson={undefined}
                 step={undefined}
                 roadDisambiguationLabel={null}
-                isSportBorder={isSport}
+                isSportBorder={useModeHudBorder}
                 speedMph={displaySpeedMph}
               />
             </View>
@@ -5363,7 +5393,7 @@ export default function MapScreen() {
                 actionableGuidanceStep ?? nextManeuverCoord ?? (cardState === 'confirm' ? turnCurrentStep : undefined)
               }
               roadDisambiguationLabel={disambigName}
-              isSportBorder={isSport}
+              isSportBorder={useModeHudBorder}
               speedMph={displaySpeedMph}
             />
           </View>

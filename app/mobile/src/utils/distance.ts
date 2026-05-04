@@ -643,10 +643,9 @@ export function buildRouteSplitRingsFromProgress(
   const passedDeduped = dedupeCoordRing(passedRaw);
   passedDeduped.push(splitPair);
 
-  // Ahead ring starts one vertex BEFORE the split so glow/casing
-  // overlaps the passed line end — eliminates the visible seam.
-  const aheadRaw: [number, number][] = [toPair(polyline[segIdx]!)];
-  aheadRaw.push(splitPair);
+  // Ahead starts exactly at the split. The full-route base/casing layers
+  // carry continuity, while the colored line no longer paints behind the puck.
+  const aheadRaw: [number, number][] = [splitPair];
   for (let k = segIdx + 1; k < n; k++) {
     aheadRaw.push(toPair(polyline[k]!));
   }
@@ -655,7 +654,7 @@ export function buildRouteSplitRingsFromProgress(
   return {
     passedLngLat: passedDeduped.length >= 2 ? passedDeduped : [],
     aheadLngLat: aheadDeduped.length >= 2 ? aheadDeduped : [],
-    firstAheadEdgeIndex: Math.max(0, segIdx - 1),
+    firstAheadEdgeIndex: segIdx,
   };
 }
 

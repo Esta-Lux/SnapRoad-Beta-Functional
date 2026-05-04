@@ -52,6 +52,19 @@ test('gasPricePointsFromApiEnvelope: CollectAPI gasoline field maps to regular',
   assert.equal(first.midGrade, '4.671');
 });
 
+test('gasPricePointsFromApiEnvelope: Ohio stateCode backfills centroid', () => {
+  const rows = gasPricePointsFromApiEnvelope([
+    { stateCode: 'OH', gasoline: '3.219', midGrade: '3.499' },
+  ]);
+  assert.equal(rows.length, 1);
+  const first = rows[0];
+  assert.ok(first);
+  assert.equal(first.state, 'Ohio');
+  assert.equal(first.lat, 40.3888);
+  assert.equal(first.lng, -82.7649);
+  assert.equal(first.regular, '3.219');
+});
+
 test('nearestGasPricePointByLocation picks closer centroid', () => {
   const pts = [
     { id: 'a', state: 'Far', lat: 45, lng: -100, regular: '1' },

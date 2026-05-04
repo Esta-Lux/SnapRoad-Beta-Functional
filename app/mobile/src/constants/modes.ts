@@ -86,6 +86,7 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     turnCardTextColor: '#EEF1F5',
     turnCardIconBg: 'rgba(255,255,255,0.08)',
     turnCardShadowColor: 'rgba(0,0,0,0.38)',
+    turnCardBorderColor: 'rgba(255,255,255,0.12)',
     distanceFontSize: 28,
 
     etaBarBg: 'rgba(248,250,252,0.96)',
@@ -127,8 +128,8 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     showCongestion: true,
     showTrafficBadge: true,
     showTrafficBar: true,
-    showSpeedLimit: false,
-    showPerfData: false,
+    showSpeedLimit: true,
+    showPerfData: true,
   },
 
   adaptive: {
@@ -148,6 +149,7 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     turnCardTextColor: '#EEF1F5',
     turnCardIconBg: 'rgba(255,255,255,0.08)',
     turnCardShadowColor: 'rgba(0,0,0,0.40)',
+    turnCardBorderColor: 'rgba(255,255,255,0.12)',
     distanceFontSize: 26,
 
     etaBarBg: 'rgba(248,250,252,0.96)',
@@ -188,8 +190,8 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     showCongestion: true,
     showTrafficBadge: true,
     showTrafficBar: true,
-    showSpeedLimit: false,
-    showPerfData: false,
+    showSpeedLimit: true,
+    showPerfData: true,
   },
 
   sport: {

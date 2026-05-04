@@ -41,16 +41,17 @@ export function getNavCameraFollowTuning(
 
   const modeBase =
     mode === 'sport'
-      ? { interval: 48, move: 0.2, heading: 0.9, anim: 96 }
+      ? { interval: 52, move: 0.22, heading: 1.0, anim: 112 }
       : mode === 'calm'
-        ? { interval: 82, move: 0.36, heading: 1.75, anim: 170 }
-        : { interval: 64, move: 0.26, heading: 1.25, anim: 122 };
+        ? { interval: 62, move: 0.28, heading: 1.35, anim: 132 }
+        : { interval: 54, move: 0.24, heading: 1.15, anim: 116 };
 
   const speed01 = clamp(speed / 24, 0, 1);
+  const minAnim = mode === 'sport' ? 86 : mode === 'adaptive' ? 82 : 94;
   return {
     minUpdateIntervalMs: Math.round(clamp(modeBase.interval - speed01 * 16 - nearTurn01 * 12, 38, 140)),
     minMoveMeters: Number(clamp(modeBase.move + speed01 * 0.08 - nearTurn01 * 0.08, 0.16, 0.56).toFixed(2)),
     minHeadingDeltaDeg: Number(clamp(modeBase.heading - nearTurn01 * 0.35, 0.55, 2.2).toFixed(1)),
-    animationDurationMs: Math.round(clamp(modeBase.anim - speed01 * 22 - nearTurn01 * 18, 72, 220)),
+    animationDurationMs: Math.round(clamp(modeBase.anim - speed01 * 22 - nearTurn01 * 18, minAnim, 220)),
   };
 }

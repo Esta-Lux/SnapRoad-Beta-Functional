@@ -107,8 +107,13 @@ def _candidate_state_labels(row: dict[str, Any]) -> list[str]:
     for k in (
         "name",
         "state",
+        "statecode",
+        "state_code",
+        "abbr",
+        "abbreviation",
         "statename",
         "state_name",
+        "lowername",
         "region",
         "title",
     ):
@@ -173,7 +178,9 @@ def _fetch_collectapi_state_endpoint_rows(key: str) -> tuple[list[dict[str, Any]
         if raw:
             for item in raw:
                 if isinstance(item, dict):
-                    rows.append(item)
+                    enriched = dict(item)
+                    enriched.setdefault("stateCode", state_code)
+                    rows.append(enriched)
     if rows:
         return rows, None
     return [], first_err or "gas_prices_empty_upstream"

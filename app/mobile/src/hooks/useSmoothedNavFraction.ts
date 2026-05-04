@@ -99,6 +99,7 @@ export function useSmoothedNavFraction(
   const drSpeedMpsRef = useRef<number>(0);
   const drStaleThresholdMsRef = useRef<number>(350);
   const drMaxStaleMsRef = useRef<number>(1400);
+  const lastDeadReckonedMsRef = useRef<number>(0);
   const freezeWhenStationaryRef = useRef<boolean>(freezeWhenStationary);
 
   freezeWhenStationaryRef.current = freezeWhenStationary;
@@ -112,6 +113,7 @@ export function useSmoothedNavFraction(
     if (!enabled || !isNavigating) {
       targetRef.current = next;
       displayedRef.current = next;
+      lastDeadReckonedMsRef.current = 0;
       setDisplayed(next);
       return;
     }
@@ -121,6 +123,7 @@ export function useSmoothedNavFraction(
       if (Math.abs(dn) >= snapDeltaFraction) {
         targetRef.current = next;
         displayedRef.current = next;
+        lastDeadReckonedMsRef.current = 0;
         setDisplayed(next);
         lastTargetChangeMsRef.current =
           typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -137,6 +140,7 @@ export function useSmoothedNavFraction(
       typeof performance !== 'undefined' && typeof performance.now === 'function'
         ? performance.now()
         : Date.now();
+    lastDeadReckonedMsRef.current = 0;
     /**
      * Snap on large jumps (reroute / teleport). Don't snap *backward* on a
      * negative delta if we're within one frame of the dead-reckoning band —
@@ -146,6 +150,7 @@ export function useSmoothedNavFraction(
     if (delta >= snapDeltaFraction) {
       targetRef.current = next;
       displayedRef.current = next;
+      lastDeadReckonedMsRef.current = 0;
       setDisplayed(next);
       return;
     }
@@ -153,6 +158,7 @@ export function useSmoothedNavFraction(
       /** Backward jump — genuine reroute (not DR artifact). Snap. */
       targetRef.current = next;
       displayedRef.current = next;
+      lastDeadReckonedMsRef.current = 0;
       setDisplayed(next);
       return;
     }
@@ -200,6 +206,9 @@ export function useSmoothedNavFraction(
         lastTargetChangeMsRef.current > 0
           ? now - lastTargetChangeMsRef.current
           : 0;
+      const lastDrMs = lastDeadReckonedMsRef.current;
+      const drBlendAgeMs = lastDrMs > 0 ? now - lastDrMs : Number.POSITIVE_INFINITY;
+      const recentDeadReckon = drBlendAgeMs < 420;
       const canDeadReckon =
         staleMs >= drStaleThresholdMsRef.current &&
         staleMs <= drMaxStaleMsRef.current &&
@@ -209,7 +218,11 @@ export function useSmoothedNavFraction(
       /** Phase 1: ease toward latest external target (unless target is stale and behind). */
       if (Math.abs(diff) >= 1e-6 && !(canDeadReckon && diff < 0)) {
         const alpha = 1 - Math.exp(-dt / Math.max(16, timeConstantMs));
-        const nextDisp = current + diff * alpha;
+        const catchDownAlpha =
+          diff < 0 && recentDeadReckon
+            ? 1 - Math.exp(-dt / Math.max(16, timeConstantMs * 2.5))
+            : alpha;
+        const nextDisp = current + diff * catchDownAlpha;
         displayedRef.current = nextDisp;
         setDisplayed(nextDisp);
         rafIdRef.current = requestAnimationFrame(tick);
@@ -222,6 +235,7 @@ export function useSmoothedNavFraction(
         const nextDisp = Math.min(1, current + dFrac);
         if (nextDisp !== current) {
           displayedRef.current = nextDisp;
+          lastDeadReckonedMsRef.current = now;
           setDisplayed(nextDisp);
         }
       }

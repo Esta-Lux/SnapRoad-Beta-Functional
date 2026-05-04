@@ -184,6 +184,43 @@ def test_fallback_state_shapes_ohio_documented_gasoline(monkeypatch) -> None:
     assert oh.get("midGrade") == "3.459"
 
 
+def test_fallback_state_endpoint_keeps_ohio_when_payload_omits_name(monkeypatch) -> None:
+    import services.gas_prices_service as gps
+
+    def fake_all(_timeout: float, _key: str):
+        return None, "gas_prices_collectapi_unauthorized", 401
+
+    def fake_state(_timeout: float, _key: str, state_code: str):
+        if state_code == "OH":
+            return {
+                "success": True,
+                "result": {
+                    "state": {
+                        "currency": "usd",
+                        "gasoline": "3.219",
+                        "midGrade": "3.499",
+                    },
+                },
+            }, None, 200
+        return None, "gas_prices_collectapi_transport_error", None
+
+    monkeypatch.setattr(gps, "get_collect_gas_json", fake_all)
+    monkeypatch.setattr(gps, "get_collect_state_gas_json", fake_state)
+    monkeypatch.setattr(gps, "get_collectapi_key", lambda: "dummy-token")
+
+    with gps._CACHE_LOCK:
+        gps._cache_mono_until = 0.0
+        gps._cached_rows.clear()
+        gps._cached_error = None
+
+    rows, err = gps.fetch_us_state_gas_prices()
+    assert err is None
+    assert len(rows) == 1
+    oh = rows[0]
+    assert oh.get("state") == "Ohio"
+    assert oh.get("regular") == "3.219"
+
+
 def test_fetch_gas_rows_falls_back_to_documented_state_endpoint(monkeypatch) -> None:
     import services.gas_prices_service as gps
 

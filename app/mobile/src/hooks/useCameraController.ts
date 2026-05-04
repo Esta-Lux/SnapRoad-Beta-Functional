@@ -233,6 +233,7 @@ export function useCameraController({
     };
   }, [
     speedB,
+    speedMph,
     fusedSpeedMps,
     maneuverB,
     drivingMode,
@@ -246,12 +247,13 @@ export function useCameraController({
   ]);
   const minCameraUpdateIntervalMs = useMemo(() => {
     if (!isNavigating || !cameraLocked) return 600;
-    if (maneuverB <= 48) return 110;
-    if (maneuverB <= 80) return 160;
-    if (maneuverB <= 180) return 280;
-    if (maneuverB <= 700) return 420;
-    return 760;
-  }, [isNavigating, cameraLocked, maneuverB]);
+    const modeEase = drivingMode === 'sport' ? 1.06 : drivingMode === 'calm' ? 0.82 : 0.9;
+    if (maneuverB <= 48) return Math.round(110 * modeEase);
+    if (maneuverB <= 80) return Math.round(160 * modeEase);
+    if (maneuverB <= 180) return Math.round(280 * modeEase);
+    if (maneuverB <= 700) return Math.round(420 * modeEase);
+    return Math.round(760 * modeEase);
+  }, [isNavigating, cameraLocked, maneuverB, drivingMode]);
 
   return useMemo(() => {
     if (!computed) {

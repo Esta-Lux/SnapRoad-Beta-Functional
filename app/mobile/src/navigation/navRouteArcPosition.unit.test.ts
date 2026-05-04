@@ -6,7 +6,11 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { coordinateAtCumulativeMeters, polylineLengthMeters } from '../utils/distance';
+import {
+  buildRouteSplitRingsFromProgress,
+  coordinateAtCumulativeMeters,
+  polylineLengthMeters,
+} from '../utils/distance';
 import type { Coordinate } from '../types';
 
 test('halfway point on segment is independent of off-route GPS (polyline authority)', () => {
@@ -36,4 +40,16 @@ test('overlay fraction = cumulativeMeters / polylineLength matches native fracti
   const p2 = coordinateAtCumulativeMeters(poly, overlayFrac * len);
   assert.ok(p2);
   assert.ok(Math.abs(p.lat - p2.lat) < 1e-9);
+});
+
+test('route split ahead ring starts at split so colored route does not lead behind puck', () => {
+  const poly: Coordinate[] = [
+    { lat: 40.0, lng: -83.0 },
+    { lat: 40.0, lng: -82.99 },
+    { lat: 40.0, lng: -82.98 },
+  ];
+  const rings = buildRouteSplitRingsFromProgress(poly, 0, 0.5);
+  assert.ok(rings);
+  assert.deepEqual(rings!.aheadLngLat[0], [-82.995, 40.0]);
+  assert.equal(rings!.firstAheadEdgeIndex, 0);
 });

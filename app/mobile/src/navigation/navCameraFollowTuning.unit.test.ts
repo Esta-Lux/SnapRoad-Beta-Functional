@@ -19,7 +19,7 @@ test('sport updates faster than calm while moving', () => {
 
   assert.ok(sport.minUpdateIntervalMs < adaptive.minUpdateIntervalMs);
   assert.ok(adaptive.minUpdateIntervalMs < calm.minUpdateIntervalMs);
-  assert.ok(sport.animationDurationMs < adaptive.animationDurationMs);
+  assert.ok(Math.abs(sport.animationDurationMs - adaptive.animationDurationMs) <= 8);
   assert.ok(adaptive.animationDurationMs < calm.animationDurationMs);
 });
 
@@ -38,7 +38,7 @@ test('moving camera cadence stays low-latency enough to track the puck', () => {
   const adaptiveNear = getNavCameraFollowTuning('adaptive', 13, 70);
 
   assert.ok(sport.minUpdateIntervalMs <= 48);
-  assert.ok(sport.animationDurationMs <= 96);
+  assert.ok(sport.animationDurationMs <= 102);
   assert.ok(sport.minMoveMeters <= 0.32);
-  assert.ok(adaptiveNear.animationDurationMs <= 122);
+  assert.ok(adaptiveNear.animationDurationMs <= 100);
 });

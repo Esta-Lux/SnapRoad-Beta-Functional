@@ -1,6 +1,8 @@
 import { haversineMeters } from '../../utils/distance';
 import type { GasPriceMapPoint } from './GasPriceMarkers';
 
+const OHIO_CENTROID = { state: 'Ohio', lat: 40.3888, lng: -82.7649 };
+
 function peelRows(envelope: unknown): unknown[] {
   if (Array.isArray(envelope)) return envelope;
   if (!envelope || typeof envelope !== 'object') return [];
@@ -25,13 +27,24 @@ export function gasPricePointsFromApiEnvelope(apiRoot: unknown): GasPriceMapPoin
   for (const row of rows) {
     if (!row || typeof row !== 'object') continue;
     const r = row as Record<string, unknown>;
-    const state = String(r.state ?? r.name ?? '').trim();
+    const stateRaw = String(r.state ?? r.name ?? r.stateCode ?? r.state_code ?? '').trim();
+    const state = /^(oh|ohio)$/i.test(stateRaw) ? OHIO_CENTROID.state : stateRaw;
     const id = String(r.id ?? (state ? `gas-${state.toLowerCase().replace(/\s+/g, '-')}` : '')).trim();
-    const lat = Number(r.lat);
-    const lng = Number(r.lng);
+    const fallbackCoord = state === OHIO_CENTROID.state ? OHIO_CENTROID : null;
+    const rawLat = Number(r.lat);
+    const rawLng = Number(r.lng);
+    const lat = Number.isFinite(rawLat) ? rawLat : fallbackCoord?.lat;
+    const lng = Number.isFinite(rawLng) ? rawLng : fallbackCoord?.lng;
     const mid = r.midGrade ?? r.midgrade ?? r.mid_grade;
     const regular = r.regular ?? r.gasoline ?? r.gas;
-    if (!id || !state || !Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    if (
+      !id ||
+      !state ||
+      typeof lat !== 'number' ||
+      typeof lng !== 'number' ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng)
+    ) continue;
     out.push({
       id,
       state,
