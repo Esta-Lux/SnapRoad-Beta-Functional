@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  cheapestLocalRegularChip,
   formatLocalGasRegularSummary,
   formatStateGasRegularSummary,
   formatUsdPerGalChip,
   gasPricePointsFromApiEnvelope,
+  isLocalStationGasRow,
+  matchGasStationNearPlace,
   nearestGasPricePointByLocation,
 } from './gasPricesFromApi';
 
@@ -135,6 +138,41 @@ test('formatStateGasRegularSummary includes price', () => {
   });
   assert.ok(s.includes('Ohio'));
   assert.ok(s.includes('$3.20'));
+});
+
+test('isLocalStationGasRow distinguishes fuel API rows', () => {
+  assert.equal(isLocalStationGasRow({ id: 'x', lat: 0, lng: 0, distance_miles: 0.8 }), true);
+  assert.equal(isLocalStationGasRow({ id: 'y', lat: 0, lng: 0, state: 'Ohio' }), false);
+});
+
+test('cheapestLocalRegularChip picks lowest-priced local snapshot', () => {
+  assert.equal(
+    cheapestLocalRegularChip([
+      { id: 'a', lat: 0, lng: 0, distance_miles: 1, regular: '3.59' },
+      { id: 'b', lat: 0.1, lng: 0.1, distance_miles: 2, regular: '$3.12' },
+    ]),
+    '$3.12',
+  );
+});
+
+test('matchGasStationNearPlace pairs close coordinates', () => {
+  const m = matchGasStationNearPlace(
+    40,
+    -83,
+    [
+      {
+        id: 's',
+        name: 'Exxon',
+        lat: 40.00005,
+        lng: -83.00005,
+        distance_miles: 0.1,
+        regular: '3.45',
+      },
+    ],
+    200,
+  );
+  assert.ok(m);
+  assert.equal(m?.regular, '3.45');
 });
 
 test('formatUsdPerGalChip parses numbers', () => {

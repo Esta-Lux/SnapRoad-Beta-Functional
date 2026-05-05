@@ -46,7 +46,8 @@ type Props = {
   setIsSearchFocused: (v: boolean) => void;
   onSubmitSearch: () => void;
   onClearSearch: () => void;
-  onOpenOrion: () => void;
+  /** When set, shows a compose entry in the search pill. Orion is anchored on the map tool stack instead. */
+  onOpenOrion?: () => void;
   activeChip: string;
   onSelectChip: (key: string) => void;
   savedPlaces: SavedLocation[];
@@ -186,7 +187,7 @@ export default function MapSearchTopBar(props: Props) {
             <TouchableOpacity onPress={props.onClearSearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Ionicons name="close-circle" size={18} color={props.colors.textTertiary} />
             </TouchableOpacity>
-          ) : (
+          ) : props.onOpenOrion ? (
             <TouchableOpacity
               onPress={props.onOpenOrion}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -195,7 +196,7 @@ export default function MapSearchTopBar(props: Props) {
             >
               <Ionicons name="chatbubbles-outline" size={16} color={props.colors.textTertiary} />
             </TouchableOpacity>
-          )}
+          ) : null}
         </Animated.View>
       </View>
 

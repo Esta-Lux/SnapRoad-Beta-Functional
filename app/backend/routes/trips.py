@@ -1491,7 +1491,7 @@ def _fetch_gasbuddy_stations(lat: float, lng: float) -> list[dict]:
         with httpx.Client(timeout=12.0) as client:
             r = client.get(
                 "https://www.gasbuddy.com/api/stations/near",
-                params={"lat": lat, "lng": lng, "radius": 5, "limit": 10},
+                params={"lat": lat, "lng": lng, "radius": 25, "limit": 30},
             )
             r.raise_for_status()
             data = r.json()

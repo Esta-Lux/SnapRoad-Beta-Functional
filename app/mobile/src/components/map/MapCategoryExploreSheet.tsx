@@ -23,7 +23,8 @@ export type ExplorePlaceRow = {
   photo_reference?: string;
   open_now?: boolean | null;
   price_level?: number | null;
-  business_status?: string;
+  /** Lowest nearby regular (/gal hint) matched from `/api/fuel/prices`; gas stations only. */
+  gasRegularDisplay?: string | null;
 };
 
 type Props = {
@@ -245,6 +246,11 @@ function CategoryRow({
             ) : null}
             {price ? (
               <Text style={[styles.meta, { color: colors.textSecondary }]}>{price}</Text>
+            ) : null}
+            {isGas && item.gasRegularDisplay ? (
+              <Text style={[styles.meta, { color: colors.primary, fontWeight: '700' }]}>
+                {item.gasRegularDisplay}
+              </Text>
             ) : null}
             {isGas ? (
               <Text

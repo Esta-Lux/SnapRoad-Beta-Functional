@@ -71,7 +71,7 @@ interface Props {
   isPremium: boolean;
   /** Explore: tap opens full Orion chat; long-press starts voice. Navigation: tap greets aloud then opens mic. */
   interactionMode?: OrionQuickInteractionMode;
-  /** When true, FAB matches map HUD stack (44px circle, centered in column). */
+  /** When true, FAB matches map tool stack (48px disc, aligned with layers / compass). */
   compactHudFab?: boolean;
   context?: OrionContext;
   onOpenChat: () => void;
@@ -439,7 +439,7 @@ export default function OrionQuickMic({
   if (!visible) return null;
 
   const navMode = interactionMode === 'navigation';
-  const fabSize = compactHudFab ? 44 : 48;
+  const fabSize = 48;
   const iconSize = compactHudFab ? 20 : 22;
 
   const cancelPlayback = () => {

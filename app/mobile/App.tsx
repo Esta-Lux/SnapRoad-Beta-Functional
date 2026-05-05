@@ -266,17 +266,21 @@ function MainTabs() {
               display: 'none' as const,
             }
           : {
-              borderTopLeftRadius: 22,
-              borderTopRightRadius: 22,
-              backgroundColor: isLight ? 'rgba(255,255,255,0.96)' : 'rgba(15,23,42,0.96)',
+              /** Flat top edge (no rounding) — full-width pill bar sits flush against the screen. */
+              borderTopLeftRadius: 0,
+              borderTopRightRadius: 0,
+              backgroundColor: isLight ? '#FFFFFF' : 'rgba(15,23,42,0.98)',
               borderTopColor: isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.08)',
-              borderColor: isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.08)',
+              borderLeftWidth: 0,
+              borderRightWidth: 0,
+              borderBottomWidth: 0,
               borderTopWidth: StyleSheet.hairlineWidth,
-              borderWidth: StyleSheet.hairlineWidth,
-              paddingBottom: Platform.OS === 'ios' ? 18 : 8,
-              paddingTop: 8,
-              height: Platform.OS === 'ios' ? 78 : 64,
-              ...(Platform.OS === 'ios' ? { shadowColor: '#000', shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.12, shadowRadius: 18 } : { elevation: 10 }),
+              paddingBottom: Platform.OS === 'ios' ? 16 : 8,
+              paddingTop: 6,
+              height: Platform.OS === 'ios' ? 74 : 62,
+              ...(Platform.OS === 'ios'
+                ? { shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.08, shadowRadius: 10 }
+                : { elevation: 8 }),
             },
         tabBarLabelStyle: { fontSize: 10, fontWeight: '800', letterSpacing: 0 },
         tabBarIconStyle: { marginBottom: -2 },

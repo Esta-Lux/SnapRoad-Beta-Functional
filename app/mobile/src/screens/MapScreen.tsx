@@ -89,8 +89,20 @@ import OfferMarkers from '../components/map/OfferMarkers';
 import ReportMarkers from '../components/map/ReportMarkers';
 import FriendMarkers from '../components/map/FriendMarkers';
 import CameraMarkers from '../components/map/CameraMarkers';
+import GasPriceMarkers from '../components/map/GasPriceMarkers';
 import type { CameraLocation, CameraViewFeed } from '../components/map/CameraMarkers';
-import { gasPricePointsFromApiEnvelope, nearestGasPricePointByLocation, formatStateGasRegularSummary, formatUsdPerGalChip, parseUsdPerGallonNumber } from '../components/map/gasPricesFromApi';
+import type { GasPriceMapPoint } from '../components/map/GasPriceMarkers';
+import {
+  cheapestLocalRegularChip,
+  formatLocalGasRegularSummary,
+  gasPricePointsFromApiEnvelope,
+  isLocalStationGasRow,
+  matchGasStationNearPlace,
+  nearestGasPricePointByLocation,
+  formatStateGasRegularSummary,
+  formatUsdPerGalChip,
+  parseUsdPerGallonNumber,
+} from '../components/map/gasPricesFromApi';
 import TrafficCameraSheet from '../components/map/TrafficCameraSheet';
 import TrafficLayer from '../components/map/TrafficLayer';
 import IncidentHeatmap from '../components/map/IncidentHeatmap';
@@ -250,6 +262,23 @@ function placePhotoThumbUri(photoRef?: string, maxWidth = 96): string | undefine
   return `${API_BASE_URL}/api/places/photo?ref=${encodeURIComponent(photoRef)}&maxwidth=${maxWidth}`;
 }
 
+/** Subtitle line for Nearby Gas sheet when we have `/api/fuel/prices` snapshots. */
+function exploreGasFuelPricesSubtitle(userLat: number, userLng: number, fuelRows: GasPriceMapPoint[]): string | null {
+  const priced = fuelRows.filter((row) => formatUsdPerGalChip(row.regular));
+  if (!priced.length) return null;
+  let pick = priced[0];
+  let bestD = haversineMeters(userLat, userLng, pick.lat, pick.lng);
+  for (let i = 1; i < priced.length; i += 1) {
+    const row = priced[i];
+    const d = haversineMeters(userLat, userLng, row.lat, row.lng);
+    if (d < bestD) {
+      bestD = d;
+      pick = row;
+    }
+  }
+  return formatLocalGasRegularSummary(pick);
+}
+
 function searchResultPriceHint(item: GeocodeResult): string | null {
   const raw = `${item.placeType || ''}`.toLowerCase();
   const isGas = raw.includes('gas') || raw.includes('fuel');
@@ -265,18 +294,27 @@ function searchResultPriceHint(item: GeocodeResult): string | null {
   return null;
 }
 
-function placeCardFuelHint(place: {
-  category?: string;
-  maki?: string;
-  placeType?: string;
-  price_level?: number;
-}): string | undefined {
+function placeCardFuelHint(
+  place: {
+    category?: string;
+    maki?: string;
+    placeType?: string;
+    price_level?: number;
+  },
+  matchedRegular?: GasPriceMapPoint | null,
+): string | undefined {
   const t = `${place.category || ''} ${place.maki || ''} ${place.placeType || ''}`.toLowerCase();
   if (!t.includes('gas') && !t.includes('fuel')) return undefined;
-  if (typeof place.price_level === 'number' && place.price_level >= 1 && place.price_level <= 4) {
-    return `Typical cost tier ${'$'.repeat(place.price_level)}. Live $/gal not shown — confirm at pump.`;
+  const chip = matchedRegular?.regular ? formatUsdPerGalChip(matchedRegular.regular) : null;
+  if (chip) {
+    const note =
+      matchedRegular?.is_estimated === true ? ' Estimated from area survey — verify at pump.' : ' Verify at pump before fueling.';
+    return `Regular about ${chip}/gal.${note}`;
   }
-  return 'Live $/gal not shown — confirm at pump before fueling.';
+  if (typeof place.price_level === 'number' && place.price_level >= 1 && place.price_level <= 4) {
+    return `Typical cost tier ${'$'.repeat(place.price_level)}. No live pump price for this listing — confirm at pump.`;
+  }
+  return 'No live pump price for this listing — confirm at pump or open Nearby Gas.';
 }
 
 /** Traffic cams hide when zoomed out (less map clutter). */
@@ -2008,8 +2046,10 @@ export default function MapScreen() {
   );
 
   const [cameraLocations, setCameraLocations] = useState<CameraLocation[]>([]);
-  /** Statewide avg regular for Gas category chip (nearest state centroid to GPS). */
+  /** Cheapest nearby regular (~$/gal chip) — local stations preferred, then statewide CollectAPI. */
   const [gasChipAvgRegularShort, setGasChipAvgRegularShort] = useState<string | null>(null);
+  /** Stations from `/api/fuel/prices` for badges + correlation with Google-place rows (map markers). */
+  const [localStationGasMarkers, setLocalStationGasMarkers] = useState<GasPriceMapPoint[]>([]);
   const [selectedTrafficCamera, setSelectedTrafficCamera] = useState<CameraLocation | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<{
     name: string;
@@ -2025,6 +2065,12 @@ export default function MapScreen() {
     lat: number;
     lng: number;
   } | null>(null);
+  const selectedPlaceGasSnap = useMemo(() => {
+    if (!selectedPlace) return null;
+    const t = `${selectedPlace.category || ''} ${selectedPlace.maki || ''} ${selectedPlace.placeType || ''}`.toLowerCase();
+    if (!t.includes('gas') && !t.includes('fuel')) return null;
+    return matchGasStationNearPlace(selectedPlace.lat, selectedPlace.lng, localStationGasMarkers, 360);
+  }, [selectedPlace, localStationGasMarkers]);
   const [mapZoomLevel, setMapZoomLevel] = useState(15);
   /** Map camera bearing (° CW from north) — drives nav puck screen rotation vs absolute course. */
   const [mapCameraHeadingDeg, setMapCameraHeadingDeg] = useState(0);
@@ -2552,38 +2598,75 @@ export default function MapScreen() {
   useEffect(() => {
     if (!mapTabFocused) {
       setGasChipAvgRegularShort(null);
+      setLocalStationGasMarkers([]);
       tripFuelContextRef.current = null;
       return;
     }
-    api
-      .get<Record<string, unknown>>('/api/map/gas-prices')
-      .then((r) => {
-        if (!r.success || r.data == null) {
-          if (!r.success) logMapDataIssue('GET /api/map/gas-prices', r.error);
-          setGasChipAvgRegularShort(null);
+    const lat0 = location.lat;
+    const lng0 = location.lng;
+    if (!Number.isFinite(lat0) || !Number.isFinite(lng0)) {
+      setLocalStationGasMarkers([]);
+      setGasChipAvgRegularShort(null);
+      return;
+    }
+
+    Promise.all([
+      api.get<Record<string, unknown>>(`/api/fuel/prices?lat=${lat0}&lng=${lng0}`),
+      api.get<Record<string, unknown>>('/api/map/gas-prices'),
+    ])
+      .then(([fuelRes, collectRes]) => {
+        let localRows: GasPriceMapPoint[] = [];
+        if (fuelRes.success && fuelRes.data != null) {
+          localRows = gasPricePointsFromApiEnvelope(fuelRes.data).filter(isLocalStationGasRow);
+          setLocalStationGasMarkers(localRows);
+        } else {
+          setLocalStationGasMarkers([]);
+          if (!fuelRes.success) {
+            logMapDataIssue('GET /api/fuel/prices', fuelRes.error);
+          }
+        }
+
+        const localChip = cheapestLocalRegularChip(localRows);
+        const localUsd = localChip ? parseUsdPerGallonNumber(localChip) : undefined;
+
+        if (localChip != null && localUsd != null) {
+          setGasChipAvgRegularShort(localChip);
+          tripFuelContextRef.current = {
+            stateLabel: 'Nearby',
+            priceUsdPerGal: localUsd,
+          };
           return;
         }
-        const mapped = gasPricePointsFromApiEnvelope(r.data);
-        const envelope = r.data && typeof r.data === 'object' && !Array.isArray(r.data)
-          ? (r.data as Record<string, unknown>)
-          : {};
-        if (mapped.length === 0 && typeof envelope.detail === 'string') {
-          logMapDataIssue('GET /api/map/gas-prices empty', envelope.detail);
+
+        tripFuelContextRef.current = null;
+        setGasChipAvgRegularShort(null);
+
+        if (!collectRes.success || collectRes.data == null) {
+          if (!collectRes.success) logMapDataIssue('GET /api/map/gas-prices', collectRes.error);
+          return;
         }
-        const nearest = nearestGasPricePointByLocation(location.lat, location.lng, mapped);
-        setGasChipAvgRegularShort(nearest ? formatUsdPerGalChip(nearest.regular) : null);
-        if (nearest?.state || nearest?.name) {
+        const stateRows = gasPricePointsFromApiEnvelope(collectRes.data);
+        const env = collectRes.data && typeof collectRes.data === 'object' && !Array.isArray(collectRes.data)
+          ? (collectRes.data as Record<string, unknown>)
+          : {};
+        if (stateRows.length === 0 && typeof env.detail === 'string') {
+          logMapDataIssue('GET /api/map/gas-prices empty', env.detail as string);
+        }
+        const nearestState = nearestGasPricePointByLocation(lat0, lng0, stateRows);
+        const stateChip = nearestState ? formatUsdPerGalChip(nearestState.regular) : null;
+        setGasChipAvgRegularShort(stateChip);
+        if (nearestState && parseUsdPerGallonNumber(nearestState.regular) != null) {
           tripFuelContextRef.current = {
-            stateLabel: nearest.state || nearest.name,
-            priceUsdPerGal: parseUsdPerGallonNumber(nearest.regular),
+            stateLabel: nearestState.state || nearestState.name || 'Regional',
+            priceUsdPerGal: parseUsdPerGallonNumber(nearestState.regular),
           };
-        } else {
-          tripFuelContextRef.current = null;
         }
       })
       .catch((e) => {
-        logMapDataIssue('GET /api/map/gas-prices', e);
+        logMapDataIssue('GET /api/fuel/prices batch', e);
         setGasChipAvgRegularShort(null);
+        setLocalStationGasMarkers([]);
+        tripFuelContextRef.current = null;
       });
   }, [
     mapTabFocused,
@@ -3676,26 +3759,41 @@ export default function MapScreen() {
         api.get<any>(
           `/api/places/nearby?lat=${lat0}&lng=${lng0}&radius=${cfg.radius}${typeQs}&limit=${cfg.limit}`,
         ),
+        api.get<Record<string, unknown>>(`/api/fuel/prices?lat=${lat0}&lng=${lng0}`),
         api.get<Record<string, unknown>>('/api/map/gas-prices'),
-      ]).then(([placesResult, gasResult]) => {
+      ]).then(([placesResult, fuelResult, stateGasResult]) => {
         const r =
           placesResult.status === 'fulfilled'
             ? placesResult.value
             : { success: false as const, error: 'Could not load places.' };
+        const rFuel =
+          fuelResult.status === 'fulfilled'
+            ? fuelResult.value
+            : { success: false as const, error: String(fuelResult.reason ?? 'Request failed') };
         const rGas =
-          gasResult.status === 'fulfilled'
-            ? gasResult.value
-            : { success: false as const, error: String(gasResult.reason ?? 'Request failed') };
-        let subtitleExpl = cfg.subtitle;
-        if (rGas.success && rGas.data != null) {
+          stateGasResult.status === 'fulfilled'
+            ? stateGasResult.value
+            : { success: false as const, error: String(stateGasResult.reason ?? 'Request failed') };
+        let fuelSnapshots: GasPriceMapPoint[] = [];
+        if (rFuel.success && rFuel.data != null) {
+          fuelSnapshots = gasPricePointsFromApiEnvelope(rFuel.data).filter(isLocalStationGasRow);
+        } else if (!rFuel.success) {
+          logMapDataIssue('GET /api/fuel/prices', rFuel.error);
+        }
+        let subtitleExpl = cfg.subtitle ?? '';
+        const localLine = exploreGasFuelPricesSubtitle(lat0, lng0, fuelSnapshots);
+        if (localLine) {
+          subtitleExpl = `${cfg.subtitle ? `${cfg.subtitle}\n` : ''}${localLine}`;
+        } else if (rGas.success && rGas.data != null) {
           const pts = gasPricePointsFromApiEnvelope(rGas.data);
           const nearest = nearestGasPricePointByLocation(lat0, lng0, pts);
           if (nearest) {
             subtitleExpl = `${cfg.subtitle ? `${cfg.subtitle}\n` : ''}${formatStateGasRegularSummary(nearest)}`;
           }
-          const gasEnvelope = rGas.data && typeof rGas.data === 'object' && !Array.isArray(rGas.data)
-            ? (rGas.data as Record<string, unknown>)
-            : {};
+          const gasEnvelope =
+            rGas.data && typeof rGas.data === 'object' && !Array.isArray(rGas.data)
+              ? (rGas.data as Record<string, unknown>)
+              : {};
           if (pts.length === 0 && typeof gasEnvelope.detail === 'string') {
             logMapDataIssue('GET /api/map/gas-prices empty', gasEnvelope.detail);
           }
@@ -3720,19 +3818,30 @@ export default function MapScreen() {
         }
         const payload = root?.data ?? root;
         const arr = Array.isArray(payload) ? payload : [];
-        const mapped = arr.map((p: Record<string, unknown>) => ({
-          name: String(p.name ?? ''),
-          address: String(p.address ?? ''),
-          lat: Number(p.lat) || 0,
-          lng: Number(p.lng) || 0,
-          place_id: p.place_id != null ? String(p.place_id) : undefined,
-          rating: typeof p.rating === 'number' ? p.rating : undefined,
-          placeType: Array.isArray(p.types) && p.types[0] ? String(p.types[0]) : undefined,
-          photo_reference: p.photo_reference != null ? String(p.photo_reference) : undefined,
-          open_now: typeof p.open_now === 'boolean' ? p.open_now : null,
-          price_level: typeof p.price_level === 'number' ? p.price_level : null,
-          business_status: p.business_status != null ? String(p.business_status) : undefined,
-        }));
+        const mapped = arr.map((p: Record<string, unknown>) => {
+          const row = {
+            name: String(p.name ?? ''),
+            address: String(p.address ?? ''),
+            lat: Number(p.lat) || 0,
+            lng: Number(p.lng) || 0,
+            place_id: p.place_id != null ? String(p.place_id) : undefined,
+            rating: typeof p.rating === 'number' ? p.rating : undefined,
+            placeType: Array.isArray(p.types) && p.types[0] ? String(p.types[0]) : undefined,
+            photo_reference: p.photo_reference != null ? String(p.photo_reference) : undefined,
+            open_now: typeof p.open_now === 'boolean' ? p.open_now : null,
+            price_level: typeof p.price_level === 'number' ? p.price_level : null,
+            business_status: p.business_status != null ? String(p.business_status) : undefined,
+          };
+          const ptLower = (row.placeType || '').toLowerCase();
+          if (ptLower.includes('gas')) {
+            const snap = matchGasStationNearPlace(row.lat, row.lng, fuelSnapshots, 400);
+            const chip = snap?.regular ? formatUsdPerGalChip(snap.regular) : null;
+            if (chip) {
+              return { ...row, gasRegularDisplay: `${chip}/gal regular` };
+            }
+          }
+          return row;
+        });
         mapped.sort(
           (a, b) => haversineMeters(lat0, lng0, a.lat, a.lng) - haversineMeters(lat0, lng0, b.lat, b.lng),
         );
@@ -4923,6 +5032,17 @@ export default function MapScreen() {
               ]);
             }}
           />
+          {!nav.isNavigating && !nav.showRoutePreview && localStationGasMarkers.length > 0 && (
+            <GasPriceMarkers
+              points={localStationGasMarkers}
+              zoomLevel={mapZoomLevel}
+              referenceCoordinate={
+                Number.isFinite(location.lat) && Number.isFinite(location.lng)
+                  ? { lat: location.lat, lng: location.lng }
+                  : null
+              }
+            />
+          )}
 
           {(nav.selectedDestination || selectedPlace) && (
             <MapboxGL.MarkerView
@@ -5033,7 +5153,7 @@ export default function MapScreen() {
           address={selectedPlace.address}
           category={selectedPlace.category}
           maki={selectedPlace.maki}
-          detailHint={placeCardFuelHint(selectedPlace)}
+          detailHint={placeCardFuelHint(selectedPlace, selectedPlaceGasSnap)}
           distanceMeters={placeCardDistanceMeters}
           photoRef={selectedPlace.photo_reference ?? null}
           rating={selectedPlace.rating ?? null}
@@ -5177,7 +5297,6 @@ export default function MapScreen() {
           void commitSearch();
         }}
         onClearSearch={handleClearSearch}
-        onOpenOrion={() => setShowOrion(true)}
         activeChip={activeChip}
         onSelectChip={openCategoryExplore}
         savedPlaces={savedPlaces}
@@ -6104,8 +6223,8 @@ export default function MapScreen() {
 
       {!nav.isNavigating && !nav.showRoutePreview && !activeTripSummary && !selectedPlace && !selectedPlaceId && (
         <TouchableOpacity style={[s.reportFab, {
-          bottom: tabBarHeight + 18,
-          right: 14,
+          bottom: tabBarHeight + 12,
+          left: 14,
           backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(30,41,59,0.94)',
           borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
         }]}
@@ -6154,9 +6273,9 @@ export default function MapScreen() {
         </View>
       )}
 
-      {!nav.isNavigating && !nav.showRoutePreview && !selectedPlace && !selectedPlaceId && recommendedNearbyOffers.length > 0 && (
+      {!nav.isNavigating && !nav.showRoutePreview && !activeTripSummary && !selectedPlace && !selectedPlaceId && recommendedNearbyOffers.length > 0 && (
         <TouchableOpacity
-          style={[s.offerPill, { bottom: tabBarHeight + 44, backgroundColor: isLight ? 'rgba(255,255,255,0.92)' : 'rgba(30,30,46,0.92)', borderColor: colors.border }]}
+          style={[s.offerPill, { bottom: tabBarHeight + 38, backgroundColor: isLight ? 'rgba(255,255,255,0.92)' : 'rgba(30,30,46,0.92)', borderColor: colors.border }]}
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             if (recommendedNearbyOffers.length === 1) {
@@ -6179,7 +6298,7 @@ export default function MapScreen() {
       )}
 
       {!nav.isNavigating && !nav.showRoutePreview && !selectedPlace && !selectedPlaceId && (
-        <View style={[s.modeRow, { bottom: tabBarHeight + 10 }]}>
+        <View style={[s.modeRow, { bottom: tabBarHeight + 4 }]}>
           {(Object.entries(DRIVING_MODES) as [DrivingMode, typeof modeConfig][]).map(([mode, cfg]) => {
             const sel = drivingMode === mode;
             const modeIcon = cfg.icon ?? 'pulse-outline';
@@ -6265,30 +6384,54 @@ export default function MapScreen() {
       })()}
 
       {!nav.isNavigating && !nav.showRoutePreview && (
-        <>
-          <TouchableOpacity style={[s.mapToolFab, { top: insets.top + 108, backgroundColor: colors.surface, borderColor: colors.border }]}
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowStylePicker(true); }}>
+        <View style={[s.mapToolStack, { bottom: tabBarHeight + 8 }]} pointerEvents="box-none">
+          <TouchableOpacity
+            style={[s.mapToolDisc, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowStylePicker(true);
+            }}
+            accessibilityLabel="Map layers and style"
+          >
             <Ionicons name="layers-outline" size={20} color={colors.text} />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[s.mapToolFab, { top: insets.top + 108 + 54, backgroundColor: followMode === 'heading' ? '#3B82F6' : followMode === 'follow' ? '#10B981' : colors.surface, borderColor: followMode !== 'free' ? 'transparent' : colors.border }]}
+            style={[
+              s.mapToolDisc,
+              {
+                backgroundColor:
+                  followMode === 'heading' ? '#3B82F6' : followMode === 'follow' ? '#10B981' : colors.surface,
+                borderColor: followMode !== 'free' ? 'transparent' : colors.border,
+              },
+            ]}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               setFollowMode((prev) => {
                 const next = prev === 'free' ? 'follow' : prev === 'follow' ? 'heading' : 'free';
-                if (next === 'follow') { setIsExploring(false); setCompassMode(false); setCameraLocked(true); }
-                else if (next === 'heading') { setIsExploring(false); setCompassMode(true); setCameraLocked(true); }
-                else { setCompassMode(false); }
+                if (next === 'follow') {
+                  setIsExploring(false);
+                  setCompassMode(false);
+                  setCameraLocked(true);
+                } else if (next === 'heading') {
+                  setIsExploring(false);
+                  setCompassMode(true);
+                  setCameraLocked(true);
+                } else {
+                  setCompassMode(false);
+                }
                 return next;
               });
-            }}>
-            <Ionicons name={followMode === 'heading' ? 'navigate' : followMode === 'follow' ? 'locate' : 'compass-outline'} size={20} color={followMode !== 'free' ? '#fff' : colors.text} />
+            }}
+            accessibilityLabel="Map orientation: free map, follow, or heading"
+          >
+            <Ionicons
+              name={followMode === 'heading' ? 'navigate' : followMode === 'follow' ? 'locate' : 'compass-outline'}
+              size={20}
+              color={followMode !== 'free' ? '#fff' : colors.text}
+            />
           </TouchableOpacity>
           {!activeTripSummary && !selectedPlace && !selectedPlaceId && (
-            <SpotlightTarget
-              id="map.orionFab"
-              style={[s.mapToolFab, { top: insets.top + 108 + 108, backgroundColor: 'transparent', borderWidth: 0, shadowOpacity: 0, elevation: 0 }]}
-            >
+            <SpotlightTarget id="map.orionFab" style={{ alignItems: 'center' }}>
               <OrionQuickMic
                 visible={!showOrion}
                 compactHudFab
@@ -6328,7 +6471,7 @@ export default function MapScreen() {
               />
             </SpotlightTarget>
           )}
-        </>
+        </View>
       )}
 
       {isLocating && <View style={[s.locBanner, { top: insets.top + 84 }]}><Text style={s.locT}>Finding your location...</Text></View>}
@@ -6341,7 +6484,7 @@ export default function MapScreen() {
             style={[
               s.mapLayerHint,
               {
-                bottom: tabBarHeight + 72,
+                bottom: tabBarHeight + 168,
                 backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(30,30,46,0.94)',
                 borderColor: colors.border,
               },
@@ -7193,18 +7336,32 @@ const s = StyleSheet.create({
   speedLimitPlateTop: { fontSize: 5.5, fontWeight: '900', letterSpacing: 0.2, lineHeight: 7 },
   speedLimitPlateMid: { fontSize: 6.5, fontWeight: '900', letterSpacing: 0.2, lineHeight: 8 },
   speedLimitPlateNum: { fontSize: 16, fontWeight: '900', lineHeight: 18, marginTop: 1 },
-  /** Right-hand map tool stack (layers / heading / Orion) — Baidu-style round discs. */
-  mapToolFab: {
+  /** Baidu-style vertical stack above the tab bar: layers → compass/follow → Orion. */
+  mapToolStack: {
     position: 'absolute',
     right: 14,
+    zIndex: 12,
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 10,
+  },
+  mapToolDisc: {
     width: 48,
     height: 48,
     borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth,
-    zIndex: 12,
-    ...shadow(8, 0.14),
+    ...Platform.select({
+      ios: {
+        shadowColor: '#020617',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.12,
+        shadowRadius: 8,
+      },
+      android: { elevation: 8 },
+      default: {},
+    }),
   },
   locBanner: { position: 'absolute', alignSelf: 'center', backgroundColor: 'rgba(59,130,246,0.92)', paddingHorizontal: 18, paddingVertical: 9, borderRadius: 22 },
   mapLayerHint: {

@@ -118,6 +118,52 @@ export function gasPricePointsFromApiEnvelope(apiRoot: unknown): GasPriceMapPoin
   return out;
 }
 
+/** Rows from `/api/fuel/prices` `nearby_stations` carry `distance_miles`; statewide CollectAPI rows do not. */
+export function isLocalStationGasRow(p: GasPriceMapPoint): boolean {
+  return typeof p.distance_miles === 'number' && Number.isFinite(p.distance_miles);
+}
+
+/** Short chip string — lowest-priced regular among local station snapshots (fuel API). */
+export function cheapestLocalRegularChip(rows: GasPriceMapPoint[]): string | null {
+  let best: number | undefined;
+  let bestChip: string | null = null;
+  for (const p of rows) {
+    if (!isLocalStationGasRow(p)) continue;
+    const chip = formatUsdPerGalChip(p.regular);
+    const n = parseUsdPerGallonNumber(p.regular);
+    if (chip == null || n == null) continue;
+    if (best === undefined || n < best) {
+      best = n;
+      bestChip = chip;
+    }
+  }
+  return bestChip;
+}
+
+/**
+ * Match an on-map / Google station to our fuel-price snapshot by proximity (names often differ slightly).
+ */
+export function matchGasStationNearPlace(
+  placeLat: number,
+  placeLng: number,
+  rows: GasPriceMapPoint[],
+  maxMeters = 320,
+): GasPriceMapPoint | null {
+  if (!Number.isFinite(placeLat) || !Number.isFinite(placeLng)) return null;
+  let best: GasPriceMapPoint | null = null;
+  let bestD = Infinity;
+  for (const p of rows) {
+    if (!isLocalStationGasRow(p)) continue;
+    if (!formatUsdPerGalChip(p.regular)) continue;
+    const d = haversineMeters(placeLat, placeLng, p.lat, p.lng);
+    if (d <= maxMeters && d < bestD) {
+      bestD = d;
+      best = p;
+    }
+  }
+  return best;
+}
+
 /** Closest gas price pin to the user. */
 export function nearestGasPricePointByLocation(
   userLat: number,
