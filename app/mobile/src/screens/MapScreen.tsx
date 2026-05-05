@@ -2136,6 +2136,7 @@ export default function MapScreen() {
   const [showGemOverlay, setShowGemOverlay] = useState(false);
   const [gemOverlayAmount, setGemOverlayAmount] = useState(0);
   const [showTripShare, setShowTripShare] = useState(false);
+  const [tripSharePayload, setTripSharePayload] = useState<TripSummary | null>(null);
   const [trafficBannerDismissed, setTrafficBannerDismissed] = useState(false);
 
   // ── Report card timer progress (Reanimated) ──
@@ -2184,6 +2185,13 @@ export default function MapScreen() {
     nav.dismissTripSummary();
     setNativeNavTripSummary(null);
   }, [nav]);
+  const openTripShare = useCallback(() => {
+    if (!activeTripSummary) return;
+    // Snapshot summary first, then close the recap sheet so share UI is unambiguous.
+    setTripSharePayload(activeTripSummary);
+    dismissActiveTripSummary();
+    requestAnimationFrame(() => setShowTripShare(true));
+  }, [activeTripSummary, dismissActiveTripSummary]);
 
   // ─── Derived values ────────────────────────────────────────────────────────
 
@@ -6080,7 +6088,7 @@ export default function MapScreen() {
               </Text>
             ) : null}
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-              <TouchableOpacity style={[s.tripDone, { backgroundColor: 'rgba(59,130,246,0.12)', flex: 1 }]} onPress={() => setShowTripShare(true)}>
+              <TouchableOpacity style={[s.tripDone, { backgroundColor: 'rgba(59,130,246,0.12)', flex: 1 }]} onPress={openTripShare}>
                 <Text style={[s.tripDoneT, { color: colors.primary }]}>Share</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[s.tripDone, { backgroundColor: colors.primary, flex: 2 }]} onPress={dismissActiveTripSummary}>
@@ -6761,7 +6769,14 @@ export default function MapScreen() {
           });
         }}
       />
-      <TripShare visible={showTripShare} onClose={() => setShowTripShare(false)} trip={activeTripSummary ?? null} />
+      <TripShare
+        visible={showTripShare}
+        onClose={() => {
+          setShowTripShare(false);
+          setTripSharePayload(null);
+        }}
+        trip={tripSharePayload ?? activeTripSummary ?? null}
+      />
 
       {showOrion && !nav.isNavigating && (
         <OrionChat
