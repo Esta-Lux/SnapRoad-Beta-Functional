@@ -42,7 +42,7 @@ import {
   logMapboxAccessDiagnostics,
   logMapboxStartupSourceOnce,
 } from './src/config/mapbox';
-import { preloadNavTurnTtsVoicePreference, preloadTtsVoicePreference } from './src/utils/ttsVoicePreference';
+import { preloadTtsVoicePreference } from './src/utils/ttsVoicePreference';
 import {
   SpotlightTourProvider,
   SpotlightTarget,
@@ -776,7 +776,6 @@ export default function App() {
       /* @rnmapbox optional in Expo Go */
     }
     preloadTtsVoicePreference();
-    preloadNavTurnTtsVoicePreference();
   }, []);
 
   if (apiConfigErr) {
