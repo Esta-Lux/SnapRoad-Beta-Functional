@@ -2,7 +2,6 @@
 
 import logging
 import os
-import uuid
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
@@ -35,6 +34,35 @@ def _is_premium(user: dict) -> bool:
 
 def _weekday_key(dt: datetime) -> str:
     return DAY_KEYS[dt.weekday()]
+
+
+def _exception_text(exc: BaseException) -> str:
+    """Collect message fragments (PostgREST APIError often hides detail in attributes)."""
+    parts: List[str] = [str(exc)]
+    for attr in ("message", "details", "hint", "code"):
+        v = getattr(exc, attr, None)
+        if v is not None and str(v).strip():
+            parts.append(str(v))
+    cause = getattr(exc, "__cause__", None)
+    if cause is not None:
+        parts.append(str(cause))
+    return " ".join(parts)
+
+
+def _schema_mismatch_error(exc: BaseException) -> bool:
+    """True when PostgREST/Postgres indicates an unknown column / stale schema cache."""
+    msg = _exception_text(exc).lower()
+    if "42703" in msg or "undefined_column" in msg:
+        return True
+    if "column" in msg and "does not exist" in msg:
+        return True
+    if "could not find" in msg and "column" in msg:
+        return True
+    if "pgrst204" in msg:
+        return True
+    if "schema cache" in msg:
+        return True
+    return False
 
 
 class CommuteRouteCreate(BaseModel):
@@ -114,9 +142,22 @@ def create_commute_route(
             status_code=403,
             detail=f"{tier} plan allows up to {limit} saved commute routes.",
         )
-    rid = str(uuid.uuid4())
+
+    leave = (body.leave_by_time or "").strip()
+    if not leave or _parse_hhmm(leave) is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Leave-by time must be HH:MM in 24-hour form (e.g. 08:00).",
+        )
+    normalized_days = [str(d).lower().strip()[:3] for d in body.days_of_week if str(d).strip()]
+    if not normalized_days:
+        raise HTTPException(status_code=422, detail="Select at least one weekday.")
+
+    mon = _safe_int(body.monitoring_duration_minutes, 180, 15, 12 * 60)
+    nint = _safe_int(body.notification_interval_minutes, 30, 5, 240)
+    nmax = _safe_int(body.max_notifications_per_window, 3, 1, 12)
+
     row = {
-        "id": rid,
         "user_id": uid,
         "name": body.name.strip() or "Commute",
         "origin_lat": body.origin_lat,
@@ -125,21 +166,38 @@ def create_commute_route(
         "dest_lat": body.dest_lat,
         "dest_lng": body.dest_lng,
         "dest_label": body.dest_label or "",
-        "leave_by_time": body.leave_by_time.strip(),
+        "leave_by_time": leave,
         "tz": body.tz or "America/New_York",
         "alert_minutes_before": max(5, min(body.alert_minutes_before, 24 * 60)),
-        "monitoring_duration_minutes": _safe_int(body.monitoring_duration_minutes, 180, 15, 12 * 60),
-        "notification_interval_minutes": _safe_int(body.notification_interval_minutes, 30, 5, 240),
-        "max_notifications_per_window": _safe_int(body.max_notifications_per_window, 3, 1, 12),
-        "days_of_week": [d.lower()[:3] for d in body.days_of_week],
+        "days_of_week": normalized_days,
         "notifications_enabled": body.notifications_enabled,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "monitoring_duration_minutes": mon,
+        "notification_interval_minutes": nint,
+        "max_notifications_per_window": nmax,
     }
+    slim_row = {k: v for k, v in row.items() if k not in (
+        "monitoring_duration_minutes",
+        "notification_interval_minutes",
+        "max_notifications_per_window",
+    )}
+
     try:
-        sb.table("commute_routes").insert(row).execute()
+        res = sb.table("commute_routes").insert(row).execute()
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Could not save commute route") from e
-    return {"success": True, "data": row}
+        if not _schema_mismatch_error(e):
+            logger.exception("commute_routes insert failed: %s", e)
+            raise HTTPException(status_code=500, detail="Could not save commute route") from e
+        logger.warning("commute_routes full row failed (likely missing columns), retrying base schema: %s", e)
+        try:
+            res = sb.table("commute_routes").insert(slim_row).execute()
+        except Exception as e2:
+            logger.exception("commute_routes slim insert failed: %s", e2)
+            raise HTTPException(status_code=500, detail="Could not save commute route") from e2
+
+    saved = (res.data or [None])[0]
+    if not saved:
+        raise HTTPException(status_code=500, detail="Could not save commute route")
+    return {"success": True, "data": saved}
 
 
 @router.put("/{route_id}")

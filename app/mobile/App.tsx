@@ -16,6 +16,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { CommonActions, NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import type { BottomTabBarButtonProps } from '@react-navigation/bottom-tabs';
+import { PlatformPressable } from '@react-navigation/elements';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -41,6 +43,11 @@ import {
   logMapboxStartupSourceOnce,
 } from './src/config/mapbox';
 import { preloadNavTurnTtsVoicePreference, preloadTtsVoicePreference } from './src/utils/ttsVoicePreference';
+import {
+  SpotlightTourProvider,
+  SpotlightTarget,
+  SPOTLIGHT_COACH_STORAGE_KEY,
+} from './src/components/onboarding/SpotlightCoachTour';
 
 const APP_IS_PRODUCTION =
   String(process.env.APP_ENV || process.env.ENVIRONMENT || process.env.NODE_ENV || '').toLowerCase() === 'production';
@@ -234,6 +241,14 @@ async function registerForPushNotifications(): Promise<string | null> {
   return token.data ?? null;
 }
 
+function DriveTabBarButton(props: BottomTabBarButtonProps) {
+  return (
+    <SpotlightTarget id="tab.map" style={{ flex: 1 }}>
+      <PlatformPressable {...props} />
+    </SpotlightTarget>
+  );
+}
+
 function MainTabs() {
   const { colors, isLight } = useTheme();
   const { isNavigating } = useNavigationMode();
@@ -273,6 +288,7 @@ function MainTabs() {
         component={MapStackScreen}
         options={{
           tabBarLabel: 'Drive',
+          tabBarButton: (p) => <DriveTabBarButton {...p} />,
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.tabIconWrap, focused && { backgroundColor: `${colors.primary}18` }]}>
               <Ionicons name={focused ? 'map' : 'map-outline'} size={22} color={color} />
@@ -346,6 +362,7 @@ function RootNavigator() {
   const { colors } = useTheme();
   const [splashMinElapsed, setSplashMinElapsed] = React.useState(false);
   const [showTour, setShowTour] = React.useState(false);
+  const [showSpotlightTour, setShowSpotlightTour] = React.useState(false);
   const [showDriverPromoWelcome, setShowDriverPromoWelcome] = React.useState(false);
   const lastHandledUrlRef = React.useRef<string | null>(null);
   const lastPushTokenRef = React.useRef<string | null>(null);
@@ -382,13 +399,23 @@ function RootNavigator() {
     }
   }, [isAuthenticated]);
 
+  React.useEffect(() => {
+    if (!isAuthenticated) {
+      setShowSpotlightTour(false);
+      return;
+    }
+    if (storage.getString('snaproad_tour_done') && !storage.getString(SPOTLIGHT_COACH_STORAGE_KEY)) {
+      setShowSpotlightTour(true);
+    }
+  }, [isAuthenticated]);
+
   /** Admin promotion welcome — after tour (or if tour already done), once per promo window. */
   React.useEffect(() => {
     if (!isAuthenticated || !user?.promotion_active || !user.promotion_access_until) {
       setShowDriverPromoWelcome(false);
       return;
     }
-    if (showTour) {
+    if (showTour || showSpotlightTour) {
       setShowDriverPromoWelcome(false);
       return;
     }
@@ -400,7 +427,7 @@ function RootNavigator() {
     }
     const t = setTimeout(() => setShowDriverPromoWelcome(true), 500);
     return () => clearTimeout(t);
-  }, [isAuthenticated, user?.promotion_active, user?.promotion_access_until, showTour]);
+  }, [isAuthenticated, user?.promotion_active, user?.promotion_access_until, showTour, showSpotlightTour]);
 
   const acknowledgeDriverPromo = React.useCallback(() => {
     if (user?.promotion_access_until) {
@@ -613,14 +640,29 @@ function RootNavigator() {
   return (
     <NavigationContainer ref={rootNavigationRef} linking={linking}>
       {isAuthenticated ? (
-        <>
+        <SpotlightTourProvider
+          visible={showSpotlightTour}
+          onComplete={() => {
+            storage.set(SPOTLIGHT_COACH_STORAGE_KEY, '1');
+            setShowSpotlightTour(false);
+          }}
+        >
           <MainTabs />
           <LegalConsentGate />
           {showTour ? (
             (() => {
               const AppTour = loadAppTourOnce();
               return (
-                <AppTour visible onComplete={() => { setShowTour(false); storage.set('snaproad_tour_done', '1'); }} />
+                <AppTour
+                  visible
+                  onComplete={() => {
+                    setShowTour(false);
+                    storage.set('snaproad_tour_done', '1');
+                    if (!storage.getString(SPOTLIGHT_COACH_STORAGE_KEY)) {
+                      setShowSpotlightTour(true);
+                    }
+                  }}
+                />
               );
             })()
           ) : null}
@@ -644,7 +686,7 @@ function RootNavigator() {
               );
             })()
           ) : null}
-        </>
+        </SpotlightTourProvider>
       ) : (
         <PublicStack.Navigator screenOptions={{ headerShown: false }}>
           <PublicStack.Screen name="Welcome" component={WelcomeScreen} />

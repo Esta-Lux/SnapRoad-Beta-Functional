@@ -90,8 +90,7 @@ import ReportMarkers from '../components/map/ReportMarkers';
 import FriendMarkers from '../components/map/FriendMarkers';
 import CameraMarkers from '../components/map/CameraMarkers';
 import type { CameraLocation, CameraViewFeed } from '../components/map/CameraMarkers';
-import GasPriceMarkers, { type GasPriceMapPoint } from '../components/map/GasPriceMarkers';
-import { gasPricePointsFromApiEnvelope, nearestGasPricePointByLocation, formatLocalGasRegularSummary, formatUsdPerGalChip } from '../components/map/gasPricesFromApi';
+import { gasPricePointsFromApiEnvelope, nearestGasPricePointByLocation, formatStateGasRegularSummary, formatUsdPerGalChip } from '../components/map/gasPricesFromApi';
 import TrafficCameraSheet from '../components/map/TrafficCameraSheet';
 import TrafficLayer from '../components/map/TrafficLayer';
 import IncidentHeatmap from '../components/map/IncidentHeatmap';
@@ -107,6 +106,7 @@ import { isTrafficSafetyLayerEnabled, trafficSafetyRegionQuery } from '../config
 import MapCategoryExploreSheet from '../components/map/MapCategoryExploreSheet';
 import PhotoReportSheet from '../components/map/PhotoReportSheet';
 import MapSearchTopBar from '../components/map/MapSearchTopBar';
+import { SpotlightTarget } from '../components/onboarding/SpotlightCoachTour';
 import IncidentReportCard from '../components/map/IncidentReportCard';
 import TrafficCongestionBanner from '../components/map/TrafficCongestionBanner';
 import RoutePreviewPanel from '../components/map/RoutePreviewPanel';
@@ -1411,15 +1411,6 @@ export default function MapScreen() {
     location.lng,
   ]);
 
-  /** State-average gas pins: (0,0) breaks distance sort — use cap-only fallback until GPS is real. */
-  const gasMarkerReference = useMemo((): { lat: number; lng: number } | null => {
-    const lat = poiSearchCoord.lat;
-    const lng = poiSearchCoord.lng;
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-    if (Math.abs(lat) < 1e-5 && Math.abs(lng) < 1e-5) return null;
-    return { lat, lng };
-  }, [poiSearchCoord.lat, poiSearchCoord.lng]);
-
   /**
    * Chevron / camera bearing during navigation. The stabilizer above
    * ({@link navStablePuck.heading}) is now the single source of truth on
@@ -2065,8 +2056,7 @@ export default function MapScreen() {
   );
 
   const [cameraLocations, setCameraLocations] = useState<CameraLocation[]>([]);
-  const [gasPricePoints, setGasPricePoints] = useState<GasPriceMapPoint[]>([]);
-  /** Nearby station regular price for Gas category chip. */
+  /** Statewide avg regular for Gas category chip (nearest state centroid to GPS). */
   const [gasChipAvgRegularShort, setGasChipAvgRegularShort] = useState<string | null>(null);
   const [selectedTrafficCamera, setSelectedTrafficCamera] = useState<CameraLocation | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<{
@@ -2124,7 +2114,7 @@ export default function MapScreen() {
   const { showTraffic, showIncidents, showCameras, setShowTraffic, setShowIncidents, setShowCameras,
     showConstruction, setShowConstruction,
     showPhotoReports, setShowPhotoReports, showTrafficSafety, setShowTrafficSafety,
-    showGasPrices, setShowGasPrices } = useMapLayers();
+  } = useMapLayers();
   /** Apple Maps baseline: safety cameras should be visible during active nav even if the explore layer is off. */
   const trafficSafetyWanted = showTrafficSafety || nav.isNavigating;
   /** Camera POIs are a premium browse layer, but active navigation should still populate safety context. */
@@ -2609,16 +2599,14 @@ export default function MapScreen() {
 
   useEffect(() => {
     if (!mapTabFocused) {
-      setGasPricePoints([]);
       setGasChipAvgRegularShort(null);
       return;
     }
-    const gasUrl = `/api/fuel/prices?lat=${location.lat}&lng=${location.lng}`;
     api
-      .get<Record<string, unknown>>(gasUrl)
+      .get<Record<string, unknown>>('/api/map/gas-prices')
       .then((r) => {
         if (!r.success || r.data == null) {
-          if (!r.success) logMapDataIssue('GET /api/fuel/prices', r.error);
+          if (!r.success) logMapDataIssue('GET /api/map/gas-prices', r.error);
           setGasChipAvgRegularShort(null);
           return;
         }
@@ -2627,22 +2615,16 @@ export default function MapScreen() {
           ? (r.data as Record<string, unknown>)
           : {};
         if (mapped.length === 0 && typeof envelope.detail === 'string') {
-          logMapDataIssue('GET /api/fuel/prices empty', envelope.detail);
+          logMapDataIssue('GET /api/map/gas-prices empty', envelope.detail);
         }
         const nearest = nearestGasPricePointByLocation(location.lat, location.lng, mapped);
         setGasChipAvgRegularShort(nearest ? formatUsdPerGalChip(nearest.regular) : null);
-        if (showGasPrices) {
-          setGasPricePoints(mapped);
-        } else {
-          setGasPricePoints([]);
-        }
       })
       .catch((e) => {
-        logMapDataIssue('GET /api/fuel/prices', e);
+        logMapDataIssue('GET /api/map/gas-prices', e);
         setGasChipAvgRegularShort(null);
       });
   }, [
-    showGasPrices,
     mapTabFocused,
     Math.round(location.lat * 50),
     Math.round(location.lng * 50),
@@ -3690,7 +3672,8 @@ export default function MapScreen() {
       nearby: { title: 'Nearby', subtitle: 'Places around your location', radius: 1200, limit: 15 },
       nearbyGas: {
         title: 'Nearby Gas',
-        subtitle: 'Gas stations near you. Price chips use nearby regular fuel data - verify at pump.',
+        subtitle:
+          'Gas stations near you (typical tier when Google provides it). Chip shows statewide regular avg — not pump price.',
         type: 'gas_station',
         radius: 15000,
         limit: 20,
@@ -3698,7 +3681,8 @@ export default function MapScreen() {
       /** Legacy alias if anything still passes `gas` — kept in sync with `nearbyGas`. */
       gas: {
         title: 'Nearby Gas',
-        subtitle: 'Gas stations near you. Price chips use nearby regular fuel data - verify at pump.',
+        subtitle:
+          'Gas stations near you (typical tier when Google provides it). Chip shows statewide regular avg — not pump price.',
         type: 'gas_station',
         radius: 15000,
         limit: 20,
@@ -3727,7 +3711,7 @@ export default function MapScreen() {
         api.get<any>(
           `/api/places/nearby?lat=${lat0}&lng=${lng0}&radius=${cfg.radius}${typeQs}&limit=${cfg.limit}`,
         ),
-        api.get<Record<string, unknown>>(`/api/fuel/prices?lat=${lat0}&lng=${lng0}`),
+        api.get<Record<string, unknown>>('/api/map/gas-prices'),
       ]).then(([placesResult, gasResult]) => {
         const r =
           placesResult.status === 'fulfilled'
@@ -3742,16 +3726,16 @@ export default function MapScreen() {
           const pts = gasPricePointsFromApiEnvelope(rGas.data);
           const nearest = nearestGasPricePointByLocation(lat0, lng0, pts);
           if (nearest) {
-            subtitleExpl = `${cfg.subtitle ? `${cfg.subtitle}\n` : ''}${formatLocalGasRegularSummary(nearest)}`;
+            subtitleExpl = `${cfg.subtitle ? `${cfg.subtitle}\n` : ''}${formatStateGasRegularSummary(nearest)}`;
           }
           const gasEnvelope = rGas.data && typeof rGas.data === 'object' && !Array.isArray(rGas.data)
             ? (rGas.data as Record<string, unknown>)
             : {};
           if (pts.length === 0 && typeof gasEnvelope.detail === 'string') {
-            logMapDataIssue('GET /api/fuel/prices empty', gasEnvelope.detail);
+            logMapDataIssue('GET /api/map/gas-prices empty', gasEnvelope.detail);
           }
         } else if (!rGas.success) {
-          logMapDataIssue('GET /api/fuel/prices', rGas.error);
+          logMapDataIssue('GET /api/map/gas-prices', rGas.error);
         }
         if (!r.success) {
           setCategoryExplore((prev) =>
@@ -4953,13 +4937,6 @@ export default function MapScreen() {
               referenceCoordinate={nav.isNavigating ? navDisplayCoord : null}
             />
           )}
-          {showGasPrices && !nav.showRoutePreview && (
-            <GasPriceMarkers
-              points={gasPricePoints}
-              zoomLevel={mapZoomLevel}
-              referenceCoordinate={gasMarkerReference}
-            />
-          )}
           <FriendMarkers
             zoomLevel={mapZoomLevel}
             friends={friendLocationsVisible}
@@ -5237,40 +5214,42 @@ export default function MapScreen() {
         onClose={() => setSelectedTrafficCamera(null)}
       />
 
-      <MapSearchTopBar
-        visible={!nav.isNavigating && !nav.showRoutePreview}
-        topInset={insets.top}
-        colors={colors}
-        styles={s}
-        showMenu={showMenu}
-        setShowMenu={setShowMenu}
-        searchQuery={searchQuery}
-        onSearchChange={handleSearchChange}
-        isSearchFocused={isSearchFocused}
-        setIsSearchFocused={setIsSearchFocused}
-        onSubmitSearch={() => {
-          void commitSearch();
-        }}
-        onClearSearch={handleClearSearch}
-        onOpenOrion={() => setShowOrion(true)}
-        activeChip={activeChip}
-        onSelectChip={openCategoryExplore}
-        savedPlaces={savedPlaces}
-        onSelectSavedPlace={(item) => {
-          if (item.lat && item.lng) {
-            handleSelectResult({ name: item.name, address: item.address, lat: item.lat, lng: item.lng });
-          }
-        }}
-        isSearching={isSearching}
-        searchResults={searchResults}
-        recentSearches={recentSearches}
-        location={location}
-        onSelectResult={handleSelectResult}
-        haversineMeters={haversineMeters}
-        placePhotoThumbUri={placePhotoThumbUri}
-        searchResultPriceHint={searchResultPriceHint}
-        gasChipAvgRegular={gasChipAvgRegularShort}
-      />
+      <SpotlightTarget id="map.searchBar">
+        <MapSearchTopBar
+          visible={!nav.isNavigating && !nav.showRoutePreview}
+          topInset={insets.top}
+          colors={colors}
+          styles={s}
+          showMenu={showMenu}
+          setShowMenu={setShowMenu}
+          searchQuery={searchQuery}
+          onSearchChange={handleSearchChange}
+          isSearchFocused={isSearchFocused}
+          setIsSearchFocused={setIsSearchFocused}
+          onSubmitSearch={() => {
+            void commitSearch();
+          }}
+          onClearSearch={handleClearSearch}
+          onOpenOrion={() => setShowOrion(true)}
+          activeChip={activeChip}
+          onSelectChip={openCategoryExplore}
+          savedPlaces={savedPlaces}
+          onSelectSavedPlace={(item) => {
+            if (item.lat && item.lng) {
+              handleSelectResult({ name: item.name, address: item.address, lat: item.lat, lng: item.lng });
+            }
+          }}
+          isSearching={isSearching}
+          searchResults={searchResults}
+          recentSearches={recentSearches}
+          location={location}
+          onSelectResult={handleSelectResult}
+          haversineMeters={haversineMeters}
+          placePhotoThumbUri={placePhotoThumbUri}
+          searchResultPriceHint={searchResultPriceHint}
+          gasChipAvgRegular={gasChipAvgRegularShort}
+        />
+      </SpotlightTarget>
 
       {/* ═══ TURN CARD — 3-state model (preview / active / confirm + cruise); same gradients per mode ═ */}
       {nav.isNavigating && nav.navigationProgress && (() => {
@@ -6201,7 +6180,8 @@ export default function MapScreen() {
       )}
 
       {!nav.showRoutePreview && !activeTripSummary && !nav.isNavigating && (
-        <View
+        <SpotlightTarget
+          id="map.orionFab"
           style={[s.orionFab, { top: insets.top + 236, right: 20 }]}
         >
           <OrionQuickMic
@@ -6240,7 +6220,7 @@ export default function MapScreen() {
               }
             }}
           />
-        </View>
+        </SpotlightTarget>
       )}
 
       {nav.isNavigating && !!orionQuickReply && (
@@ -6492,13 +6472,6 @@ export default function MapScreen() {
             <Text style={[s.layerSectionT, { color: colors.text }]}>Layers</Text>
             {[
               { k: 'traffic', l: 'Traffic', ic: 'car-outline' as const, v: showTraffic, t: setShowTraffic },
-              {
-                k: 'gasPrices',
-                l: 'Gas prices (nearby)',
-                ic: 'flame-outline' as const,
-                v: showGasPrices,
-                t: setShowGasPrices,
-              },
               { k: 'incidents', l: 'Incidents', ic: 'warning-outline' as const, v: showIncidents, t: setShowIncidents },
               {
                 k: 'cameras',

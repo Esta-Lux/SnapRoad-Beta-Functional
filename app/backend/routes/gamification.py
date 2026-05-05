@@ -34,6 +34,59 @@ import uuid
 
 logger = logging.getLogger(__name__)
 
+_TRIP_RECAP_SELECT_FULL = (
+    "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, "
+    "ended_at, created_at, hard_braking_events, speeding_events, "
+    "max_speed_mph, avg_speed_mph, fuel_used_gallons, fuel_cost_estimate, mileage_value_estimate"
+)
+_TRIP_RECAP_SELECT_MIN = (
+    "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, "
+    "ended_at, created_at, hard_braking_events, speeding_events"
+)
+
+
+def _exc_text(exc: BaseException) -> str:
+    parts = [str(exc)]
+    for attr in ("message", "details", "hint", "code"):
+        v = getattr(exc, attr, None)
+        if v is not None and str(v).strip():
+            parts.append(str(v))
+    c = getattr(exc, "__cause__", None)
+    if c is not None:
+        parts.append(str(c))
+    return " ".join(parts)
+
+
+def _trips_select_schema_error(exc: BaseException) -> bool:
+    msg = _exc_text(exc).lower()
+    if "schema cache" in msg or ("could not find" in msg and "column" in msg):
+        return True
+    if "42703" in msg or "does not exist" in msg:
+        return True
+    if "column" in msg and "trips" in msg:
+        return True
+    return False
+
+
+def _execute_weekly_recap_trip_query(
+    sb,
+    user_id: str,
+    select_cols: str,
+    *,
+    start: Optional[str],
+    end: Optional[str],
+    cutoff: str,
+):
+    q = (
+        sb.table("trips")
+        .select(select_cols)
+        .or_(f"user_id.eq.{user_id},profile_id.eq.{user_id}")
+    )
+    if start and end:
+        return q.gte("ended_at", start).lte("ended_at", end).execute()
+    return q.gte("ended_at", cutoff).execute()
+
+
 MSG_NOT_ENOUGH_GEMS = "Not enough gems"
 CurrentUser = Annotated[dict, Depends(get_current_user)]
 
@@ -937,17 +990,19 @@ def get_weekly_recap(
         profile = sb_get_profile(user_id) or {}
         is_premium = profile_row_is_premium(profile)
 
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
         if start and end:
-            trip_q = (
-                sb.table("trips")
-                .select(
-                    "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, ended_at, created_at, hard_braking_events, speeding_events, max_speed_mph, avg_speed_mph, fuel_used_gallons, fuel_cost_estimate, mileage_value_estimate"
+            try:
+                trip_res = _execute_weekly_recap_trip_query(
+                    sb, user_id, _TRIP_RECAP_SELECT_FULL, start=start, end=end, cutoff=cutoff
                 )
-                .or_(f"user_id.eq.{user_id},profile_id.eq.{user_id}")
-                .gte("ended_at", start)
-                .lte("ended_at", end)
-            )
-            trip_res = trip_q.execute()
+            except Exception as e:
+                if not _trips_select_schema_error(e):
+                    raise
+                logger.warning("weekly-recap: retry trips query with minimal columns: %s", e)
+                trip_res = _execute_weekly_recap_trip_query(
+                    sb, user_id, _TRIP_RECAP_SELECT_MIN, start=start, end=end, cutoff=cutoff
+                )
             redemption_res = (
                 sb.table("redemptions")
                 .select("id")
@@ -957,16 +1012,17 @@ def get_weekly_recap(
                 .execute()
             )
         else:
-            cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-            trip_res = (
-                sb.table("trips")
-                .select(
-                    "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, ended_at, created_at, hard_braking_events, speeding_events, max_speed_mph, avg_speed_mph, fuel_used_gallons, fuel_cost_estimate, mileage_value_estimate"
+            try:
+                trip_res = _execute_weekly_recap_trip_query(
+                    sb, user_id, _TRIP_RECAP_SELECT_FULL, start=None, end=None, cutoff=cutoff
                 )
-                .or_(f"user_id.eq.{user_id},profile_id.eq.{user_id}")
-                .gte("ended_at", cutoff)
-                .execute()
-            )
+            except Exception as e:
+                if not _trips_select_schema_error(e):
+                    raise
+                logger.warning("weekly-recap: retry trips query with minimal columns: %s", e)
+                trip_res = _execute_weekly_recap_trip_query(
+                    sb, user_id, _TRIP_RECAP_SELECT_MIN, start=None, end=None, cutoff=cutoff
+                )
             redemption_res = sb.table("redemptions").select("id").eq("user_id", user_id).gte("created_at", cutoff).execute()
 
         trips = trip_res.data or []

@@ -47,11 +47,6 @@ import {
   estimateFuelGallons,
   estimateMileageDeductionUsd,
 } from '../utils/driveMetrics';
-import {
-  emptyDriveSafetyState,
-  processDriveSafetySample,
-  speedLimitMpsToMph,
-} from '../utils/driveSafetyEvents';
 import type { User } from '../types';
 import {
   bucketAccuracyBand,
@@ -243,7 +238,6 @@ export type { TripSummary };export function useDriveNavigation(params: {
    * backend/profile can show "Max speed" in the trip summary + Insights.
    */
   const maxSpeedMphRef = useRef(0);
-  const safetyEventsRef = useRef(emptyDriveSafetyState());
   /** Bumps when a new route is fetched so stale reverse-geocode results cannot rename a later trip's origin. */
   const originGeocodeTokenRef = useRef(0);
   const prevLocationRef = useRef<Coordinate | null>(null);
@@ -591,20 +585,7 @@ export type { TripSummary };export function useDriveNavigation(params: {
     if (candidate > maxSpeedMphRef.current) {
       maxSpeedMphRef.current = candidate;
     }
-    const speedLimitMps =
-      typeof navSdkSnapshot.location?.speedLimitMps === 'number' && Number.isFinite(navSdkSnapshot.location.speedLimitMps)
-        ? navSdkSnapshot.location.speedLimitMps
-        : typeof navSdkSnapshot.progress?.speedLimitMps === 'number' && Number.isFinite(navSdkSnapshot.progress.speedLimitMps)
-          ? navSdkSnapshot.progress.speedLimitMps
-          : null;
-    safetyEventsRef.current = processDriveSafetySample(safetyEventsRef.current, {
-      atMs: Date.now(),
-      speedMph: candidate,
-      speedLimitMph: speedLimitMpsToMph(speedLimitMps),
-      gpsAccuracyM: accuracyM,
-      isNavigating,
-    });
-  }, [isNavigating, speed, navSdkSnapshot.location, navSdkSnapshot.progress?.speedLimitMps, gpsAccuracy]);
+  }, [isNavigating, speed, navSdkSnapshot.location, gpsAccuracy]);
 
   // --- Fetch directions ---
   const fetchDirections = useCallback(async (
@@ -1136,7 +1117,6 @@ export type { TripSummary };export function useDriveNavigation(params: {
     traveledRef.current = 0;
     cumAlongHighWaterRef.current = 0;
     maxSpeedMphRef.current = 0;
-    safetyEventsRef.current = emptyDriveSafetyState();
     setTraveledDistanceMeters(0);
     prevLocationRef.current = null;
     setCurrentStepIndex(0);
@@ -1196,7 +1176,6 @@ export type { TripSummary };export function useDriveNavigation(params: {
       tripStartTimeRef.current = null;
       prevLocationRef.current = null;
       maxSpeedMphRef.current = 0;
-      safetyEventsRef.current = emptyDriveSafetyState();
       hasAnnouncedArrivalRef.current = false;
       autoEndNavTriggeredRef.current = false;
       autoEndFromArrivalRef.current = false;
@@ -1264,9 +1243,6 @@ export type { TripSummary };export function useDriveNavigation(params: {
     const maxSpeed = Math.round(Math.max(avgSpeed, maxSpeedRaw) * 10) / 10;
     const fuelGallons = Math.round(estimateFuelGallons(roundedDist) * 100) / 100;
     const dynamicDest = navigationData?.dynamicDestination === true;
-    const safetyEvents = safetyEventsRef.current;
-    const hardBrakingEvents = safetyEvents.hardBrakingEvents;
-    const speedingEvents = safetyEvents.speedingEvents;
 
     setNavigationData(null);
     setAvailableRoutes([]);
@@ -1314,8 +1290,8 @@ export type { TripSummary };export function useDriveNavigation(params: {
       fuel_used_gallons: fuelGallons,
       fuel_cost_estimate: Math.round(estimateFuelCostUsd(roundedDist) * 100) / 100,
       mileage_value_estimate: Math.round(estimateMileageDeductionUsd(roundedDist) * 100) / 100,
-      hard_braking_events: hardBrakingEvents,
-      speeding_events: speedingEvents,
+      hard_braking_events: 0,
+      speeding_events: 0,
       incidents_reported: 0,
       counted: qualifiesTrip,
       arrivedAtDestination,
@@ -1348,8 +1324,8 @@ export type { TripSummary };export function useDriveNavigation(params: {
       fuel_used_gallons: Math.round(estimateFuelGallons(roundedDist) * 1000) / 1000,
       fuel_cost_estimate: Math.round(estimateFuelCostUsd(roundedDist) * 100) / 100,
       mileage_value_estimate: Math.round(estimateMileageDeductionUsd(roundedDist) * 100) / 100,
-      hard_braking_events: hardBrakingEvents,
-      speeding_events: speedingEvents,
+      hard_braking_events: 0,
+      speeding_events: 0,
       incidents_reported: 0,
     }).then(async (res) => {
       if (!res.success || !res.data) return;
