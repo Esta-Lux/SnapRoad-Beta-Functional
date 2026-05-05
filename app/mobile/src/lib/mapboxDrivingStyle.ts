@@ -12,15 +12,29 @@ export type EffectiveRouteColors = {
   routeGlowOpacity: number;
 };
 
-/** Single SnapRoad route treatment: bright core + cyan glow; no slate/orange night variants. */
+/** Day / dawn Standard — crisp iOS-style blue on light roads. */
 const SNAP_ROUTE_CORE = '#0A84FF';
 const SNAP_ROUTE_CASING_STD = '#032C66';
 const SNAP_ROUTE_PASSED = 'rgba(10,132,255,0.42)';
 const SNAP_ROUTE_GLOW = '#5EBBFF';
 
+/** Night / dusk / satellite — same SnapRoad language but higher luminance so the line “glows” on dark imagery. */
+const ROUTE_CORE_HIGH_VIS = '#38BDF8';
+const ROUTE_CASING_HIGH_VIS = 'rgba(125,211,252,0.48)';
+const ROUTE_PASSED_HIGH_VIS = 'rgba(56,189,248,0.55)';
+const ROUTE_GLOW_HIGH_VIS = '#BAE6FD';
+
+function useHighVisibilityRouteInk(
+  mapLightPreset: MapboxLightPreset,
+  isSatellite: boolean,
+): boolean {
+  if (isSatellite) return true;
+  return mapLightPreset === 'night' || mapLightPreset === 'dusk';
+}
+
 /**
- * One consistent blue route line on Standard + dark/sport basemaps (no congestion tint on geometry).
- * Passed segment stays in the blue family instead of gray.
+ * SnapRoad-blue route everywhere; night/dusk/satellite uses a brighter core + luminous casing
+ * so it matches Adaptive’s “neon” readability on lighter maps instead of muddy navy.
  */
 export function effectiveNavRouteColors(
   modeConfig: ModeConfig,
@@ -29,19 +43,31 @@ export function effectiveNavRouteColors(
   drivingMode?: DrivingMode,
   options?: { speedMphForRoute?: number },
 ): EffectiveRouteColors {
-  void mapLightPreset;
   void drivingMode;
   void options;
 
-  const glowOpacity = Math.max(modeConfig.routeGlowOpacity, 0.3);
+  const highVis = useHighVisibilityRouteInk(mapLightPreset, isSatellite);
 
-  if (isSatellite) {
+  let glowOpacity = Math.max(modeConfig.routeGlowOpacity, highVis ? 0.46 : 0.3);
+
+  if (highVis) {
+    if (isSatellite) {
+      glowOpacity = Math.max(glowOpacity, 0.4);
+      return {
+        routeColor: ROUTE_CORE_HIGH_VIS,
+        routeCasing: 'rgba(56,182,246,0.42)',
+        passedColor: 'rgba(45,186,246,0.48)',
+        routeGlowColor: ROUTE_GLOW_HIGH_VIS,
+        routeGlowOpacity: glowOpacity,
+      };
+    }
+
     return {
-      routeColor: SNAP_ROUTE_CORE,
-      routeCasing: '#070D18',
-      passedColor: 'rgba(10,132,255,0.38)',
-      routeGlowColor: SNAP_ROUTE_GLOW,
-      routeGlowOpacity: Math.max(glowOpacity, 0.26),
+      routeColor: ROUTE_CORE_HIGH_VIS,
+      routeCasing: ROUTE_CASING_HIGH_VIS,
+      passedColor: ROUTE_PASSED_HIGH_VIS,
+      routeGlowColor: ROUTE_GLOW_HIGH_VIS,
+      routeGlowOpacity: glowOpacity,
     };
   }
 

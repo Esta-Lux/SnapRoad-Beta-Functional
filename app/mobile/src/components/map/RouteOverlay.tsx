@@ -271,7 +271,7 @@ export default React.memo(function RouteOverlay({
           lineColor: effectiveGlowColor,
           lineWidth: routeWidth * 2.8,
           lineOpacity: glowOpacity * (isRerouting ? 0.3 : 1),
-          lineBlur: 6,
+          lineBlur: glowOpacity >= 0.42 ? 8 : 6,
           lineCap: 'round',
           lineJoin: 'round',
         }}
