@@ -562,10 +562,13 @@ export default function MapScreen() {
   const [drivingMode, setDrivingMode] = useState<DrivingMode>('adaptive');
   const modeConfig = DRIVING_MODES[drivingMode];
 
-  const exploreMapHudGlass = useMemo(
+  /** Translucent slate HUD — avoids white “pill box” over the map. */
+  const hudChromeGlass = useMemo(
     () => ({
-      discFill: isLight ? 'rgba(255,255,255,0.52)' : 'rgba(19,32,52,0.48)',
-      discBorder: isLight ? 'rgba(15,23,42,0.24)' : 'rgba(226,232,240,0.3)',
+      tileFill: isLight ? 'rgba(51,65,85,0.46)' : 'rgba(30,41,59,0.62)',
+      tileBorder: isLight ? 'rgba(15,23,42,0.32)' : 'rgba(226,232,240,0.24)',
+      clusterFill: isLight ? 'rgba(51,65,85,0.30)' : 'rgba(15,23,42,0.46)',
+      clusterBorder: isLight ? 'rgba(15,23,42,0.22)' : 'rgba(148,163,184,0.22)',
     }),
     [isLight],
   );
@@ -5343,34 +5346,36 @@ export default function MapScreen() {
             <View style={s.mapToolStack} pointerEvents="box-none">
               <TouchableOpacity
                 style={[
-                  s.mapToolDisc,
+                  s.mapHudTile,
                   {
-                    backgroundColor: exploreMapHudGlass.discFill,
-                    borderColor: exploreMapHudGlass.discBorder,
+                    backgroundColor: hudChromeGlass.tileFill,
+                    borderColor: hudChromeGlass.tileBorder,
                   },
                 ]}
+                activeOpacity={0.82}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   setShowStylePicker(true);
                 }}
                 accessibilityLabel="Map layers and style"
               >
-                <Ionicons name="layers-outline" size={20} color={colors.text} />
+                <Ionicons name="layers-outline" size={20} color="#F8FAFC" />
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
-                  s.mapToolDisc,
+                  s.mapHudTile,
                   {
                     backgroundColor:
                       followMode === 'heading'
-                        ? 'rgba(59,130,246,0.88)'
+                        ? 'rgba(59,130,246,0.82)'
                         : followMode === 'follow'
-                          ? 'rgba(16,185,129,0.88)'
-                          : exploreMapHudGlass.discFill,
+                          ? 'rgba(16,185,129,0.82)'
+                          : hudChromeGlass.tileFill,
                     borderColor:
-                      followMode !== 'free' ? 'rgba(255,255,255,0.45)' : exploreMapHudGlass.discBorder,
+                      followMode !== 'free' ? 'rgba(255,255,255,0.42)' : hudChromeGlass.tileBorder,
                   },
                 ]}
+                activeOpacity={0.82}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                   setFollowMode((prev) => {
@@ -5394,7 +5399,7 @@ export default function MapScreen() {
                 <Ionicons
                   name={followMode === 'heading' ? 'navigate' : followMode === 'follow' ? 'locate' : 'compass-outline'}
                   size={20}
-                  color={followMode !== 'free' ? '#fff' : colors.text}
+                  color="#F8FAFC"
                 />
               </TouchableOpacity>
               {!activeTripSummary && !selectedPlace && !selectedPlaceId && (
@@ -5402,6 +5407,10 @@ export default function MapScreen() {
                   <OrionQuickMic
                     visible={!showOrion}
                     compactHudFab
+                    hudGlassTile={{
+                      backgroundColor: hudChromeGlass.tileFill,
+                      borderColor: hudChromeGlass.tileBorder,
+                    }}
                     interactionMode="explore"
                     isPremium={Boolean(user?.isPremium)}
                     context={orionContext}
@@ -6226,8 +6235,8 @@ export default function MapScreen() {
             s.navHudCluster,
             {
               bottom: MAP_NAV_BOTTOM_INSET + insets.bottom + 10,
-              backgroundColor: isLight ? 'rgba(255,255,255,0.96)' : 'rgba(23,31,51,0.96)',
-              borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.12)',
+              backgroundColor: hudChromeGlass.clusterFill,
+              borderColor: hudChromeGlass.clusterBorder,
             },
           ]}
         >
@@ -6236,6 +6245,10 @@ export default function MapScreen() {
               visible={!showOrion}
               interactionMode="navigation"
               compactHudFab
+              hudGlassTile={{
+                backgroundColor: hudChromeGlass.tileFill,
+                borderColor: hudChromeGlass.tileBorder,
+              }}
               isPremium={Boolean(user?.isPremium)}
               context={orionContext}
               onOpenChat={() => setShowOrion(true)}
@@ -6291,8 +6304,9 @@ export default function MapScreen() {
             style={[
               s.navHudBtn,
               {
-                backgroundColor: '#2563EB',
-                borderColor: 'rgba(255,255,255,0.35)',
+                backgroundColor: 'rgba(37,99,235,0.9)',
+                borderWidth: 1,
+                borderColor: 'rgba(255,255,255,0.42)',
               },
             ]}
             onPress={handleRecenter}
@@ -6304,21 +6318,23 @@ export default function MapScreen() {
             style={[
               s.navHudBtn,
               {
-                backgroundColor: isLight ? 'rgba(255,255,255,0.98)' : 'rgba(30,41,59,0.98)',
-                borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
+                backgroundColor: hudChromeGlass.tileFill,
+                borderWidth: 1,
+                borderColor: hudChromeGlass.tileBorder,
               },
             ]}
             onPress={handleRouteOverview}
             accessibilityLabel="Show route overview"
           >
-            <Ionicons name="map-outline" size={20} color={colors.textSecondary} />
+            <Ionicons name="map-outline" size={20} color="#F1F5F9" />
           </TouchableOpacity>
           <TouchableOpacity
             style={[
               s.navHudBtn,
               {
-                backgroundColor: isLight ? 'rgba(255,255,255,0.98)' : 'rgba(30,41,59,0.98)',
-                borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
+                backgroundColor: hudChromeGlass.tileFill,
+                borderWidth: 1,
+                borderColor: hudChromeGlass.tileBorder,
               },
             ]}
             onPress={() => {
@@ -6333,8 +6349,9 @@ export default function MapScreen() {
             style={[
               s.navHudBtn,
               {
-                backgroundColor: isLight ? 'rgba(255,255,255,0.98)' : 'rgba(30,41,59,0.98)',
-                borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
+                backgroundColor: hudChromeGlass.tileFill,
+                borderWidth: 1,
+                borderColor: hudChromeGlass.tileBorder,
               },
             ]}
             onPress={() => {
@@ -6343,7 +6360,7 @@ export default function MapScreen() {
             }}
             accessibilityLabel="Photo report"
           >
-            <Ionicons name="camera-outline" size={20} color={colors.textSecondary} />
+            <Ionicons name="camera-outline" size={20} color="#F1F5F9" />
           </TouchableOpacity>
         </View>
       )}
@@ -7093,25 +7110,25 @@ const s = StyleSheet.create({
     zIndex: 12,
     gap: 10,
     alignItems: 'center' as const,
-    paddingVertical: 11,
-    paddingHorizontal: 9,
-    borderRadius: 28,
-    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    borderWidth: 1,
     ...Platform.select({
       ios: {
         shadowColor: '#020617',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.22,
-        shadowRadius: 18,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.14,
+        shadowRadius: 12,
       },
-      android: { elevation: 14 },
+      android: { elevation: 10 },
       default: {},
     }),
   },
   navHudBtn: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: 11,
     justifyContent: 'center' as const,
     alignItems: 'center' as const,
   },
@@ -7385,21 +7402,23 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  mapToolDisc: {
+  /** Rounded-square map HUD control (shows map through translucent slate). */
+  mapHudTile: {
     width: 48,
     height: 48,
-    borderRadius: 24,
+    borderRadius: 11,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
+    overflow: 'hidden' as const,
     ...Platform.select({
       ios: {
         shadowColor: '#020617',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.12,
-        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
       },
-      android: { elevation: 8 },
+      android: { elevation: 5 },
       default: {},
     }),
   },

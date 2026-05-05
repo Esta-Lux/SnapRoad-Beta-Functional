@@ -73,6 +73,8 @@ interface Props {
   interactionMode?: OrionQuickInteractionMode;
   /** When true, FAB matches map tool stack (48px disc, aligned with layers / compass). */
   compactHudFab?: boolean;
+  /** Slate glass tile (rounded square) instead of purple gradient — matches map HUD controls. */
+  hudGlassTile?: { backgroundColor: string; borderColor: string };
   context?: OrionContext;
   onOpenChat: () => void;
   onSuggestions?: (items: OrionPlaceSuggestion[]) => void;
@@ -85,6 +87,7 @@ export default function OrionQuickMic({
   isPremium,
   interactionMode = 'navigation',
   compactHudFab = false,
+  hudGlassTile,
   context,
   onOpenChat,
   onSuggestions,
@@ -517,6 +520,14 @@ export default function OrionQuickMic({
       : 'Open Orion chat';
 
   const showStatePill = isListening || isThinking || isWelcoming || respondingAudible;
+  const useGlassHudTile = Boolean(compactHudFab && hudGlassTile);
+  const glassIconColor = isListening
+    ? '#FCA5A5'
+    : isThinking || isWelcoming || respondingAudible
+      ? '#E0E7FF'
+      : isPremium
+        ? '#DDD6FE'
+        : '#C7D2FE';
 
   return (
     <View style={compactHudFab ? styles.wrapCluster : styles.wrapExplore}>
@@ -543,7 +554,7 @@ export default function OrionQuickMic({
         </View>
       )}
       <TouchableOpacity
-        style={styles.fabTap}
+        style={[styles.fabTap, compactHudFab ? { borderRadius: 11 } : null]}
         onPress={handleFabPress}
         onLongPress={navMode ? undefined : handleLongPress}
         activeOpacity={0.82}
@@ -552,21 +563,28 @@ export default function OrionQuickMic({
           navMode ? 'Speaks briefly, then opens the microphone for questions' : 'Long press for voice without opening chat'
         }
       >
-        <LinearGradient
-          colors={isPremium ? ['#7C3AED', '#5B21B6'] : ['#6366F1', '#4F46E5']}
-          style={[
-            styles.grad,
-            compactHudFab ? { width: fabSize, height: fabSize, borderRadius: fabSize / 2 } : null,
-            compactHudFab
-              ? {
-                  borderWidth: 1,
-                  borderColor: 'rgba(248,250,252,0.42)',
-                }
-              : null,
-          ]}
-        >
-          <Ionicons name={fabIcon} size={iconSize} color="#fff" />
-        </LinearGradient>
+        {useGlassHudTile ? (
+          <View
+            style={[
+              styles.hudGlassTile,
+              {
+                width: fabSize,
+                height: fabSize,
+                backgroundColor: hudGlassTile!.backgroundColor,
+                borderColor: hudGlassTile!.borderColor,
+              },
+            ]}
+          >
+            <Ionicons name={fabIcon} size={iconSize} color={glassIconColor} />
+          </View>
+        ) : (
+          <LinearGradient
+            colors={isPremium ? ['#7C3AED', '#5B21B6'] : ['#6366F1', '#4F46E5']}
+            style={[styles.grad, compactHudFab ? { width: fabSize, height: fabSize, borderRadius: fabSize / 2 } : null]}
+          >
+            <Ionicons name={fabIcon} size={iconSize} color="#fff" />
+          </LinearGradient>
+        )}
       </TouchableOpacity>
     </View>
   );
@@ -576,6 +594,23 @@ const styles = StyleSheet.create({
   wrapCluster: { alignItems: 'center' },
   wrapExplore: { alignItems: 'flex-end' },
   fabTap: { borderRadius: 24 },
+  hudGlassTile: {
+    borderRadius: 11,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#020617',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
+      },
+      android: { elevation: 5 },
+      default: {},
+    }),
+  },
   grad: {
     width: 48,
     height: 48,
