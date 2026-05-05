@@ -3643,6 +3643,10 @@ export default function MapScreen() {
   }, []);
 
   const openCategoryExplore = useCallback((chipKey: string) => {
+    if (nav.showRoutePreview) {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      nav.cancelRoutePreview();
+    }
     setActiveChip(chipKey);
     if (chipKey === 'favorites') {
       const favs = savedPlaces.filter(
@@ -3815,7 +3819,7 @@ export default function MapScreen() {
           prev ? { ...prev, loading: false, error: null, results: mapped } : null,
         );
       });
-  }, [location.lat, location.lng, savedPlaces]);
+  }, [location.lat, location.lng, nav, savedPlaces]);
 
   const orionFavoriteSummary = useMemo(
     () =>
@@ -4589,7 +4593,7 @@ export default function MapScreen() {
 
   return (
     <View style={s.root}>
-      {isSearchFocused && !nav.isNavigating && !nav.showRoutePreview && (
+      {isSearchFocused && !nav.isNavigating && (
         <Pressable
           style={[StyleSheet.absoluteFillObject, { zIndex: 14, backgroundColor: 'transparent' }]}
           onPress={() => { Keyboard.dismiss(); setIsSearchFocused(false); }}
@@ -5216,7 +5220,7 @@ export default function MapScreen() {
 
       <SpotlightTarget id="map.searchBar">
         <MapSearchTopBar
-          visible={!nav.isNavigating && !nav.showRoutePreview}
+          visible={!nav.isNavigating}
           topInset={insets.top}
           colors={colors}
           styles={s}
@@ -5225,7 +5229,13 @@ export default function MapScreen() {
           searchQuery={searchQuery}
           onSearchChange={handleSearchChange}
           isSearchFocused={isSearchFocused}
-          setIsSearchFocused={setIsSearchFocused}
+          setIsSearchFocused={(v) => {
+            setIsSearchFocused(v);
+            if (v && nav.showRoutePreview) {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              nav.cancelRoutePreview();
+            }
+          }}
           onSubmitSearch={() => {
             void commitSearch();
           }}
@@ -6721,7 +6731,7 @@ const s = StyleSheet.create({
   phCoord: { color: '#3B82F6', fontSize: 12, fontWeight: '600', marginTop: 8 },
 
   // Top bar
-  topBar: { position: 'absolute', left: 16, right: 16, zIndex: 15 },
+  topBar: { position: 'absolute', left: 16, right: 16, zIndex: 26 },
   searchRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   menuBtn: { width: 44, height: 44, borderRadius: 13, justifyContent: 'center', alignItems: 'center', borderWidth: 1, ...shadow(8) },
   searchPill: { flex: 1, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, ...shadow(12, 0.15) },

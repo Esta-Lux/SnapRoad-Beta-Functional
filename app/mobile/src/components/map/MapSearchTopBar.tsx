@@ -154,7 +154,7 @@ export default function MapSearchTopBar(props: Props) {
   const [activeTab, setActiveTab] = useState<SearchPanelTab>('recent');
 
   return (
-    <View style={[s.topBar, { top: props.topInset + 8, zIndex: 15 }]} pointerEvents="box-none">
+    <View style={[s.topBar, { top: props.topInset + 8, zIndex: 26 }]} pointerEvents="box-none">
       <View style={s.searchRow}>
         <TouchableOpacity
           style={[s.menuBtn, { backgroundColor: props.colors.surface, borderColor: props.colors.border }]}
@@ -199,23 +199,21 @@ export default function MapSearchTopBar(props: Props) {
         </Animated.View>
       </View>
 
-      {!props.isSearchFocused && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator
-          nestedScrollEnabled
-          keyboardShouldPersistTaps="handled"
-          style={{ marginTop: 8, maxHeight: 48 }}
-          contentContainerStyle={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 8,
-            paddingRight: 16,
-          }}
-        >
-          {CATEGORY_CHIPS.map((chip) => renderExploreChip(chip, props, s))}
-        </ScrollView>
-      )}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator
+        nestedScrollEnabled
+        keyboardShouldPersistTaps="handled"
+        style={{ marginTop: 8, maxHeight: 48 }}
+        contentContainerStyle={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
+          paddingRight: 16,
+        }}
+      >
+        {CATEGORY_CHIPS.map((chip) => renderExploreChip(chip, props, s))}
+      </ScrollView>
 
       {!props.isSearchFocused && favoritesAndQuick.length > 0 && (
         <FlatList
