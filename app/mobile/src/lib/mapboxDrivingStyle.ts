@@ -12,15 +12,15 @@ export type EffectiveRouteColors = {
   routeGlowOpacity: number;
 };
 
-function isNearWhiteRouteLine(hex: string): boolean {
-  const t = hex.trim().toLowerCase();
-  return t === '#fff' || t === '#ffffff' || t === 'white';
-}
+/** Single SnapRoad route treatment: bright core + cyan glow; no slate/orange night variants. */
+const SNAP_ROUTE_CORE = '#0A84FF';
+const SNAP_ROUTE_CASING_STD = '#032C66';
+const SNAP_ROUTE_PASSED = 'rgba(10,132,255,0.42)';
+const SNAP_ROUTE_GLOW = '#5EBBFF';
 
 /**
- * Keeps the driven route readable on Mapbox Standard (night / dusk) and on satellite.
- * Driving modes now share one SnapRoad-blue route language; mode differences live in
- * routing behavior, camera, and HUD framing instead of changing the route core color.
+ * One consistent blue route line on Standard + dark/sport basemaps (no congestion tint on geometry).
+ * Passed segment stays in the blue family instead of gray.
  */
 export function effectiveNavRouteColors(
   modeConfig: ModeConfig,
@@ -29,84 +29,39 @@ export function effectiveNavRouteColors(
   drivingMode?: DrivingMode,
   options?: { speedMphForRoute?: number },
 ): EffectiveRouteColors {
+  void mapLightPreset;
   void drivingMode;
   void options;
-  const { routeColor, routeCasing, passedColor, routeGlowColor, routeGlowOpacity } = modeConfig;
-  const whiteCore = isNearWhiteRouteLine(routeColor);
-  const dawnOrDay = mapLightPreset === 'dawn' || mapLightPreset === 'day';
-  const dusk = mapLightPreset === 'dusk';
-  const night = mapLightPreset === 'night';
+
+  const glowOpacity = Math.max(modeConfig.routeGlowOpacity, 0.3);
 
   if (isSatellite) {
-    if (whiteCore) {
-      return {
-        routeColor: '#FBBF24',
-        routeCasing: '#0C0A09',
-        passedColor: 'rgba(148,163,184,0.55)',
-        routeGlowColor: '#F59E0B',
-        routeGlowOpacity: Math.max(routeGlowOpacity, 0.28),
-      };
-    }
     return {
-      routeColor,
-      routeCasing: '#0F172A',
-      passedColor,
-      routeGlowColor,
-      routeGlowOpacity: Math.max(routeGlowOpacity, 0.22),
+      routeColor: SNAP_ROUTE_CORE,
+      routeCasing: '#070D18',
+      passedColor: 'rgba(10,132,255,0.38)',
+      routeGlowColor: SNAP_ROUTE_GLOW,
+      routeGlowOpacity: Math.max(glowOpacity, 0.26),
     };
   }
 
-  if (whiteCore && dawnOrDay) {
-    return {
-      routeColor: '#EA580C',
-      routeCasing: '#1E293B',
-      passedColor: '#94A3B8',
-      routeGlowColor: '#FB923C',
-      routeGlowOpacity: Math.max(routeGlowOpacity, 0.22),
-    };
-  }
-
-  if (whiteCore && night) {
-    return {
-      routeColor: '#F59E0B',
-      routeCasing: '#0F0D1A',
-      passedColor: 'rgba(148,163,184,0.5)',
-      routeGlowColor: '#FBBF24',
-      routeGlowOpacity: Math.max(routeGlowOpacity, 0.32),
-    };
-  }
-
-  if (whiteCore && dusk) {
-    return {
-      routeColor: '#C4956A',
-      routeCasing: '#1E1B4B',
-      passedColor: 'rgba(148,163,184,0.6)',
-      routeGlowColor: '#C4956A',
-      routeGlowOpacity: Math.max(routeGlowOpacity, 0.26),
-    };
-  }
-
-  if (night && !whiteCore) {
-    return {
-      routeColor,
-      routeCasing: 'rgba(219,234,254,0.78)',
-      passedColor: 'rgba(148,163,184,0.55)',
-      routeGlowColor,
-      routeGlowOpacity: Math.max(routeGlowOpacity, 0.3),
-    };
-  }
-
-  return { routeColor, routeCasing, passedColor, routeGlowColor, routeGlowOpacity };
+  return {
+    routeColor: SNAP_ROUTE_CORE,
+    routeCasing: SNAP_ROUTE_CASING_STD,
+    passedColor: SNAP_ROUTE_PASSED,
+    routeGlowColor: SNAP_ROUTE_GLOW,
+    routeGlowOpacity: glowOpacity,
+  };
 }
 
-/** Unselected route preview lines on satellite / night. */
+/** Alternate route preview lines — same hue family, dimmed. */
 export function effectiveAlternateRouteLineColor(
   mapLightPreset: MapboxLightPreset,
   isSatellite: boolean,
 ): string {
-  if (isSatellite) return '#E2E8F0';
-  if (mapLightPreset === 'night') return '#CBD5E1';
-  return '#9CA3AF';
+  void mapLightPreset;
+  void isSatellite;
+  return 'rgba(10,132,255,0.55)';
 }
 
 /**
@@ -173,8 +128,6 @@ export function standardBasemapStyleImportConfig(
   drivingMode: DrivingMode = 'adaptive',
   isNavigating = true,
 ): Record<string, string> {
-  // drivingMode / isNavigating reserved for future per-mode tuning once Mapbox
-  // officially documents a density/style API (avoids re-adding unverified keys).
   void drivingMode;
   void isNavigating;
   if (isSatellite) {

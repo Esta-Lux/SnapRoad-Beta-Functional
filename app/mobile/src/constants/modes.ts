@@ -130,7 +130,7 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
 
     directionsProfile: 'driving-traffic',
 
-    showCongestion: true,
+    showCongestion: false,
     showTrafficBadge: true,
     showTrafficBar: true,
     showSpeedLimit: true,
@@ -192,7 +192,7 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
 
     directionsProfile: 'driving-traffic',
 
-    showCongestion: true,
+    showCongestion: false,
     showTrafficBadge: true,
     showTrafficBar: true,
     showSpeedLimit: true,
@@ -256,7 +256,7 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
 
     directionsProfile: 'driving-traffic',
 
-    showCongestion: true,
+    showCongestion: false,
     /** Same live traffic cues as Adaptive — Sport is the “full telemetry” drive mode. */
     showTrafficBadge: true,
     showTrafficBar: true,

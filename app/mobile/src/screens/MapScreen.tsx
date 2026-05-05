@@ -127,7 +127,6 @@ import { getDistanceToUpcomingManeuverMeters, getUpcomingManeuverStep } from '..
 import { useNavigationSpeech } from '../hooks/useNavigationSpeech';
 import { repeatLastTurnByTurn } from '../navigation/navigationGuidanceMemory';
 import TurnInstructionCard from '../components/navigation/TurnInstructionCard';
-import { getRoutePolylineStyle } from '../lib/routePolylineStyle';
 import NavigationStatusStrip, { MAP_NAV_BOTTOM_INSET } from '../components/navigation/NavigationStatusStrip';
 import NavigationDebugHud from '../components/navigation/NavigationDebugHud';
 import { labelAnchorLayerIdForStyleUrl } from '../map/mapLayerRegistry';
@@ -4926,10 +4925,9 @@ export default function MapScreen() {
             return nav.availableRoutes.map((route, idx) => {
               if (idx === nav.selectedRouteIndex) return null;
               if (!route.polyline || route.polyline.length < 2) return null;
-              const pl = getRoutePolylineStyle(route.routeType, false);
               const lineOpacity = Math.min(
-                0.85,
-                pl.opacity * (isSatelliteStyle || mapLightPreset === 'night' ? 1.35 : 1.15),
+                0.78,
+                isSatelliteStyle || mapLightPreset === 'night' ? 0.52 : 0.44,
               );
               const geo: GeoJSON.FeatureCollection = {
                 type: 'FeatureCollection',
@@ -4953,8 +4951,8 @@ export default function MapScreen() {
                   <MGL.LineLayer
                     id={`alt-route-line-${idx}`}
                     style={{
-                      lineColor: pl.color,
-                      lineWidth: pl.width,
+                      lineColor: '#0A84FF',
+                      lineWidth: 7,
                       lineOpacity,
                       lineCap: 'round',
                       lineJoin: 'round',

@@ -183,10 +183,26 @@ export default function MapSearchTopBar(props: Props) {
   const resultsPanelHeight = useMemo(() => {
     if (!props.isSearchFocused) return undefined;
     const chromeH = searchChromeH > 8 ? searchChromeH : 120;
+    /** Stack renders below the sheet while searching (~3×48 tiles + gaps). */
+    const toolsBelowReservePx = props.floatingMapTools ? 172 : 0;
     const panelTopAbs = props.topInset + 8 + chromeH + 6;
     const bottomClamp = keyboardTopY != null ? keyboardTopY : windowHeight - chromeReserve;
-    return Math.max(200, Math.min(Math.floor(bottomClamp - panelTopAbs - 6), Math.floor(windowHeight * 0.72)));
-  }, [props.isSearchFocused, props.topInset, searchChromeH, keyboardTopY, windowHeight, chromeReserve]);
+    return Math.max(
+      200,
+      Math.min(
+        Math.floor(bottomClamp - panelTopAbs - 6 - toolsBelowReservePx),
+        Math.floor(windowHeight * 0.72),
+      ),
+    );
+  }, [
+    props.isSearchFocused,
+    props.topInset,
+    searchChromeH,
+    keyboardTopY,
+    windowHeight,
+    chromeReserve,
+    props.floatingMapTools,
+  ]);
 
   const focusGlow = useSharedValue(props.isSearchFocused ? 1 : 0);
   React.useEffect(() => {
@@ -279,20 +295,6 @@ export default function MapSearchTopBar(props: Props) {
         </View>
       ) : null}
 
-      {props.isSearchFocused && props.floatingMapTools ? (
-        <View
-          style={{
-            position: 'absolute',
-            right: 0,
-            top: (searchChromeH > 8 ? searchChromeH : 118) + 4,
-            zIndex: 5,
-          }}
-          pointerEvents="box-none"
-        >
-          {props.floatingMapTools}
-        </View>
-      ) : null}
-
       {!props.isSearchFocused && favoritesAndQuick.length > 0 && (
         <FlatList
           horizontal
@@ -359,11 +361,7 @@ export default function MapSearchTopBar(props: Props) {
           ) : (
             <FlatList
               style={{ flex: 1 }}
-              contentContainerStyle={{
-                flexGrow: 1,
-                paddingBottom: 12,
-                paddingRight: props.floatingMapTools ? 54 : 0,
-              }}
+              contentContainerStyle={{ flexGrow: 1, paddingBottom: 12 }}
               data={panelData(queryActive, activeTab, props)}
               keyExtractor={(item, i) => `${item.place_id || item.name}-${i}`}
               keyboardShouldPersistTaps="handled"
@@ -406,6 +404,12 @@ export default function MapSearchTopBar(props: Props) {
           )}
         </Animated.View>
       )}
+
+      {props.isSearchFocused && props.floatingMapTools ? (
+        <View style={{ marginTop: 10, width: '100%', alignItems: 'flex-end' }} pointerEvents="box-none">
+          {props.floatingMapTools}
+        </View>
+      ) : null}
     </View>
   );
 }

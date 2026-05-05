@@ -10,5 +10,7 @@ test('navigation route core stays SnapRoad blue across driving modes', () => {
 
     assert.equal(day.routeColor, '#0A84FF');
     assert.equal(night.routeColor, '#0A84FF');
+    assert.equal(day.routeGlowColor, night.routeGlowColor);
+    assert.equal(day.routeCasing, night.routeCasing);
   }
 });
