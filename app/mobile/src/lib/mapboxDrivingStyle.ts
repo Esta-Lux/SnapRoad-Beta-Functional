@@ -27,14 +27,17 @@ const ROUTE_GLOW_HIGH_VIS = '#BAE6FD';
 function useHighVisibilityRouteInk(
   mapLightPreset: MapboxLightPreset,
   isSatellite: boolean,
+  drivingMode?: DrivingMode,
 ): boolean {
+  /** Sport is always night basemap in-app — keep the neon stack even if a caller passes `day`. */
+  if (drivingMode === 'sport') return true;
   if (isSatellite) return true;
   return mapLightPreset === 'night' || mapLightPreset === 'dusk';
 }
 
 /**
- * SnapRoad-blue route everywhere; night/dusk/satellite uses a brighter core + luminous casing
- * so it matches Adaptive’s “neon” readability on lighter maps instead of muddy navy.
+ * SnapRoad-blue route palette: day/dawn stays iOS `#0A84FF`; Sport + night/dusk/satellite forces
+ * luminous `#38BDF8` + casing tuned for dark imagery (Sport always uses this stack — app pins Sport to night).
  */
 export function effectiveNavRouteColors(
   modeConfig: ModeConfig,
@@ -43,12 +46,14 @@ export function effectiveNavRouteColors(
   drivingMode?: DrivingMode,
   options?: { speedMphForRoute?: number },
 ): EffectiveRouteColors {
-  void drivingMode;
   void options;
 
-  const highVis = useHighVisibilityRouteInk(mapLightPreset, isSatellite);
+  const highVis = useHighVisibilityRouteInk(mapLightPreset, isSatellite, drivingMode);
 
   let glowOpacity = Math.max(modeConfig.routeGlowOpacity, highVis ? 0.46 : 0.3);
+  if (highVis && drivingMode === 'sport') {
+    glowOpacity = Math.max(glowOpacity, 0.54);
+  }
 
   if (highVis) {
     if (isSatellite) {

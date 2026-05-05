@@ -370,13 +370,11 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: 24,
     backgroundColor: '#FFFFFF',
-    borderWidth: 1.25,
-    borderColor: 'rgba(0,0,0,0.06)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.14,
-    shadowRadius: 2.5,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
+    // No elevation/shadow — MarkerView reads as a flat decal on the basemap instead of a “floating HUD tile”.
+    shadowOpacity: 0,
+    elevation: 0,
   },
   accuracyRing: {
     position: 'absolute',

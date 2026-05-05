@@ -227,6 +227,10 @@ export default React.memo(function RouteOverlay({
   const passedLineWidth = routeWidth;
   const passedLineOpacity = 0.92 * lineOpacity;
   const effectiveGlowColor = glowColor || routeColor;
+  /** Wide navy-ish casing was reading as the “real” line on dark maps; thin it when the neon glow stack is active. */
+  const neonCasing = glowOpacity >= 0.42;
+  const casingWidthExtra = neonCasing ? 1.25 : 3;
+  const casingPaintOpacity = (neonCasing ? 0.28 : 0.7) * (isRerouting ? 0.5 : 1);
 
   if (routeRenderVariant === 'minimal') {
     const minimalShape: GeoJSON.FeatureCollection = {
@@ -284,8 +288,8 @@ export default React.memo(function RouteOverlay({
         filter={['==', ['get', 'segment'], 'base']}
         style={{
           lineColor: casingColor,
-          lineWidth: routeWidth + 3,
-          lineOpacity: 0.7 * (isRerouting ? 0.5 : 1),
+          lineWidth: routeWidth + casingWidthExtra,
+          lineOpacity: casingPaintOpacity,
           lineCap: 'round',
           lineJoin: 'round',
         }}
