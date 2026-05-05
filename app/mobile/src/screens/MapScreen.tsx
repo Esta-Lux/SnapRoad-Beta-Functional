@@ -5209,48 +5209,46 @@ export default function MapScreen() {
         onClose={() => setSelectedTrafficCamera(null)}
       />
 
-      <SpotlightTarget id="map.searchBar">
-        <MapSearchTopBar
-          visible={!nav.isNavigating}
-          topInset={insets.top}
-          colors={colors}
-          styles={s}
-          showMenu={showMenu}
-          setShowMenu={setShowMenu}
-          searchQuery={searchQuery}
-          onSearchChange={handleSearchChange}
-          isSearchFocused={isSearchFocused}
-          setIsSearchFocused={(v) => {
-            setIsSearchFocused(v);
-            if (v && nav.showRoutePreview) {
-              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              nav.cancelRoutePreview();
-            }
-          }}
-          onSubmitSearch={() => {
-            void commitSearch();
-          }}
-          onClearSearch={handleClearSearch}
-          onOpenOrion={() => setShowOrion(true)}
-          activeChip={activeChip}
-          onSelectChip={openCategoryExplore}
-          savedPlaces={savedPlaces}
-          onSelectSavedPlace={(item) => {
-            if (item.lat && item.lng) {
-              handleSelectResult({ name: item.name, address: item.address, lat: item.lat, lng: item.lng });
-            }
-          }}
-          isSearching={isSearching}
-          searchResults={searchResults}
-          recentSearches={recentSearches}
-          location={location}
-          onSelectResult={handleSelectResult}
-          haversineMeters={haversineMeters}
-          placePhotoThumbUri={placePhotoThumbUri}
-          searchResultPriceHint={searchResultPriceHint}
-          gasChipAvgRegular={gasChipAvgRegularShort}
-        />
-      </SpotlightTarget>
+      <MapSearchTopBar
+        visible={!nav.isNavigating}
+        topInset={insets.top}
+        colors={colors}
+        styles={s}
+        showMenu={showMenu}
+        setShowMenu={setShowMenu}
+        searchQuery={searchQuery}
+        onSearchChange={handleSearchChange}
+        isSearchFocused={isSearchFocused}
+        setIsSearchFocused={(v) => {
+          setIsSearchFocused(v);
+          if (v && nav.showRoutePreview) {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            nav.cancelRoutePreview();
+          }
+        }}
+        onSubmitSearch={() => {
+          void commitSearch();
+        }}
+        onClearSearch={handleClearSearch}
+        onOpenOrion={() => setShowOrion(true)}
+        activeChip={activeChip}
+        onSelectChip={openCategoryExplore}
+        savedPlaces={savedPlaces}
+        onSelectSavedPlace={(item) => {
+          if (item.lat && item.lng) {
+            handleSelectResult({ name: item.name, address: item.address, lat: item.lat, lng: item.lng });
+          }
+        }}
+        isSearching={isSearching}
+        searchResults={searchResults}
+        recentSearches={recentSearches}
+        location={location}
+        onSelectResult={handleSelectResult}
+        haversineMeters={haversineMeters}
+        placePhotoThumbUri={placePhotoThumbUri}
+        searchResultPriceHint={searchResultPriceHint}
+        gasChipAvgRegular={gasChipAvgRegularShort}
+      />
 
       {/* ═══ TURN CARD — 3-state model (preview / active / confirm + cruise); same gradients per mode ═ */}
       {nav.isNavigating && nav.navigationProgress && (() => {

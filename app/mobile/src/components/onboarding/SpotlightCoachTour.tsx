@@ -45,13 +45,6 @@ export const SPOTLIGHT_COACH_STEPS: SpotlightStep[] = [
     spotlightPadding: 10,
   },
   {
-    id: 'search',
-    targetId: 'map.searchBar',
-    title: 'Search anywhere',
-    body: 'Look up places, gas, and destinations. Your recents and saved spots show up here too.',
-    spotlightPadding: 8,
-  },
-  {
     id: 'orion',
     targetId: 'map.orionFab',
     title: 'Ask Orion',
