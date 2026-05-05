@@ -4,6 +4,7 @@ import {
   emptyDriveSafetyState,
   processDriveSafetySample,
   speedLimitMpsToMph,
+  tripSafetyScoreFromEventCounts,
 } from './driveSafetyEvents';
 
 test('processDriveSafetySample counts one hard brake with cooldown', () => {
@@ -65,4 +66,13 @@ test('speedLimitMpsToMph converts and filters invalid values', () => {
   assert.equal(Math.round(speedLimitMpsToMph(24.5872) ?? 0), 55);
   assert.equal(speedLimitMpsToMph(0), null);
   assert.equal(speedLimitMpsToMph(null), null);
+});
+
+test('tripSafetyScoreFromEventCounts is perfect with no events', () => {
+  assert.equal(tripSafetyScoreFromEventCounts(0, 0), 100);
+});
+
+test('tripSafetyScoreFromEventCounts applies penalties and clamps', () => {
+  assert.equal(tripSafetyScoreFromEventCounts(2, 1), 74);
+  assert.equal(tripSafetyScoreFromEventCounts(20, 20), 0);
 });

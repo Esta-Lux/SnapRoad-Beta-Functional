@@ -68,7 +68,7 @@ test('camera command gate lets reroute-scale jumps through early', () => {
   const issue = shouldIssueNavCameraFollowCommand({
     isNewSession: false,
     elapsedMs: 20,
-    movedMeters: 28,
+    movedMeters: 32,
     headingDeltaDeg: 0,
     zoomDelta: 0,
     pitchDelta: 0,

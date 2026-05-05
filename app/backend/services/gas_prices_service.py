@@ -9,6 +9,7 @@ Docs:
 from __future__ import annotations
 
 import logging
+import math
 import re
 import threading
 import time
@@ -317,3 +318,67 @@ def fetch_us_state_gas_prices() -> tuple[list[dict[str, Any]], str | None]:
         _cache_mono_until = now + ttl
 
     return out, hint
+
+
+def _parse_regular_price_to_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    s = str(value).strip().replace(",", "")
+    if not s:
+        return None
+    m = re.search(r"(\d+(?:\.\d+)?)", s)
+    if not m:
+        return None
+    try:
+        n = float(m.group(1))
+    except ValueError:
+        return None
+    if not (math.isfinite(n) and 0 < n < 50):
+        return None
+    return n
+
+
+def cached_regular_price_usd_per_gallon(state_hint: str | None) -> float | None:
+    """Best-effort regular-grade $/gal from the in-memory CollectAPI cache."""
+    raw = (state_hint or "").strip()
+    if not raw:
+        return None
+    hint_upper = raw.upper().replace(".", "")
+    expanded = US_STATE_ABBREV_TO_NAME.get(hint_upper) if len(hint_upper) == 2 else None
+    candidates = [raw]
+    if expanded:
+        candidates.append(expanded)
+    h_low = raw.lower()
+
+    with _CACHE_LOCK:
+        rows = list(_cached_rows)
+    if not rows:
+        return None
+
+    for r in rows:
+        st = str(r.get("state") or "").strip()
+        if not st:
+            continue
+        s_low = st.lower()
+        matched = any(
+            c.lower() == s_low or c.lower() in s_low or s_low in c.lower()
+            for c in candidates
+            if c
+        )
+        if matched or h_low == s_low:
+            row_lk = _row_lower_keys(r)
+            price = _parse_regular_price_to_float(_pick_field(row_lk, "regular", "gasoline", "gas"))
+            if price is not None:
+                return price
+    return None
+
+
+def regular_price_usd_for_state_label(state_hint: str | None) -> float | None:
+    """Resolve regular $/gal using cache, optionally warming it via CollectAPI once."""
+    found = cached_regular_price_usd_per_gallon(state_hint)
+    if found is not None:
+        return found
+    rows, _hint = fetch_us_state_gas_prices()
+    if rows:
+        return cached_regular_price_usd_per_gallon(state_hint)
+    return None

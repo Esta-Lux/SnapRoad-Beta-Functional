@@ -41,6 +41,14 @@ export function speedLimitMpsToMph(mps: number | null | undefined): number | nul
   return mps * 2.2369362921;
 }
 
+/** Per-trip score (0–100) from telemetry counts; 100 when no incidents. */
+export function tripSafetyScoreFromEventCounts(hardBrakingEvents: number, speedingEvents: number): number {
+  const h = Math.max(0, Math.floor(Number(hardBrakingEvents)) || 0);
+  const s = Math.max(0, Math.floor(Number(speedingEvents)) || 0);
+  const raw = 100 - h * 8 - s * 10;
+  return Math.round(Math.max(0, Math.min(100, raw)));
+}
+
 function speedingThresholdMph(limitMph: number): number {
   return limitMph + Math.max(7, limitMph * 0.15);
 }

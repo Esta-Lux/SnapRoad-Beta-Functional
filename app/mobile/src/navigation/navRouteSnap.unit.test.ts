@@ -3,7 +3,7 @@
  * These pin down the contract that:
  *   - the snapped coord lands on the polyline,
  *   - the corridor gate scales with GPS accuracy,
- *   - the heading candidate prefers the route tangent on-corridor at speed,
+ *   - heading candidate is vehicle-first when moving (course vs tangent fork),
  *   - degenerate inputs return null without throwing.
  */
 

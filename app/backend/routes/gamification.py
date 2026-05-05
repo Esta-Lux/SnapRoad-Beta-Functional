@@ -462,8 +462,8 @@ def create_challenge(challenge: ChallengeCreate, auth_user: CurrentUser):
         "status": "pending",
         "challenger_name": ch_name[:120],
         "opponent_name": op_name[:120],
-        "your_score": int(user.get("safety_score", 85) or 85),
-        "opponent_score": int(opponent.get("safety_score", 85) or 85),
+        "your_score": int(user.get("safety_score", 0) or 0),
+        "opponent_score": int(opponent.get("safety_score", 0) or 0),
         "ends_at": ends_at,
     }
     created = sb_insert_friend_challenge(payload)
@@ -937,7 +937,7 @@ def get_driving_score(user: CurrentUser):
         if ENVIRONMENT == "production":
             raise
         u = _user_state(user_id)
-        base_score = u.get("safety_score", 85)
+        base_score = u.get("safety_score", 0)
         metrics = [{"id": k, "name": k.title(), "score": base_score, "trend": "stable", "description": ""} for k in ("speed", "braking", "acceleration", "following", "turns", "focus")]
         return {"success": True, "data": {"overall_score": base_score, "metrics": metrics, "orion_tips": [], "last_updated": datetime.now().isoformat(), "premium_insights": False}}
 

@@ -6,6 +6,32 @@ from routes.trips import (
 )
 
 
+def test_build_trip_row_region_state_overrides_fuel_cost(monkeypatch):
+    """CollectAPI-backed price should win over a placeholder client estimate when region_state is set."""
+
+    def fake_price(label: str | None) -> float | None:
+        if (label or "").strip().lower() == "ohio":
+            return 4.0
+        return None
+
+    monkeypatch.setattr("routes.trips.regular_price_usd_for_state_label", fake_price)
+    body = TripCompleteBody(
+        distance_miles=10,
+        duration_seconds=600,
+        safety_score=88,
+        fuel_used_gallons=0.4,
+        fuel_cost_estimate=999.0,
+        region_state="Ohio",
+    )
+    row = _build_trip_row("trip-oh", "user-1", body, 10.0, 88, 5, 10)
+
+    assert row["fuel_cost_estimate"] == round(0.4 * 4.0, 2)
+
+
+def test_trip_complete_body_defaults_safety_to_zero():
+    assert TripCompleteBody().safety_score == 0
+
+
 def test_build_trip_row_carries_service_driver_metrics():
     body = TripCompleteBody(
         distance_miles=12.34,

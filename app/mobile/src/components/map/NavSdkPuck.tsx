@@ -56,8 +56,8 @@ const ACCURACY_RING_THRESHOLD_M = 15;
  * heading at the start of a turn. 110ms moving / 60ms stopped feels
  * crisp without ever showing a hard snap.
  */
-const ROTATION_EASE_MS = 150;
-const ROTATION_EASE_STOPPED_MS = 85;
+const ROTATION_EASE_MS = 185;
+const ROTATION_EASE_STOPPED_MS = 95;
 /** A previously-valid `course` becomes stale this fast — never reuse beyond it. */
 const STALE_COURSE_AFTER_MS = 1500;
 
@@ -307,6 +307,7 @@ function NavSdkPuckImpl({
       allowOverlapWithPuck
     >
       <View style={styles.wrap} pointerEvents="none">
+        <View style={styles.puckDisc} />
         {showAccuracyRing && (
           <Animated.View
             style={[styles.accuracyRing, { borderColor: `${color}55` }, accuracyRingStyle]}
@@ -362,6 +363,20 @@ const styles = StyleSheet.create({
     height: 54,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  puckDisc: {
+    position: 'absolute',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.25,
+    borderColor: 'rgba(0,0,0,0.06)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.14,
+    shadowRadius: 2.5,
+    elevation: 2,
   },
   accuracyRing: {
     position: 'absolute',

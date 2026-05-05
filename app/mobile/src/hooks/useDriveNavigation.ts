@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo, useLayoutEffect, useSyncExternalStore } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo, useLayoutEffect, useSyncExternalStore, type MutableRefObject } from 'react';
 import type { Coordinate, DrivingMode } from '../types';
 import type { TripSummary } from '../types/tripSummary';
 import type {
@@ -46,7 +46,15 @@ import {
   estimateFuelCostUsd,
   estimateFuelGallons,
   estimateMileageDeductionUsd,
+  DEFAULT_FUEL_PRICE_PER_GALLON,
+  DEFAULT_FUEL_MPG,
 } from '../utils/driveMetrics';
+import {
+  emptyDriveSafetyState,
+  processDriveSafetySample,
+  speedLimitMpsToMph,
+  tripSafetyScoreFromEventCounts,
+} from '../utils/driveSafetyEvents';
 import type { User } from '../types';
 import {
   bucketAccuracyBand,
@@ -145,7 +153,9 @@ export interface NavigationData {
   dynamicDestination?: boolean;
 }
 
-export type { TripSummary };export function useDriveNavigation(params: {
+export type { TripSummary };
+
+export function useDriveNavigation(params: {
   userLocation: Coordinate;
   speed: number;
   heading: number;
@@ -160,6 +170,8 @@ export type { TripSummary };export function useDriveNavigation(params: {
    * JS reroute/refresh and progress math are bypassed during `isNavigating`. Launch default is false.
    */
   navSdkHeadless?: boolean;
+  /** Nearest state's regular $/gal (from `/api/map/gas-prices`) — ref read at trip end. */
+  tripFuelContextRef?: MutableRefObject<{ stateLabel?: string; priceUsdPerGal?: number } | null>;
 }) {
   const {
     userLocation,
@@ -170,6 +182,7 @@ export type { TripSummary };export function useDriveNavigation(params: {
     voiceMuted = false,
     dynamicDestinationFollow = false,
     navSdkHeadless = false,
+    tripFuelContextRef,
   } = params;
   const voiceMutedRef = useRef(voiceMuted);
   useLayoutEffect(() => {
@@ -238,6 +251,8 @@ export type { TripSummary };export function useDriveNavigation(params: {
    * backend/profile can show "Max speed" in the trip summary + Insights.
    */
   const maxSpeedMphRef = useRef(0);
+  /** Populated during `isNavigating` GPS ticks; summarized on trip end for `/api/trips/complete`. */
+  const driveSafetyRef = useRef(emptyDriveSafetyState());
   /** Bumps when a new route is fetched so stale reverse-geocode results cannot rename a later trip's origin. */
   const originGeocodeTokenRef = useRef(0);
   const prevLocationRef = useRef<Coordinate | null>(null);
@@ -586,6 +601,44 @@ export type { TripSummary };export function useDriveNavigation(params: {
       maxSpeedMphRef.current = candidate;
     }
   }, [isNavigating, speed, navSdkSnapshot.location, gpsAccuracy]);
+
+  useEffect(() => {
+    if (!isNavigating) {
+      driveSafetyRef.current = emptyDriveSafetyState();
+      return;
+    }
+    const atMs = Date.now();
+    const sdkLimMps =
+      typeof navSdkSnapshot.location?.speedLimitMps === 'number' && Number.isFinite(navSdkSnapshot.location.speedLimitMps)
+        ? navSdkSnapshot.location.speedLimitMps
+        : typeof navSdkSnapshot.progress?.speedLimitMps === 'number' && Number.isFinite(navSdkSnapshot.progress.speedLimitMps)
+          ? navSdkSnapshot.progress.speedLimitMps
+          : null;
+    const sdkLimMph = sdkLimMps != null ? speedLimitMpsToMph(sdkLimMps) : null;
+    const steps = navigationData?.maxspeeds;
+    const idx = Math.max(
+      0,
+      Math.min(currentStepIndex, Math.max(0, (steps?.length ?? 1) - 1)),
+    );
+    const stepLimit =
+      steps && typeof steps[idx] === 'number' && Number.isFinite(steps[idx] as number) ? (steps[idx] as number) : null;
+    const limitMph = sdkLimMph ?? stepLimit;
+    driveSafetyRef.current = processDriveSafetySample(driveSafetyRef.current, {
+      atMs,
+      speedMph: Number.isFinite(speed) ? speed : 0,
+      speedLimitMph: limitMph,
+      gpsAccuracyM: typeof gpsAccuracy === 'number' && Number.isFinite(gpsAccuracy) ? gpsAccuracy : null,
+      isNavigating: true,
+    });
+  }, [
+    isNavigating,
+    speed,
+    gpsAccuracy,
+    currentStepIndex,
+    navigationData?.maxspeeds,
+    navSdkSnapshot.location?.speedLimitMps,
+    navSdkSnapshot.progress?.speedLimitMps,
+  ]);
 
   // --- Fetch directions ---
   const fetchDirections = useCallback(async (
@@ -1117,6 +1170,7 @@ export type { TripSummary };export function useDriveNavigation(params: {
     traveledRef.current = 0;
     cumAlongHighWaterRef.current = 0;
     maxSpeedMphRef.current = 0;
+    driveSafetyRef.current = emptyDriveSafetyState();
     setTraveledDistanceMeters(0);
     prevLocationRef.current = null;
     setCurrentStepIndex(0);
@@ -1176,6 +1230,7 @@ export type { TripSummary };export function useDriveNavigation(params: {
       tripStartTimeRef.current = null;
       prevLocationRef.current = null;
       maxSpeedMphRef.current = 0;
+      driveSafetyRef.current = emptyDriveSafetyState();
       hasAnnouncedArrivalRef.current = false;
       autoEndNavTriggeredRef.current = false;
       autoEndFromArrivalRef.current = false;
@@ -1225,7 +1280,11 @@ export type { TripSummary };export function useDriveNavigation(params: {
         : Math.max(0, blendedMi);
     const roundedDist = Math.max(0, Math.round(distMiles * 100) / 100);
 
-    const tripSafetyScore = Math.round(Math.max(0, Math.min(100, Number(user?.safetyScore ?? 85))));
+    const safetySnap = driveSafetyRef.current;
+    const hardBrakingCt = safetySnap.hardBrakingEvents;
+    const speedingCt = safetySnap.speedingEvents;
+    driveSafetyRef.current = emptyDriveSafetyState();
+    const tripSafetyScore = tripSafetyScoreFromEventCounts(hardBrakingCt, speedingCt);
     const originName = formatTripPlaceLabel(
       { name: navigationData?.origin?.name, address: navigationData?.origin?.address },
       'Start',
@@ -1242,6 +1301,16 @@ export type { TripSummary };export function useDriveNavigation(params: {
     /** Floor max at avg so a quirky ref reset can't make max < avg in the row. */
     const maxSpeed = Math.round(Math.max(avgSpeed, maxSpeedRaw) * 10) / 10;
     const fuelGallons = Math.round(estimateFuelGallons(roundedDist) * 100) / 100;
+    const fuelCtx = tripFuelContextRef?.current;
+    const regionalPrice = fuelCtx?.priceUsdPerGal;
+    const fuelCostUsd =
+      Math.round(
+        estimateFuelCostUsd(
+          roundedDist,
+          DEFAULT_FUEL_MPG,
+          regionalPrice ?? DEFAULT_FUEL_PRICE_PER_GALLON,
+        ) * 100,
+      ) / 100;
     const dynamicDest = navigationData?.dynamicDestination === true;
 
     setNavigationData(null);
@@ -1288,10 +1357,10 @@ export type { TripSummary };export function useDriveNavigation(params: {
       avg_speed_mph: avgSpeed,
       max_speed_mph: maxSpeed,
       fuel_used_gallons: fuelGallons,
-      fuel_cost_estimate: Math.round(estimateFuelCostUsd(roundedDist) * 100) / 100,
+      fuel_cost_estimate: fuelCostUsd,
       mileage_value_estimate: Math.round(estimateMileageDeductionUsd(roundedDist) * 100) / 100,
-      hard_braking_events: 0,
-      speeding_events: 0,
+      hard_braking_events: hardBrakingCt,
+      speeding_events: speedingCt,
       incidents_reported: 0,
       counted: qualifiesTrip,
       arrivedAtDestination,
@@ -1322,11 +1391,12 @@ export type { TripSummary };export function useDriveNavigation(params: {
       avg_speed_mph: avgSpeed,
       max_speed_mph: maxSpeed,
       fuel_used_gallons: Math.round(estimateFuelGallons(roundedDist) * 1000) / 1000,
-      fuel_cost_estimate: Math.round(estimateFuelCostUsd(roundedDist) * 100) / 100,
+      fuel_cost_estimate: Math.round(fuelCostUsd * 100) / 100,
       mileage_value_estimate: Math.round(estimateMileageDeductionUsd(roundedDist) * 100) / 100,
-      hard_braking_events: 0,
-      speeding_events: 0,
+      hard_braking_events: hardBrakingCt,
+      speeding_events: speedingCt,
       incidents_reported: 0,
+      region_state: fuelCtx?.stateLabel,
     }).then(async (res) => {
       if (!res.success || !res.data) return;
       setTripSummary((prev) => (prev ? mergeTripCompleteResponse(prev, res.data) : prev));
@@ -1336,7 +1406,7 @@ export type { TripSummary };export function useDriveNavigation(params: {
       await refreshUserFromServerRef.current();
       bumpStatsVersionRef.current();
     }).catch(() => { /* offline — summary already shown */ });
-  }, [navigationData, navigationProgressCoord, user?.safetyScore]);
+  }, [navigationData, navigationProgressCoord, tripFuelContextRef]);
 
   const dismissTripSummary = useCallback(() => setTripSummary(null), []);
 

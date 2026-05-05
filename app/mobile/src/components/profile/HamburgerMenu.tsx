@@ -46,6 +46,7 @@ interface Props {
   onClose: () => void;
   isLight?: boolean;
   onNavigate: (screen: HamburgerMenuTarget) => void;
+  onOfflineMaps?: () => void;
 }
 
 interface MenuItem {
@@ -58,7 +59,7 @@ interface MenuItem {
   badge?: string;
 }
 
-export default function HamburgerMenu({ visible, onClose, isLight, onNavigate }: Props) {
+export default function HamburgerMenu({ visible, onClose, isLight, onNavigate, onOfflineMaps }: Props) {
   const cardBg = isLight ? '#ffffff' : '#1e293b';
   const text = isLight ? '#1e293b' : '#f8fafc';
   const sub = isLight ? '#64748b' : '#94a3b8';
@@ -74,6 +75,16 @@ export default function HamburgerMenu({ visible, onClose, isLight, onNavigate }:
       accent: '#38BDF8',
       availability: actionMeta('drive_map')?.availability,
       action: () => runAfterMenuClose(onClose, () => onNavigate('Map')),
+    },
+    {
+      icon: 'cloud-download-outline',
+      label: 'Offline maps',
+      description: 'Download this map area for use without a data connection.',
+      accent: '#0EA5E9',
+      action: () =>
+        onOfflineMaps
+          ? runAfterMenuClose(onClose, onOfflineMaps)
+          : runAfterMenuClose(onClose, () => {}),
     },
     {
       icon: actionMeta('social_dashboard')?.icon ?? 'people-outline',

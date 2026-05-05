@@ -67,7 +67,7 @@ export const LEASH_SOFT_MAX_M = 32;
 /** Below this speed, GPS course-over-ground is unreliable; freeze heading. */
 export const HEADING_FREEZE_SPEED_MPH = 5;
 /** Cap on heading change applied per published frame when moving (degrees). */
-export const HEADING_MAX_STEP_DEG = 14;
+export const HEADING_MAX_STEP_DEG = 10;
 /** Reject single-tick flips ≥ this when the device is below 12 mph. */
 export const HEADING_FLIP_REJECT_DEG = 90;
 
@@ -80,7 +80,7 @@ export const DISPLAY_POSITION_SLOW_MIN_MOVE_M = 4.8;
 /** Route handoff / reroute scale jumps should snap, not slowly scrub across the map. */
 export const DISPLAY_POSITION_SNAP_JUMP_M = 180;
 /** Time constant for accepted display-position interpolation. */
-export const DISPLAY_POSITION_TIME_CONSTANT_MS = 260;
+export const DISPLAY_POSITION_TIME_CONSTANT_MS = 340;
 
 /* ── Types ──────────────────────────────────────────────────────────── */
 

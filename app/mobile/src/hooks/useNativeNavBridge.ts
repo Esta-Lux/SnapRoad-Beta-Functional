@@ -10,6 +10,7 @@ import {
   estimateFuelGallons,
   estimateMileageDeductionUsd,
 } from '../utils/driveMetrics';
+import { tripSafetyScoreFromEventCounts } from '../utils/driveSafetyEvents';
 import { formatTripPlaceLabel } from '../utils/tripPlaceLabels';
 import {
   mergeTripCompleteResponse,
@@ -96,7 +97,7 @@ export function useNativeNavBridge(params: {
   isPremium?: boolean;
 }) {
   const { destination, originName, isPremium } = params;
-  const { user, updateUser, refreshUserFromServer, bumpStatsVersion } = useAuth();
+  const { updateUser, refreshUserFromServer, bumpStatsVersion } = useAuth();
   const startTimeRef = useRef(Date.now());
   const lastProgressRef = useRef<NativeNavProgressEvent | null>(null);
   /**
@@ -166,7 +167,7 @@ export function useNativeNavBridge(params: {
       const metrics = getTripMetrics();
       const durationMin = Math.max(1, Math.round(metrics.durationSec / 60));
       const dist = metrics.roundedDistanceMiles;
-      const tripSafetyScore = Math.round(Math.max(0, Math.min(100, Number(user?.safetyScore ?? 85))));
+      const tripSafetyScore = tripSafetyScoreFromEventCounts(0, 0);
       const destLabel = formatTripPlaceLabel(
         { name: destination.name, address: destination.address },
         'Destination',
@@ -203,7 +204,7 @@ export function useNativeNavBridge(params: {
         arrivedAtDestination: arrived,
       };
     },
-    [destination.name, destination.address, getTripMetrics, originName, isPremium, user?.safetyScore],
+    [destination.name, destination.address, getTripMetrics, originName, isPremium],
   );
 
   /**

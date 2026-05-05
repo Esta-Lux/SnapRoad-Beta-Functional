@@ -1,8 +1,20 @@
+import type { MutableRefObject } from 'react';
 import { useEffect, useRef, useCallback } from 'react';
 import { api } from '../api/client';
-import { estimateFuelCostUsd, estimateFuelGallons, estimateMileageDeductionUsd } from '../utils/driveMetrics';
+import {
+  estimateFuelCostUsd,
+  estimateFuelGallons,
+  estimateMileageDeductionUsd,
+  DEFAULT_FUEL_MPG,
+  DEFAULT_FUEL_PRICE_PER_GALLON,
+} from '../utils/driveMetrics';
 import type { Coordinate } from '../types';
 import { unwrapTripCompleteData } from '../lib/tripComplete';
+import {
+  emptyDriveSafetyState,
+  processDriveSafetySample,
+  tripSafetyScoreFromEventCounts,
+} from '../utils/driveSafetyEvents';
 
 const MIN_SPEED_MPH = 4;
 const STATIONARY_MS = 120_000;
@@ -57,6 +69,8 @@ export function usePassiveDriveGems(opts: {
   isNavigating: boolean;
   location: Coordinate;
   speedMph: number;
+  gpsAccuracyM?: number | null;
+  tripFuelContextRef?: MutableRefObject<{ stateLabel?: string; priceUsdPerGal?: number } | null>;
   user: UserLite;
   updateUser: (p: {
     gems?: number;
@@ -73,7 +87,9 @@ export function usePassiveDriveGems(opts: {
     isNavigating,
     location,
     speedMph,
-    user,
+    gpsAccuracyM = null,
+    tripFuelContextRef,
+    user: _userIgnored,
     updateUser,
     refreshUserFromServer,
     bumpStatsVersion,
@@ -88,6 +104,8 @@ export function usePassiveDriveGems(opts: {
   const wasNavigating = useRef(false);
   /** Smoothed peak speed across the passive segment. Sent as `max_speed_mph`. */
   const maxSpeedMphRef = useRef(0);
+  /** Hard-braking-only telemetry (passive drives have no speed-limit context). */
+  const passiveSafetyRef = useRef(emptyDriveSafetyState());
 
   const finalizeSegment = useCallback(async () => {
     const start = segmentStartMs.current;
@@ -96,11 +114,13 @@ export function usePassiveDriveGems(opts: {
     const odom = odomRef.current;
     const durationSec = Math.round((now - start) / 1000);
     const maxSpeedSeen = maxSpeedMphRef.current;
+    const safetySnap = passiveSafetyRef.current;
 
     segmentStartMs.current = null;
     odomRef.current = 0;
     prevLl.current = null;
     maxSpeedMphRef.current = 0;
+    passiveSafetyRef.current = emptyDriveSafetyState();
 
     if (durationSec < MIN_DURATION_SEC || odom < MIN_ODOM_M) return;
     if (now < passiveCooldownUntil.current) return;
@@ -116,8 +136,17 @@ export function usePassiveDriveGems(opts: {
         : 0;
     const maxSpeed = Math.round(Math.max(avgSpeed, maxSpeedSeen) * 10) / 10;
     const fuelGal = Math.round(estimateFuelGallons(roundedDist) * 1000) / 1000;
-
-    const tripSafety = Math.round(Math.max(0, Math.min(100, Number(user?.safetyScore ?? 85))));
+    const tripSafety = tripSafetyScoreFromEventCounts(safetySnap.hardBrakingEvents, safetySnap.speedingEvents);
+    const fuelCtx = tripFuelContextRef?.current;
+    const regionalPrice = fuelCtx?.priceUsdPerGal;
+    const fuelCost =
+      Math.round(
+        estimateFuelCostUsd(
+          roundedDist,
+          DEFAULT_FUEL_MPG,
+          regionalPrice ?? DEFAULT_FUEL_PRICE_PER_GALLON,
+        ) * 100,
+      ) / 100;
 
     try {
       const res = await api.post<Record<string, unknown>>('/api/trips/complete', {
@@ -131,11 +160,12 @@ export function usePassiveDriveGems(opts: {
         avg_speed_mph: avgSpeed,
         max_speed_mph: maxSpeed,
         fuel_used_gallons: fuelGal,
-        fuel_cost_estimate: Math.round(estimateFuelCostUsd(roundedDist) * 100) / 100,
+        fuel_cost_estimate: fuelCost,
         mileage_value_estimate: Math.round(estimateMileageDeductionUsd(roundedDist) * 100) / 100,
-        hard_braking_events: 0,
-        speeding_events: 0,
+        hard_braking_events: safetySnap.hardBrakingEvents,
+        speeding_events: safetySnap.speedingEvents,
         incidents_reported: 0,
+        region_state: fuelCtx?.stateLabel,
       });
       if (!res.success || !res.data) return;
       const payload = unwrapTripCompleteData(res.data);
@@ -147,7 +177,7 @@ export function usePassiveDriveGems(opts: {
     } catch {
       /* offline */
     }
-  }, [user?.safetyScore, updateUser, refreshUserFromServer, bumpStatsVersion]);
+  }, [tripFuelContextRef, updateUser, refreshUserFromServer, bumpStatsVersion]);
 
   useEffect(() => {
     if (wasNavigating.current && !isNavigating) {
@@ -166,6 +196,7 @@ export function usePassiveDriveGems(opts: {
         segmentStartMs.current = null;
         odomRef.current = 0;
         prevLl.current = null;
+        passiveSafetyRef.current = emptyDriveSafetyState();
       }
       return;
     }
@@ -175,7 +206,10 @@ export function usePassiveDriveGems(opts: {
 
     const moving = speedMph >= MIN_SPEED_MPH;
     if (moving) {
-      if (segmentStartMs.current == null) segmentStartMs.current = now;
+      if (segmentStartMs.current == null) {
+        segmentStartMs.current = now;
+        passiveSafetyRef.current = emptyDriveSafetyState();
+      }
       lastMoveMs.current = now;
       const prev = prevLl.current;
       if (prev && Math.abs(prev.lat) > 1e-6 && Math.abs(location.lat) > 1e-6) {
@@ -191,6 +225,12 @@ export function usePassiveDriveGems(opts: {
       ) {
         maxSpeedMphRef.current = speedMph;
       }
+      passiveSafetyRef.current = processDriveSafetySample(passiveSafetyRef.current, {
+        atMs: now,
+        speedMph,
+        gpsAccuracyM: typeof gpsAccuracyM === 'number' && Number.isFinite(gpsAccuracyM) ? gpsAccuracyM : null,
+        isNavigating: true,
+      });
     } else {
       prevLl.current = location;
       if (segmentStartMs.current != null && now - lastMoveMs.current > STATIONARY_MS) {
@@ -204,6 +244,7 @@ export function usePassiveDriveGems(opts: {
     location.lat,
     location.lng,
     speedMph,
+    gpsAccuracyM,
     finalizeSegment,
   ]);
 }

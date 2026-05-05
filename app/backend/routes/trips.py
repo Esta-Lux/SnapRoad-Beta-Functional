@@ -25,6 +25,7 @@ from database import get_supabase
 from services.supabase_service import sb_get_profile
 from services.premium_access import require_premium_user
 from limiter import limiter
+from services.gas_prices_service import regular_price_usd_for_state_label
 
 _trips_log = logging.getLogger(__name__)
 users_db = get_users_store()
@@ -344,7 +345,7 @@ def get_trip_analytics(user: CurrentUser):
             avg_safety = (
                 sum(float(r.get("safety_score") or 0) for r in rows) / max(n, 1)
                 if n
-                else float(p.get("safety_score") or 85)
+                else float(p.get("safety_score") or 0)
             )
             return {
                 "success": True,
@@ -363,7 +364,7 @@ def get_trip_analytics(user: CurrentUser):
         "data": {
             "total_miles": float(user.get("total_miles") or 0),
             "total_trips": int(user.get("total_trips") or 0),
-            "avg_safety_score": float(user.get("safety_score") or 85),
+            "avg_safety_score": float(user.get("safety_score") or 0),
             "total_gems": int(user.get("gems") or 0),
         },
     }
@@ -474,7 +475,7 @@ def end_trip(trip_id: str, body: EndTripBody):
 class TripCompleteBody(BaseModel):
     distance_miles: float = 0
     duration_seconds: int = 0
-    safety_score: float = 85
+    safety_score: float = 0
     started_at: Optional[str] = None
     ended_at: Optional[str] = None
     origin: Optional[str] = None
@@ -487,6 +488,7 @@ class TripCompleteBody(BaseModel):
     hard_braking_events: int = 0
     speeding_events: int = 0
     incidents_reported: int = 0
+    region_state: Optional[str] = None
 
 # Keep in sync with mobile passive + navigation trip gates (~0.15 mi, 45s, real movement).
 _MIN_TRIP_MILES = 0.15
@@ -573,6 +575,13 @@ def _build_trip_row(
         if body.fuel_cost_estimate is not None and math.isfinite(float(body.fuel_cost_estimate))
         else fuel_used * 3.60
     )
+    if body.region_state and fuel_used > 0:
+        try:
+            pp = regular_price_usd_for_state_label(body.region_state.strip())
+            if pp is not None and math.isfinite(pp) and pp > 0:
+                fuel_cost = round(float(fuel_used) * float(pp), 2)
+        except Exception:
+            _trips_log.debug("region_state fuel price resolve skipped", exc_info=True)
     mileage_value = (
         float(body.mileage_value_estimate)
         if body.mileage_value_estimate is not None and math.isfinite(float(body.mileage_value_estimate))
@@ -680,14 +689,23 @@ def _persist_trip_and_update_profile(
     for attempt in range(3):
         try:
             sb = get_supabase()
-            profile = sb.table("profiles").select("gems, xp, total_trips, total_miles").eq("id", user_id).limit(1).execute()
+            profile = sb.table("profiles").select("gems, xp, total_trips, total_miles, safety_score").eq("id", user_id).limit(1).execute()
             if profile.data:
                 p = profile.data[0]
+                old_trips = int(p.get("total_trips") or 0)
+                old_safety = float(p.get("safety_score") or 0)
+                trip_row_safety = float(trip_row.get("safety_score") or 0)
+                if old_trips <= 0:
+                    new_safety = trip_row_safety
+                else:
+                    new_safety = (old_safety * old_trips + trip_row_safety) / float(old_trips + 1)
+                new_safety = max(0.0, min(100.0, new_safety))
                 sb.table("profiles").update({
                     "gems": int(p.get("gems") or 0) + int(gems),
                     "xp": int(p.get("xp") or 0) + int(xp),
                     "total_trips": int(p.get("total_trips") or 0) + 1,
                     "total_miles": round(float(p.get("total_miles") or 0) + float(distance), 2),
+                    "safety_score": round(new_safety, 1),
                 }).eq("id", user_id).execute()
                 try:
                     recompute_profile_level_fields(user_id)

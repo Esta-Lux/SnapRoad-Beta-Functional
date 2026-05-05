@@ -52,18 +52,18 @@ export function getNavCameraFollowTuning(
 
   const modeBase =
     mode === 'sport'
-      ? { interval: 380, move: 11, heading: 10, anim: 240 }
+      ? { interval: 450, move: 12.5, heading: 11.8, anim: 250 }
       : mode === 'calm'
-        ? { interval: 520, move: 13, heading: 12, anim: 300 }
-        : { interval: 450, move: 12, heading: 11, anim: 270 };
+        ? { interval: 600, move: 14.2, heading: 13.2, anim: 310 }
+        : { interval: 520, move: 13.2, heading: 12.4, anim: 280 };
 
   const speed01 = clamp(speed / 24, 0, 1);
-  const minAnim = mode === 'sport' ? 200 : mode === 'adaptive' ? 210 : 230;
+  const minAnim = mode === 'sport' ? 205 : mode === 'adaptive' ? 215 : 235;
   return {
-    minUpdateIntervalMs: Math.round(clamp(modeBase.interval - speed01 * 35 - nearTurn01 * 28, 260, 560)),
-    minMoveMeters: Number(clamp(modeBase.move + speed01 * 0.4 - nearTurn01 * 1.5, 8, 14).toFixed(2)),
-    minHeadingDeltaDeg: Number(clamp(modeBase.heading - nearTurn01 * 1.0, 9, 13).toFixed(1)),
-    animationDurationMs: Math.round(clamp(modeBase.anim - speed01 * 35 - nearTurn01 * 20, minAnim, 340)),
+    minUpdateIntervalMs: Math.round(clamp(modeBase.interval - speed01 * 35 - nearTurn01 * 28, 260, 640)),
+    minMoveMeters: Number(clamp(modeBase.move + speed01 * 0.45 - nearTurn01 * 1.5, 8, 15.2).toFixed(2)),
+    minHeadingDeltaDeg: Number(clamp(modeBase.heading - nearTurn01 * 1.0, 9, 15).toFixed(1)),
+    animationDurationMs: Math.round(clamp(modeBase.anim - speed01 * 35 - nearTurn01 * 20, minAnim, 355)),
   };
 }
 

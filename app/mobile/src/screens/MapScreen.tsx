@@ -90,7 +90,7 @@ import ReportMarkers from '../components/map/ReportMarkers';
 import FriendMarkers from '../components/map/FriendMarkers';
 import CameraMarkers from '../components/map/CameraMarkers';
 import type { CameraLocation, CameraViewFeed } from '../components/map/CameraMarkers';
-import { gasPricePointsFromApiEnvelope, nearestGasPricePointByLocation, formatStateGasRegularSummary, formatUsdPerGalChip } from '../components/map/gasPricesFromApi';
+import { gasPricePointsFromApiEnvelope, nearestGasPricePointByLocation, formatStateGasRegularSummary, formatUsdPerGalChip, parseUsdPerGallonNumber } from '../components/map/gasPricesFromApi';
 import TrafficCameraSheet from '../components/map/TrafficCameraSheet';
 import TrafficLayer from '../components/map/TrafficLayer';
 import IncidentHeatmap from '../components/map/IncidentHeatmap';
@@ -219,6 +219,7 @@ import { normalizeNativeNavParams } from '../navigation/nativeNavGuard';
 import type { TripSummary } from '../hooks/useDriveNavigation';
 import type { RouteProp } from '@react-navigation/native';
 import { useNavigation as useRNNavigation, useRoute, useIsFocused, useFocusEffect } from '@react-navigation/native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { MapStackParamList, MapStackScreenNavigationProp } from '../navigation/types';
 import { extractLocationSharingState, getApiErrorMessage } from '../features/social/locationSharing';
 import { storage } from '../utils/storage';
@@ -616,6 +617,10 @@ export default function MapScreen() {
 
   const friendLocationsVisible = friendTrackingEnabled ? friendLocations : [];
 
+  const tabBarHeight = useBottomTabBarHeight();
+  /** Nearest state's regular $/gal for trip-end fuel estimates + server `region_state`. */
+  const tripFuelContextRef = useRef<{ stateLabel?: string; priceUsdPerGal?: number } | null>(null);
+
   // ── Navigation hook ──
   const nav = useDriveNavigation({
     userLocation: location,
@@ -626,6 +631,7 @@ export default function MapScreen() {
     voiceMuted: navVoiceMuted,
     dynamicDestinationFollow: friendFollowSession?.mode === 'live',
     navSdkHeadless: navLogicEffective,
+    tripFuelContextRef,
   });
   const offlineMaps = useOfflineMaps();
 
@@ -977,35 +983,6 @@ export default function MapScreen() {
     return targetFraction;
   }, [nav.isNavigating, navPolylineLenMetersRaw, stoppedForPuckSmoothing, freezeNavSmoothing, targetFraction]);
   /**
-   * Dead-reckoning feed — keeps the smoothed fraction advancing during SDK
-   * silence (tunnels, matcher hiccups, stalls > ~350 ms). Uses the last-known
-   * ground speed from `NavigationProgress.displayCoord.speedMps` (SDK path) or
-   * zero (safe no-op) so a stopped car at a red light doesn't drift.
-   */
-  const lastKnownNavSpeedMps =
-    nav.navigationProgress?.displayCoord?.speedMps ?? 0;
-  const smoothingSpeedMps =
-    typeof navSpeedMpsForSmoothing === 'number' && Number.isFinite(navSpeedMpsForSmoothing)
-      ? Math.max(0, navSpeedMpsForSmoothing)
-      : 0;
-  const displayCoordSpeedMps =
-    typeof lastKnownNavSpeedMps === 'number' && Number.isFinite(lastKnownNavSpeedMps)
-      ? Math.max(0, lastKnownNavSpeedMps)
-      : smoothingSpeedMps;
-  /**
-   * Require display + NAV speed to agree — stale `displayCoord.speed` alone
-   * must not extrapolate along the polyline while the matcher already reports
-   * near-zero ground speed at a stoplight/tunnel portal.
-   */
-  const consensusDrSpeedMps = Math.min(smoothingSpeedMps, displayCoordSpeedMps);
-  const deadReckoningSpeedMps =
-    freezeNavSmoothing ||
-    stoppedForPuckSmoothing ||
-    smoothingSpeedMps < 1.55 ||
-    !(consensusDrSpeedMps > 1.45)
-      ? 0
-      : consensusDrSpeedMps;
-  /**
    * Scale the "teleport" threshold by route length so it's always bounded
    * in *meters*, not percent. A fixed 2% threshold on a 100-mile route is
    * a 2-mile jump before we consider the delta big enough to snap — that's
@@ -1020,20 +997,11 @@ export default function MapScreen() {
       ? Math.max(0.005, Math.min(0.05, 100 / navPolylineLenMetersRaw))
       : 0.02;
   const smoothedFraction = useSmoothedNavFraction(stabilizedTargetFraction, nav.isNavigating, {
-    /** Short exponential τ: smooth all modes while Sport remains the quickest to settle. */
-    timeConstantMs: drivingMode === 'calm' ? 140 : drivingMode === 'sport' ? 108 : 124,
+    /** Longer τ reduces polyline “creep” between matcher updates; Sport still settles fastest. */
+    timeConstantMs: drivingMode === 'calm' ? 215 : drivingMode === 'sport' ? 168 : 195,
     snapDeltaFraction,
     enabled: true,
     freezeWhenStationary: freezeNavSmoothing || stoppedForPuckSmoothing,
-    deadReckoning:
-      navPolylineLenMetersRaw > 1
-        ? {
-            polylineLengthMeters: navPolylineLenMetersRaw,
-            speedMps: deadReckoningSpeedMps,
-            staleThresholdMs: drivingMode === 'sport' ? 105 : drivingMode === 'adaptive' ? 125 : 150,
-            maxStaleMs: drivingMode === 'sport' ? 2800 : drivingMode === 'adaptive' ? 2600 : 2400,
-          }
-        : undefined,
   });
   /**
    * Has the nav pipeline actually produced real progress yet? Used to gate
@@ -1122,7 +1090,7 @@ export default function MapScreen() {
     if (!navMatchedRaw) return null;
     return snapPuckToRoute(navMatchedRaw, navPolylineForSmoothing, {
       accuracyM: accuracy ?? null,
-      tangentLookAheadM: 22,
+      tangentLookAheadM: 10,
     });
   }, [nav.isNavigating, navPolylineForSmoothing, navMatchedRaw, accuracy]);
 
@@ -1181,9 +1149,9 @@ export default function MapScreen() {
               : null);
 
     /**
-     * Heading candidate — prefer the route tangent on-corridor at speed
-     * so the arrow points along the road the user is on, not at noisy
-     * GPS course.
+     * Heading: vehicle course first (chevron tracks real yaw). Route tangent is
+     * consulted inside {@link resolveRouteHeadingCandidate} only when course and
+     * geometry disagree sharply (fork / matcher confusion).
      */
     const sdkCourseDeg =
       typeof navDisplayHeading === 'number' && Number.isFinite(navDisplayHeading)
@@ -1193,20 +1161,11 @@ export default function MapScreen() {
       smoothedOnRoute && navPolylineForSmoothing && smoothedNavPuckCoord
         ? snapPuckToRoute(smoothedNavPuckCoord, navPolylineForSmoothing, {
             accuracyM: accuracy ?? null,
-            tangentLookAheadM: 22,
+            tangentLookAheadM: 10,
           })
         : navRouteSnap;
-    const routeTangentDeg =
-      routeGlued &&
-      !offRoute &&
-      snapForHeading &&
-      typeof snapForHeading.tangentDeg === 'number' &&
-      Number.isFinite(snapForHeading.tangentDeg)
-        ? snapForHeading.tangentDeg
-        : null;
     const headingCandidate = nav.isNavigating
-      ? routeTangentDeg ??
-        resolveRouteHeadingCandidate({
+      ? resolveRouteHeadingCandidate({
           snap: snapForHeading,
           sdkCourseDeg,
           speedMps: sdkSpeedMps,
@@ -1632,6 +1591,8 @@ export default function MapScreen() {
     isNavigating: nav.isNavigating,
     location,
     speedMph: speed,
+    gpsAccuracyM: accuracy ?? null,
+    tripFuelContextRef,
     user,
     updateUser,
     refreshUserFromServer,
@@ -2591,6 +2552,7 @@ export default function MapScreen() {
   useEffect(() => {
     if (!mapTabFocused) {
       setGasChipAvgRegularShort(null);
+      tripFuelContextRef.current = null;
       return;
     }
     api
@@ -2610,6 +2572,14 @@ export default function MapScreen() {
         }
         const nearest = nearestGasPricePointByLocation(location.lat, location.lng, mapped);
         setGasChipAvgRegularShort(nearest ? formatUsdPerGalChip(nearest.regular) : null);
+        if (nearest?.state || nearest?.name) {
+          tripFuelContextRef.current = {
+            stateLabel: nearest.state || nearest.name,
+            priceUsdPerGal: parseUsdPerGallonNumber(nearest.regular),
+          };
+        } else {
+          tripFuelContextRef.current = null;
+        }
       })
       .catch((e) => {
         logMapDataIssue('GET /api/map/gas-prices', e);
@@ -2786,9 +2756,9 @@ export default function MapScreen() {
   // Fix 14: Camera tick + odometry. `navDisplayCoord` is SDK-matched when `navLogicSdkEnabled` (single engine); else JS snap.
   useEffect(() => {
     if (!Number.isFinite(navDisplayCoord.lat) || !Number.isFinite(navDisplayCoord.lng)) return;
-    const moveThresholdM = nav.isNavigating ? 0.28 : 1.5;
+    const moveThresholdM = nav.isNavigating ? 0.52 : 1.5;
     const moved = haversineMeters(lastCameraUpdate.current.lat, lastCameraUpdate.current.lng, navDisplayCoord.lat, navDisplayCoord.lng) > moveThresholdM;
-    const turned = Math.abs(navPuckHeading - lastCameraUpdate.current.heading) > 1;
+    const turned = Math.abs(navPuckHeading - lastCameraUpdate.current.heading) > 2.75;
     if (moved || turned) {
       lastCameraUpdate.current = { lat: navDisplayCoord.lat, lng: navDisplayCoord.lng, heading: navPuckHeading };
       if (moved) nav.updatePosition(navDisplayCoord.lat, navDisplayCoord.lng);
@@ -4981,7 +4951,7 @@ export default function MapScreen() {
               - Explore (not navigating): show the default `LocationPuck`
                 (raw device GPS + compass, with pulsing).
               - Navigating: hide `LocationPuck` entirely and show
-                `NavSdkPuck` fed from `navDisplayCoord` / `navPuckHeading` (route tangent–aligned).
+                `NavSdkPuck` fed from `navDisplayCoord` / `navPuckHeading` (course-first, tangent only on fork).
                 This is the on-polyline snapped coord with the same smoothed
                 bearing that `CustomLocationProvider` feeds to the camera, so
                 puck + camera + route split all sit on a single point from
@@ -5015,6 +4985,7 @@ export default function MapScreen() {
                 nav.navigationProgress?.displayCoord?.speedMps ??
                 0
               }
+              mirrorNativePosition
             />
           ) : null}
         </MapboxGL.MapView>
@@ -5054,30 +5025,6 @@ export default function MapScreen() {
         isLight={isLight}
         isDay={mapWeather.isDay}
       />
-
-      {!nav.isNavigating && !nav.showRoutePreview && isMapAvailable() ? (
-        <Pressable
-          onPress={promptOfflineMapDownload}
-          style={{
-            position: 'absolute',
-            left: 12,
-            top: insets.top + 108,
-            zIndex: 24,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 6,
-            paddingHorizontal: 12,
-            paddingVertical: 8,
-            borderRadius: 999,
-            backgroundColor: isLight ? 'rgba(255,255,255,0.92)' : 'rgba(15,23,42,0.88)',
-            borderWidth: StyleSheet.hairlineWidth,
-            borderColor: colors.border,
-          }}
-        >
-          <Ionicons name="cloud-download-outline" size={16} color={colors.primary} />
-          <Text style={{ fontSize: 12, fontWeight: '800', color: colors.text }}>Offline</Text>
-        </Pressable>
-      ) : null}
 
       {/* ═══ PLACE CARD (simple card for Mapbox results / map taps) ═══════ */}
       {selectedPlace && !selectedPlaceId && !nav.isNavigating && !nav.showRoutePreview && (
@@ -5897,10 +5844,21 @@ export default function MapScreen() {
                 { l: 'Miles logged', v: `${(activeTripSummary.distance ?? 0).toFixed(2)} mi`, c: colors.text, i: 'navigate-outline' as const },
                 { l: 'Drive time', v: formatDuration(activeTripSummary.duration), c: colors.text, i: 'time-outline' as const },
                 { l: 'Avg speed', v: `${Math.round(activeTripSummary.avg_speed_mph ?? 0)} mph`, c: colors.primary, i: 'speedometer-outline' as const },
+                { l: 'Safety score', v: `${Math.round(activeTripSummary.safety_score ?? 0)}/100`, c: colors.success, i: 'shield-checkmark-outline' as const },
                 ...(activeTripSummary.max_speed_mph != null && activeTripSummary.max_speed_mph > 0
                   ? [{ l: 'Top speed', v: `${Math.round(activeTripSummary.max_speed_mph)} mph`, c: colors.danger, i: 'flash-off-outline' as const }]
                   : []),
                 { l: 'Fuel est.', v: `${(activeTripSummary.fuel_used_gallons ?? 0).toFixed(2)} gal`, c: colors.warning, i: 'flash-outline' as const },
+                {
+                  l: 'Fuel cost',
+                  v:
+                    typeof activeTripSummary.fuel_cost_estimate === 'number' &&
+                    Number.isFinite(activeTripSummary.fuel_cost_estimate)
+                      ? formatUsd(activeTripSummary.fuel_cost_estimate)
+                      : '—',
+                  c: colors.text,
+                  i: 'card-outline' as const,
+                },
                 { l: 'Mileage value', v: formatUsd(activeTripSummary.mileage_value_estimate ?? 0), c: colors.success, i: 'receipt-outline' as const },
                 { l: 'Rewards', v: `+${activeTripSummary.gems_earned} gems`, c: colors.warning, i: 'diamond-outline' as const },
                 ...(activeTripSummary.xp_earned != null && activeTripSummary.xp_earned > 0
@@ -6146,8 +6104,8 @@ export default function MapScreen() {
 
       {!nav.isNavigating && !nav.showRoutePreview && !activeTripSummary && !selectedPlace && !selectedPlaceId && (
         <TouchableOpacity style={[s.reportFab, {
-          bottom: 40 + insets.bottom,
-          right: 20,
+          bottom: tabBarHeight + 18,
+          right: 14,
           backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(30,41,59,0.94)',
           borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
         }]}
@@ -6160,7 +6118,7 @@ export default function MapScreen() {
       {!nav.showRoutePreview && !activeTripSummary && !nav.isNavigating && !selectedPlace && !selectedPlaceId && (
         <TouchableOpacity
           style={[s.communityBtn, {
-            bottom: 108 + insets.bottom,
+            bottom: tabBarHeight + 88,
             left: 16,
             backgroundColor: isLight ? 'rgba(255,255,255,0.92)' : 'rgba(30,30,46,0.92)',
             borderColor: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)',
@@ -6176,50 +6134,6 @@ export default function MapScreen() {
           <Ionicons name="navigate" size={14} color="#fff" style={{ marginRight: 6 }} />
           <Text style={s.recenterT}>Recenter</Text>
         </TouchableOpacity>
-      )}
-
-      {!nav.showRoutePreview && !activeTripSummary && !nav.isNavigating && (
-        <SpotlightTarget
-          id="map.orionFab"
-          style={[s.orionFab, { top: insets.top + 236, right: 20 }]}
-        >
-          <OrionQuickMic
-            visible={!showOrion}
-            interactionMode={nav.isNavigating ? 'navigation' : 'explore'}
-            isPremium={Boolean(user?.isPremium)}
-            context={orionContext}
-            onOpenChat={() => setShowOrion(true)}
-            onSuggestions={(items) => setOrionPendingSuggestions(items)}
-            onReply={(text) => setOrionQuickReply(text)}
-            onAction={(action: {
-              type: string;
-              name?: string;
-              lat?: number;
-              lng?: number;
-              address?: string;
-            }) => {
-              if (action.type === 'navigate' && action.lat != null && action.lng != null) {
-                const dest = {
-                  name: action.name ?? 'Destination',
-                  address: typeof action.address === 'string' ? action.address : '',
-                  lat: action.lat,
-                  lng: action.lng,
-                };
-                handleStartDirections(dest);
-              } else if (action.type === 'add_stop' && action.lat && action.lng) {
-                nav.addWaypoint({ lat: action.lat, lng: action.lng, name: action.name ?? 'Stop' });
-              } else if (action.type === 'mode' && action.name) {
-                const m = action.name.toLowerCase();
-                if (m === 'calm' || m === 'adaptive' || m === 'sport') setDrivingMode(m as DrivingMode);
-              } else if (action.type === 'mute_voice') {
-                setNavVoiceMuted(true);
-                stopSpeaking();
-              } else if (action.type === 'unmute_voice') {
-                setNavVoiceMuted(false);
-              }
-            }}
-          />
-        </SpotlightTarget>
       )}
 
       {nav.isNavigating && !!orionQuickReply && (
@@ -6242,7 +6156,7 @@ export default function MapScreen() {
 
       {!nav.isNavigating && !nav.showRoutePreview && !selectedPlace && !selectedPlaceId && recommendedNearbyOffers.length > 0 && (
         <TouchableOpacity
-          style={[s.offerPill, { bottom: 50 + insets.bottom, backgroundColor: isLight ? 'rgba(255,255,255,0.92)' : 'rgba(30,30,46,0.92)', borderColor: colors.border }]}
+          style={[s.offerPill, { bottom: tabBarHeight + 44, backgroundColor: isLight ? 'rgba(255,255,255,0.92)' : 'rgba(30,30,46,0.92)', borderColor: colors.border }]}
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             if (recommendedNearbyOffers.length === 1) {
@@ -6265,7 +6179,7 @@ export default function MapScreen() {
       )}
 
       {!nav.isNavigating && !nav.showRoutePreview && !selectedPlace && !selectedPlaceId && (
-        <View style={[s.modeRow, { bottom: insets.bottom + 16 }]}>
+        <View style={[s.modeRow, { bottom: tabBarHeight + 10 }]}>
           {(Object.entries(DRIVING_MODES) as [DrivingMode, typeof modeConfig][]).map(([mode, cfg]) => {
             const sel = drivingMode === mode;
             const modeIcon = cfg.icon ?? 'pulse-outline';
@@ -6314,7 +6228,7 @@ export default function MapScreen() {
             style={{
               position: 'absolute',
               left: 14,
-              bottom: (nav.isNavigating ? MAP_NAV_BOTTOM_INSET : 40) + insets.bottom,
+              bottom: (nav.isNavigating ? MAP_NAV_BOTTOM_INSET : tabBarHeight + 14),
               alignItems: 'center',
             }}
           >
@@ -6352,12 +6266,12 @@ export default function MapScreen() {
 
       {!nav.isNavigating && !nav.showRoutePreview && (
         <>
-          <TouchableOpacity style={[s.layerBtn, { top: insets.top + 116, backgroundColor: colors.surface, borderColor: colors.border }]}
+          <TouchableOpacity style={[s.mapToolFab, { top: insets.top + 108, backgroundColor: colors.surface, borderColor: colors.border }]}
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowStylePicker(true); }}>
             <Ionicons name="layers-outline" size={20} color={colors.text} />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[s.layerBtn, { top: insets.top + 170, backgroundColor: followMode === 'heading' ? '#3B82F6' : followMode === 'follow' ? '#10B981' : colors.surface, borderColor: followMode !== 'free' ? 'transparent' : colors.border }]}
+            style={[s.mapToolFab, { top: insets.top + 108 + 54, backgroundColor: followMode === 'heading' ? '#3B82F6' : followMode === 'follow' ? '#10B981' : colors.surface, borderColor: followMode !== 'free' ? 'transparent' : colors.border }]}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               setFollowMode((prev) => {
@@ -6370,6 +6284,50 @@ export default function MapScreen() {
             }}>
             <Ionicons name={followMode === 'heading' ? 'navigate' : followMode === 'follow' ? 'locate' : 'compass-outline'} size={20} color={followMode !== 'free' ? '#fff' : colors.text} />
           </TouchableOpacity>
+          {!activeTripSummary && !selectedPlace && !selectedPlaceId && (
+            <SpotlightTarget
+              id="map.orionFab"
+              style={[s.mapToolFab, { top: insets.top + 108 + 108, backgroundColor: 'transparent', borderWidth: 0, shadowOpacity: 0, elevation: 0 }]}
+            >
+              <OrionQuickMic
+                visible={!showOrion}
+                compactHudFab
+                interactionMode="explore"
+                isPremium={Boolean(user?.isPremium)}
+                context={orionContext}
+                onOpenChat={() => setShowOrion(true)}
+                onSuggestions={(items) => setOrionPendingSuggestions(items)}
+                onReply={(text) => setOrionQuickReply(text)}
+                onAction={(action: {
+                  type: string;
+                  name?: string;
+                  lat?: number;
+                  lng?: number;
+                  address?: string;
+                }) => {
+                  if (action.type === 'navigate' && action.lat != null && action.lng != null) {
+                    const dest = {
+                      name: action.name ?? 'Destination',
+                      address: typeof action.address === 'string' ? action.address : '',
+                      lat: action.lat,
+                      lng: action.lng,
+                    };
+                    handleStartDirections(dest);
+                  } else if (action.type === 'add_stop' && action.lat && action.lng) {
+                    nav.addWaypoint({ lat: action.lat, lng: action.lng, name: action.name ?? 'Stop' });
+                  } else if (action.type === 'mode' && action.name) {
+                    const m = action.name.toLowerCase();
+                    if (m === 'calm' || m === 'adaptive' || m === 'sport') setDrivingMode(m as DrivingMode);
+                  } else if (action.type === 'mute_voice') {
+                    setNavVoiceMuted(true);
+                    stopSpeaking();
+                  } else if (action.type === 'unmute_voice') {
+                    setNavVoiceMuted(false);
+                  }
+                }}
+              />
+            </SpotlightTarget>
+          )}
         </>
       )}
 
@@ -6383,7 +6341,7 @@ export default function MapScreen() {
             style={[
               s.mapLayerHint,
               {
-                bottom: 96 + insets.bottom,
+                bottom: tabBarHeight + 72,
                 backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(30,30,46,0.94)',
                 borderColor: colors.border,
               },
@@ -6549,6 +6507,7 @@ export default function MapScreen() {
         visible={showMenu}
         onClose={() => setShowMenu(false)}
         isLight={isLight}
+        onOfflineMaps={promptOfflineMapDownload}
         onNavigate={(screen) => {
           /* Menu already closed by HamburgerMenu before this runs (deferred). */
           if (screen === 'Map') {
@@ -6975,7 +6934,6 @@ const s = StyleSheet.create({
   communityT: { fontSize: 12, fontWeight: '700' },
   recenter: { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.8)', paddingHorizontal: 22, paddingVertical: 10, borderRadius: 22, zIndex: 12 },
   recenterT: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  orionFab: { position: 'absolute', right: 16, zIndex: 12 },
   orionReplyStrip: {
     position: 'absolute',
     left: 16,
@@ -7235,7 +7193,19 @@ const s = StyleSheet.create({
   speedLimitPlateTop: { fontSize: 5.5, fontWeight: '900', letterSpacing: 0.2, lineHeight: 7 },
   speedLimitPlateMid: { fontSize: 6.5, fontWeight: '900', letterSpacing: 0.2, lineHeight: 8 },
   speedLimitPlateNum: { fontSize: 16, fontWeight: '900', lineHeight: 18, marginTop: 1 },
-  layerBtn: { position: 'absolute', right: 16, width: 46, height: 46, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1, ...shadow(8, 0.15), zIndex: 12 },
+  /** Right-hand map tool stack (layers / heading / Orion) — Baidu-style round discs. */
+  mapToolFab: {
+    position: 'absolute',
+    right: 14,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    zIndex: 12,
+    ...shadow(8, 0.14),
+  },
   locBanner: { position: 'absolute', alignSelf: 'center', backgroundColor: 'rgba(59,130,246,0.92)', paddingHorizontal: 18, paddingVertical: 9, borderRadius: 22 },
   mapLayerHint: {
     position: 'absolute',

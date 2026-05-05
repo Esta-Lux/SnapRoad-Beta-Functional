@@ -164,3 +164,10 @@ export function formatUsdPerGalChip(raw: string | null | undefined): string | nu
   const n = parseFloat(String(raw).replace(/[^0-9.]/g, ''));
   return Number.isFinite(n) ? `$${n.toFixed(2)}` : null;
 }
+
+/** Numeric regular price per gallon for trip fuel math; ignores impossible values. */
+export function parseUsdPerGallonNumber(raw: string | null | undefined): number | undefined {
+  if (raw == null || String(raw).trim() === '') return undefined;
+  const n = parseFloat(String(raw).replace(/[^0-9.]/g, ''));
+  return Number.isFinite(n) && n > 0 && n < 50 ? n : undefined;
+}
