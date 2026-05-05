@@ -21,3 +21,9 @@ test('navigation route stays vivid on day; high-luminance blue on night basemap'
     assert.ok(night.routeGlowOpacity >= day.routeGlowOpacity);
   }
 });
+
+test('navigation modes render live congestion colors over the blue route', () => {
+  for (const mode of ['calm', 'adaptive', 'sport'] as const) {
+    assert.equal(DRIVING_MODES[mode].showCongestion, true);
+  }
+});
