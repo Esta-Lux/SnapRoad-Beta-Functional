@@ -378,11 +378,7 @@ export function SpotlightTarget({ id, children, style, ...rest }: SpotlightTarge
   }, [ctx?.visible, ctx, id, measure]);
 
   if (!ctx || !ctx.visible) {
-    return (
-      <View style={style} {...rest}>
-        {children}
-      </View>
-    );
+    return <>{children}</>;
   }
 
   return (
