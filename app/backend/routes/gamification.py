@@ -941,7 +941,7 @@ def get_weekly_recap(
             trip_q = (
                 sb.table("trips")
                 .select(
-                    "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, ended_at, created_at, hard_braking_events, speeding_events, max_speed_mph, avg_speed_mph"
+                    "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, ended_at, created_at, hard_braking_events, speeding_events, max_speed_mph, avg_speed_mph, fuel_used_gallons, fuel_cost_estimate, mileage_value_estimate"
                 )
                 .or_(f"user_id.eq.{user_id},profile_id.eq.{user_id}")
                 .gte("ended_at", start)
@@ -961,7 +961,7 @@ def get_weekly_recap(
             trip_res = (
                 sb.table("trips")
                 .select(
-                    "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, ended_at, created_at, hard_braking_events, speeding_events, max_speed_mph, avg_speed_mph"
+                    "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, ended_at, created_at, hard_braking_events, speeding_events, max_speed_mph, avg_speed_mph, fuel_used_gallons, fuel_cost_estimate, mileage_value_estimate"
                 )
                 .or_(f"user_id.eq.{user_id},profile_id.eq.{user_id}")
                 .gte("ended_at", cutoff)
@@ -983,6 +983,9 @@ def get_weekly_recap(
         longest = max((float(t.get("distance_miles", 0)) for t in trips), default=0)
         hard_sum = sum(int(t.get("hard_braking_events") or 0) for t in trips)
         speed_sum = sum(int(t.get("speeding_events") or 0) for t in trips)
+        fuel_gallons_sum = sum(float(t.get("fuel_used_gallons") or 0) for t in trips)
+        fuel_cost_sum = sum(float(t.get("fuel_cost_estimate") or 0) for t in trips)
+        mileage_value_sum = sum(float(t.get("mileage_value_estimate") or 0) for t in trips)
         max_speeds = [float(t.get("max_speed_mph") or 0) for t in trips if t.get("max_speed_mph")]
         avg_speeds = [float(t.get("avg_speed_mph") or 0) for t in trips if t.get("avg_speed_mph")]
         top_speed = max(max_speeds) if max_speeds else 0.0
@@ -1003,6 +1006,9 @@ def get_weekly_recap(
                 "safety_avg": safety_avg,
                 "hard_braking_events_total": hard_sum,
                 "speeding_events_total": speed_sum,
+                "fuel_used_gallons": round(fuel_gallons_sum, 2),
+                "fuel_cost_estimate": round(fuel_cost_sum, 2),
+                "mileage_value_estimate": round(mileage_value_sum, 2),
                 "gems_earned": gems_earned,
             }
             orion_commentary = _llm_orion_tracking_commentary(payload)
@@ -1023,6 +1029,9 @@ def get_weekly_recap(
             "behavior": {"hard_braking_events_total": hard_sum, "speeding_events_total": speed_sum},
             "top_speed_mph": round(top_speed, 1),
             "avg_speed_mph": round(avg_speed_overall, 1),
+            "fuel_used_gallons": round(fuel_gallons_sum, 2),
+            "fuel_cost_estimate": round(fuel_cost_sum, 2),
+            "mileage_value_estimate": round(mileage_value_sum, 2),
         }
         return {"success": True, "data": stats}
     except Exception:
@@ -1046,6 +1055,9 @@ def get_weekly_recap(
                 "behavior": {"hard_braking_events_total": 0, "speeding_events_total": 0},
                 "top_speed_mph": 0.0,
                 "avg_speed_mph": 0.0,
+                "fuel_used_gallons": 0.0,
+                "fuel_cost_estimate": 0.0,
+                "mileage_value_estimate": 0.0,
             },
         }
 

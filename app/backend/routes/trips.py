@@ -1434,10 +1434,35 @@ def _haversine_miles(lat1: float, lng1: float, lat2: float, lng2: float) -> floa
 
 
 def _mock_nearby_stations(lat: float, lng: float) -> list[dict]:
+    base = float(FUEL_PRICES.get("regular", 3.59) or 3.59)
     return [
-        {"name": "Kroger Gas", "price": 3.09, "lat": lat + 0.01, "lng": lng + 0.01, "brand": "Kroger"},
-        {"name": "Sunoco", "price": 3.19, "lat": lat - 0.01, "lng": lng + 0.02, "brand": "Sunoco"},
-        {"name": "Marathon", "price": 3.14, "lat": lat + 0.02, "lng": lng - 0.01, "brand": "Marathon"},
+        {
+            "name": "Kroger Gas",
+            "price": round(base - 0.05, 3),
+            "lat": lat + 0.01,
+            "lng": lng + 0.01,
+            "brand": "Kroger",
+            "source": "estimated_local_fallback",
+            "is_estimated": True,
+        },
+        {
+            "name": "Sunoco",
+            "price": round(base + 0.05, 3),
+            "lat": lat - 0.01,
+            "lng": lng + 0.02,
+            "brand": "Sunoco",
+            "source": "estimated_local_fallback",
+            "is_estimated": True,
+        },
+        {
+            "name": "Marathon",
+            "price": round(base, 3),
+            "lat": lat + 0.02,
+            "lng": lng - 0.01,
+            "brand": "Marathon",
+            "source": "estimated_local_fallback",
+            "is_estimated": True,
+        },
     ]
 
 
@@ -1478,7 +1503,15 @@ def _fetch_gasbuddy_stations(lat: float, lng: float) -> list[dict]:
             continue
         name = str(s.get("name") or "Station")
         brand = str(s.get("brand") or name)
-        out.append({"name": name, "price": round(price, 3), "lat": slat, "lng": slng, "brand": brand})
+        out.append({
+            "name": name,
+            "price": round(price, 3),
+            "lat": slat,
+            "lng": slng,
+            "brand": brand,
+            "source": "gasbuddy",
+            "is_estimated": False,
+        })
     return out
 
 
@@ -1496,6 +1529,8 @@ def _stations_to_nearby(stations: list[dict], lat: float, lng: float) -> list[di
             "distance_miles": round(d, 2),
             "lat": s["lat"],
             "lng": s["lng"],
+            "source": s.get("source"),
+            "is_estimated": bool(s.get("is_estimated")),
         })
     return nearby
 
@@ -1505,20 +1540,22 @@ def get_fuel_prices(
     lat: Annotated[float, Query(description="Latitude")] = 39.9612,
     lng: Annotated[float, Query(description="Longitude")] = -82.9988,
 ):
-    """Public fuel snapshot: tries GasBuddy JSON when reachable; otherwise static demo stations.
-
-    Not used by the mobile map “nearby gas” flow (that uses Places nearby only). Demo prices
-    are placeholders—do not present them as live market data in product UI.
-    """
+    """Public local fuel snapshot: tries GasBuddy JSON when reachable; otherwise estimated nearby stations."""
     stations = _fetch_gasbuddy_stations(lat, lng)
+    source = "gasbuddy"
+    is_estimated = False
     if not stations:
         stations = _mock_nearby_stations(lat, lng)
+        source = "estimated_local_fallback"
+        is_estimated = True
     nearby_stations = _stations_to_nearby(stations, lat, lng)
     return {
         "success": True,
         "data": {
             "prices": FUEL_PRICES,
             "location": {"lat": lat, "lng": lng},
+            "source": source,
+            "is_estimated": is_estimated,
             "stations": stations,
             "nearby_stations": nearby_stations,
         },

@@ -251,7 +251,7 @@ function CategoryRow({
                 style={[styles.meta, { color: colors.textTertiary, flexBasis: '100%', marginTop: 2 }]}
                 numberOfLines={2}
               >
-                $/gal not listed — verify at pump
+                Pump prices can change quickly - verify at station
               </Text>
             ) : null}
           </View>

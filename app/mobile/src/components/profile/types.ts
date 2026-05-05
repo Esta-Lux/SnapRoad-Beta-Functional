@@ -22,6 +22,9 @@ export type ProfileWeeklyRecap = {
   topSpeedMph?: number;
   /** Average speed across the recap window (mph). */
   avgSpeedMph?: number;
+  fuelUsedGallons?: number;
+  fuelCostEstimate?: number;
+  mileageValueEstimate?: number;
 };
 
 export type ProfileBadgeItem = {

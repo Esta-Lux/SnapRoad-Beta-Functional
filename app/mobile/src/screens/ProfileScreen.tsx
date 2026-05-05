@@ -137,6 +137,9 @@ export default function ProfileScreen() {
     highlights: [],
     orionCommentary: null,
     behavior: { hard_braking_events_total: 0, speeding_events_total: 0 },
+    fuelUsedGallons: 0,
+    fuelCostEstimate: 0,
+    mileageValueEstimate: 0,
   });
   const [tripHistoryRows, setTripHistoryRows] = useState<ProfileTripHistoryItem[]>([]);
   const [gemTxRows, setGemTxRows] = useState<ProfileGemTxItem[]>([]);
@@ -300,6 +303,9 @@ export default function ProfileScreen() {
           behavior: { hard_braking_events_total: 0, speeding_events_total: 0 },
           topSpeedMph: 0,
           avgSpeedMph: 0,
+          fuelUsedGallons: 0,
+          fuelCostEstimate: 0,
+          mileageValueEstimate: 0,
         });
       } else {
         const weekly = (unwrapProfileApiData(weeklyRes?.data) as Record<string, unknown>) ?? {};
@@ -321,6 +327,9 @@ export default function ProfileScreen() {
               : { hard_braking_events_total: 0, speeding_events_total: 0 },
           topSpeedMph: Number(weekly.top_speed_mph ?? 0),
           avgSpeedMph: Number(weekly.avg_speed_mph ?? 0),
+          fuelUsedGallons: Number(weekly.fuel_used_gallons ?? 0),
+          fuelCostEstimate: Number(weekly.fuel_cost_estimate ?? 0),
+          mileageValueEstimate: Number(weekly.mileage_value_estimate ?? 0),
         });
       }
       const vtRaw = pp.vehicle_type;

@@ -3,64 +3,122 @@ import type { GasPriceMapPoint } from './GasPriceMarkers';
 
 const OHIO_CENTROID = { state: 'Ohio', lat: 40.3888, lng: -82.7649 };
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function arrayFromRecord(o: Record<string, unknown>, key: string): unknown[] | null {
+  const v = o[key];
+  return Array.isArray(v) ? v : null;
+}
+
 function peelRows(envelope: unknown): unknown[] {
   if (Array.isArray(envelope)) return envelope;
-  if (!envelope || typeof envelope !== 'object') return [];
-  const o = envelope as Record<string, unknown>;
-  if (Array.isArray(o.data)) return o.data;
-  const inner = o.data;
-  if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
-    const nested = (inner as Record<string, unknown>).data;
-    if (Array.isArray(nested)) return nested;
+  const root = asRecord(envelope);
+  if (!root) return [];
+
+  const localRows =
+    arrayFromRecord(root, 'nearby_stations') ||
+    arrayFromRecord(root, 'stations') ||
+    arrayFromRecord(root, 'data');
+  if (localRows) return localRows;
+
+  const inner = asRecord(root.data);
+  if (inner) {
+    const innerRows =
+      arrayFromRecord(inner, 'nearby_stations') ||
+      arrayFromRecord(inner, 'stations') ||
+      arrayFromRecord(inner, 'data') ||
+      arrayFromRecord(inner, 'result') ||
+      arrayFromRecord(inner, 'records');
+    if (innerRows) return innerRows;
   }
-  if (Array.isArray(o.result)) return o.result;
-  if (Array.isArray(o.records)) return o.records;
-  return [];
+
+  return arrayFromRecord(root, 'result') || arrayFromRecord(root, 'records') || [];
+}
+
+function numericOrNull(value: unknown): number | null {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function priceString(value: unknown): string | null {
+  if (value == null) return null;
+  const s = String(value).trim();
+  return s ? s : null;
+}
+
+function pointId(prefix: string, label: string, lat: number, lng: number): string {
+  const safeLabel = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return `${prefix}-${safeLabel || 'station'}-${lat.toFixed(4)}-${lng.toFixed(4)}`;
 }
 
 /**
- * Normalizes `GET /api/map/gas-prices` (and similar nested envelopes) into map rows.
+ * Normalizes local `/api/fuel/prices` station rows, while keeping legacy
+ * `/api/map/gas-prices` state-average envelopes readable during rollout.
  */
 export function gasPricePointsFromApiEnvelope(apiRoot: unknown): GasPriceMapPoint[] {
   const rows = peelRows(apiRoot);
   const out: GasPriceMapPoint[] = [];
   for (const row of rows) {
-    if (!row || typeof row !== 'object') continue;
-    const r = row as Record<string, unknown>;
-    const stateRaw = String(r.state ?? r.name ?? r.stateCode ?? r.state_code ?? '').trim();
+    const r = asRecord(row);
+    if (!r) continue;
+
+    const stationName = String(r.name ?? r.station_name ?? '').trim();
+    const address = String(r.address ?? r.brand ?? '').trim();
+    const rawLat = numericOrNull(r.lat ?? r.latitude);
+    const rawLng = numericOrNull(r.lng ?? r.lon ?? r.longitude);
+    const regular = priceString(r.regular ?? r.price ?? r.gasoline ?? r.gas);
+    const mid = priceString(r.midGrade ?? r.midgrade ?? r.mid_grade);
+    const premium = priceString(r.premium);
+    const diesel = priceString(r.diesel);
+
+    if (stationName && rawLat != null && rawLng != null) {
+      out.push({
+        id: String(r.id ?? pointId('gas', stationName, rawLat, rawLng)).trim(),
+        name: stationName,
+        address: address || undefined,
+        lat: rawLat,
+        lng: rawLng,
+        currency: typeof r.currency === 'string' ? r.currency : undefined,
+        regular,
+        midGrade: mid,
+        premium,
+        diesel,
+        distance_miles: numericOrNull(r.distance_miles),
+        source: typeof r.source === 'string' ? r.source : undefined,
+        is_estimated: r.is_estimated === true || r.estimated === true,
+      });
+      continue;
+    }
+
+    const stateRaw = String(r.state ?? r.stateCode ?? r.state_code ?? '').trim();
     const state = /^(oh|ohio)$/i.test(stateRaw) ? OHIO_CENTROID.state : stateRaw;
-    const id = String(r.id ?? (state ? `gas-${state.toLowerCase().replace(/\s+/g, '-')}` : '')).trim();
     const fallbackCoord = state === OHIO_CENTROID.state ? OHIO_CENTROID : null;
-    const rawLat = Number(r.lat);
-    const rawLng = Number(r.lng);
-    const lat = Number.isFinite(rawLat) ? rawLat : fallbackCoord?.lat;
-    const lng = Number.isFinite(rawLng) ? rawLng : fallbackCoord?.lng;
-    const mid = r.midGrade ?? r.midgrade ?? r.mid_grade;
-    const regular = r.regular ?? r.gasoline ?? r.gas;
-    if (
-      !id ||
-      !state ||
-      typeof lat !== 'number' ||
-      typeof lng !== 'number' ||
-      !Number.isFinite(lat) ||
-      !Number.isFinite(lng)
-    ) continue;
+    const lat = rawLat ?? fallbackCoord?.lat;
+    const lng = rawLng ?? fallbackCoord?.lng;
+    if (!state || lat == null || lng == null) continue;
     out.push({
-      id,
+      id: String(r.id ?? `gas-${state.toLowerCase().replace(/\s+/g, '-')}`).trim(),
       state,
+      name: state,
       lat,
       lng,
       currency: typeof r.currency === 'string' ? r.currency : undefined,
-      regular: regular != null ? String(regular) : null,
-      midGrade: mid != null ? String(mid) : null,
-      premium: r.premium != null ? String(r.premium) : null,
-      diesel: r.diesel != null ? String(r.diesel) : null,
+      regular,
+      midGrade: mid,
+      premium,
+      diesel,
+      source: typeof r.source === 'string' ? r.source : 'state_average',
+      is_estimated: r.is_estimated === true || r.estimated === true,
     });
   }
   return out;
 }
 
-/** Closest statewide-average pin to the user (by centroid distance). */
+/** Closest gas price pin to the user. */
 export function nearestGasPricePointByLocation(
   userLat: number,
   userLng: number,
@@ -80,18 +138,27 @@ export function nearestGasPricePointByLocation(
   return best;
 }
 
-/** One-line summary for explore / empty states (statewide average, not pump price). */
-export function formatStateGasRegularSummary(p: GasPriceMapPoint): string {
+/** One-line summary for explore / empty states. */
+export function formatLocalGasRegularSummary(p: GasPriceMapPoint): string {
+  const label = p.name || p.state || 'Nearby station';
   const raw = p.regular;
   if (raw == null || String(raw).trim() === '') {
-    return `Statewide avg (${p.state}): price unavailable from feed.`;
+    return `${label}: regular price unavailable.`;
   }
   const n = parseFloat(String(raw).replace(/[^0-9.]/g, ''));
   const reg = Number.isFinite(n) ? `$${n.toFixed(2)}` : String(raw).trim().slice(0, 10);
-  return `Statewide avg (${p.state}): ${reg}/gal regular — not pump price; confirm at station.`;
+  const distance =
+    typeof p.distance_miles === 'number' && Number.isFinite(p.distance_miles)
+      ? ` (${p.distance_miles.toFixed(1)} mi)`
+      : '';
+  const note = p.is_estimated ? 'estimated; verify at pump' : 'verify at pump';
+  return `${label}${distance}: ${reg}/gal regular - ${note}.`;
 }
 
-/** Compact `$/gal` for the Gas category chip (statewide avg nearest the user); null when unknown. */
+/** Backward-compatible export for older callers/tests during rollout. */
+export const formatStateGasRegularSummary = formatLocalGasRegularSummary;
+
+/** Compact `$/gal` for the Gas category chip; null when unknown. */
 export function formatUsdPerGalChip(raw: string | null | undefined): string | null {
   if (raw == null || String(raw).trim() === '') return null;
   const n = parseFloat(String(raw).replace(/[^0-9.]/g, ''));

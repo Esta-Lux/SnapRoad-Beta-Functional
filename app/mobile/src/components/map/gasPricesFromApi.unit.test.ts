@@ -1,11 +1,39 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  formatLocalGasRegularSummary,
   formatStateGasRegularSummary,
   formatUsdPerGalChip,
   gasPricePointsFromApiEnvelope,
   nearestGasPricePointByLocation,
 } from './gasPricesFromApi';
+
+test('gasPricePointsFromApiEnvelope: local fuel price stations', () => {
+  const rows = gasPricePointsFromApiEnvelope({
+    success: true,
+    data: {
+      nearby_stations: [
+        {
+          name: 'Kroger Gas',
+          address: 'Kroger',
+          regular: 3.129,
+          lat: 40.01,
+          lng: -83.01,
+          distance_miles: 1.2,
+          source: 'gasbuddy',
+        },
+      ],
+    },
+  });
+  assert.equal(rows.length, 1);
+  const first = rows[0];
+  assert.ok(first);
+  assert.equal(first.name, 'Kroger Gas');
+  assert.equal(first.address, 'Kroger');
+  assert.equal(first.regular, '3.129');
+  assert.equal(first.distance_miles, 1.2);
+  assert.equal(first.source, 'gasbuddy');
+});
 
 test('gasPricePointsFromApiEnvelope: flat FastAPI body', () => {
   const rows = gasPricePointsFromApiEnvelope({
@@ -33,7 +61,7 @@ test('gasPricePointsFromApiEnvelope: nested data envelope', () => {
 
 test('gasPricePointsFromApiEnvelope: top-level array', () => {
   const rows = gasPricePointsFromApiEnvelope([
-    { name: 'Alabama', lat: 32.7, lng: -86.8, regular: '$2.81' },
+    { state: 'Alabama', lat: 32.7, lng: -86.8, regular: '$2.81' },
   ]);
   assert.equal(rows.length, 1);
   const first = rows[0];
@@ -72,6 +100,29 @@ test('nearestGasPricePointByLocation picks closer centroid', () => {
   ];
   const n = nearestGasPricePointByLocation(40, -83, pts);
   assert.equal(n?.state, 'Near');
+});
+
+test('nearestGasPricePointByLocation picks closer station', () => {
+  const pts = [
+    { id: 'a', name: 'Far Station', lat: 45, lng: -100, regular: '1' },
+    { id: 'b', name: 'Near Station', lat: 40, lng: -83, regular: '2' },
+  ];
+  const n = nearestGasPricePointByLocation(40, -83, pts);
+  assert.equal(n?.name, 'Near Station');
+});
+
+test('formatLocalGasRegularSummary includes station and pump verification', () => {
+  const s = formatLocalGasRegularSummary({
+    id: 'x',
+    name: 'Kroger Gas',
+    lat: 40,
+    lng: -83,
+    regular: '3.199',
+    distance_miles: 0.8,
+  });
+  assert.ok(s.includes('Kroger Gas'));
+  assert.ok(s.includes('$3.20'));
+  assert.ok(s.includes('verify at pump'));
 });
 
 test('formatStateGasRegularSummary includes price', () => {

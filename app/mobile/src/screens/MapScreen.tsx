@@ -91,7 +91,7 @@ import FriendMarkers from '../components/map/FriendMarkers';
 import CameraMarkers from '../components/map/CameraMarkers';
 import type { CameraLocation, CameraViewFeed } from '../components/map/CameraMarkers';
 import GasPriceMarkers, { type GasPriceMapPoint } from '../components/map/GasPriceMarkers';
-import { gasPricePointsFromApiEnvelope, nearestGasPricePointByLocation, formatStateGasRegularSummary, formatUsdPerGalChip } from '../components/map/gasPricesFromApi';
+import { gasPricePointsFromApiEnvelope, nearestGasPricePointByLocation, formatLocalGasRegularSummary, formatUsdPerGalChip } from '../components/map/gasPricesFromApi';
 import TrafficCameraSheet from '../components/map/TrafficCameraSheet';
 import TrafficLayer from '../components/map/TrafficLayer';
 import IncidentHeatmap from '../components/map/IncidentHeatmap';
@@ -2066,7 +2066,7 @@ export default function MapScreen() {
 
   const [cameraLocations, setCameraLocations] = useState<CameraLocation[]>([]);
   const [gasPricePoints, setGasPricePoints] = useState<GasPriceMapPoint[]>([]);
-  /** Statewide avg regular for Gas category chip (nearest state centroid to GPS). */
+  /** Nearby station regular price for Gas category chip. */
   const [gasChipAvgRegularShort, setGasChipAvgRegularShort] = useState<string | null>(null);
   const [selectedTrafficCamera, setSelectedTrafficCamera] = useState<CameraLocation | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<{
@@ -2613,11 +2613,12 @@ export default function MapScreen() {
       setGasChipAvgRegularShort(null);
       return;
     }
+    const gasUrl = `/api/fuel/prices?lat=${location.lat}&lng=${location.lng}`;
     api
-      .get<Record<string, unknown>>('/api/map/gas-prices')
+      .get<Record<string, unknown>>(gasUrl)
       .then((r) => {
         if (!r.success || r.data == null) {
-          if (!r.success) logMapDataIssue('GET /api/map/gas-prices', r.error);
+          if (!r.success) logMapDataIssue('GET /api/fuel/prices', r.error);
           setGasChipAvgRegularShort(null);
           return;
         }
@@ -2626,7 +2627,7 @@ export default function MapScreen() {
           ? (r.data as Record<string, unknown>)
           : {};
         if (mapped.length === 0 && typeof envelope.detail === 'string') {
-          logMapDataIssue('GET /api/map/gas-prices empty', envelope.detail);
+          logMapDataIssue('GET /api/fuel/prices empty', envelope.detail);
         }
         const nearest = nearestGasPricePointByLocation(location.lat, location.lng, mapped);
         setGasChipAvgRegularShort(nearest ? formatUsdPerGalChip(nearest.regular) : null);
@@ -2637,7 +2638,7 @@ export default function MapScreen() {
         }
       })
       .catch((e) => {
-        logMapDataIssue('GET /api/map/gas-prices', e);
+        logMapDataIssue('GET /api/fuel/prices', e);
         setGasChipAvgRegularShort(null);
       });
   }, [
@@ -3689,8 +3690,7 @@ export default function MapScreen() {
       nearby: { title: 'Nearby', subtitle: 'Places around your location', radius: 1200, limit: 15 },
       nearbyGas: {
         title: 'Nearby Gas',
-        subtitle:
-          'Gas stations near you (typical tier when Google provides it). Chip shows statewide regular avg — not pump price.',
+        subtitle: 'Gas stations near you. Price chips use nearby regular fuel data - verify at pump.',
         type: 'gas_station',
         radius: 15000,
         limit: 20,
@@ -3698,8 +3698,7 @@ export default function MapScreen() {
       /** Legacy alias if anything still passes `gas` — kept in sync with `nearbyGas`. */
       gas: {
         title: 'Nearby Gas',
-        subtitle:
-          'Gas stations near you (typical tier when Google provides it). Chip shows statewide regular avg — not pump price.',
+        subtitle: 'Gas stations near you. Price chips use nearby regular fuel data - verify at pump.',
         type: 'gas_station',
         radius: 15000,
         limit: 20,
@@ -3728,7 +3727,7 @@ export default function MapScreen() {
         api.get<any>(
           `/api/places/nearby?lat=${lat0}&lng=${lng0}&radius=${cfg.radius}${typeQs}&limit=${cfg.limit}`,
         ),
-        api.get<Record<string, unknown>>('/api/map/gas-prices'),
+        api.get<Record<string, unknown>>(`/api/fuel/prices?lat=${lat0}&lng=${lng0}`),
       ]).then(([placesResult, gasResult]) => {
         const r =
           placesResult.status === 'fulfilled'
@@ -3743,16 +3742,16 @@ export default function MapScreen() {
           const pts = gasPricePointsFromApiEnvelope(rGas.data);
           const nearest = nearestGasPricePointByLocation(lat0, lng0, pts);
           if (nearest) {
-            subtitleExpl = `${cfg.subtitle ? `${cfg.subtitle}\n` : ''}${formatStateGasRegularSummary(nearest)}`;
+            subtitleExpl = `${cfg.subtitle ? `${cfg.subtitle}\n` : ''}${formatLocalGasRegularSummary(nearest)}`;
           }
           const gasEnvelope = rGas.data && typeof rGas.data === 'object' && !Array.isArray(rGas.data)
             ? (rGas.data as Record<string, unknown>)
             : {};
           if (pts.length === 0 && typeof gasEnvelope.detail === 'string') {
-            logMapDataIssue('GET /api/map/gas-prices empty', gasEnvelope.detail);
+            logMapDataIssue('GET /api/fuel/prices empty', gasEnvelope.detail);
           }
         } else if (!rGas.success) {
-          logMapDataIssue('GET /api/map/gas-prices', rGas.error);
+          logMapDataIssue('GET /api/fuel/prices', rGas.error);
         }
         if (!r.success) {
           setCategoryExplore((prev) =>
@@ -6495,7 +6494,7 @@ export default function MapScreen() {
               { k: 'traffic', l: 'Traffic', ic: 'car-outline' as const, v: showTraffic, t: setShowTraffic },
               {
                 k: 'gasPrices',
-                l: 'Gas prices (state avg.)',
+                l: 'Gas prices (nearby)',
                 ic: 'flame-outline' as const,
                 v: showGasPrices,
                 t: setShowGasPrices,

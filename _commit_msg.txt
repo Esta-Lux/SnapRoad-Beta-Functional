@@ -1,0 +1,9 @@
+fix(gas): CollectAPI auth order, runtime key read, and operator diagnostics
+
+- Try official CollectAPI header first: Authorization: <raw token>, then
+  apikey/Bearer fallbacks (fewer 401s vs starting with apikey).
+- Add config.get_collectapi_key() and use it when fetching gas rows so the key
+  is resolved per fetch (clearer for hosting + tests).
+- GET /api/map/gas-prices includes collectapi_configured (bool, no secrets).
+- Update .env.example with Railway service + redeploy note.
+- Adjust gas unit tests for new header order and get_collectapi_key patches.

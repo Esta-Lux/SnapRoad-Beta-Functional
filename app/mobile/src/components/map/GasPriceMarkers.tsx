@@ -3,12 +3,14 @@ import { View, Text, Pressable, StyleSheet, Platform, Alert } from 'react-native
 import MapboxGL, { isMapAvailable } from '../../utils/mapbox';
 import { sortAndCapMarkers, type MarkerCoordinate } from './markerDensity';
 
-/** Hide statewide average badges when zoomed out (see `markerDensity` gasPrice caps). */
+/** Hide local station price badges when zoomed out (see `markerDensity` gasPrice caps). */
 export const GAS_PRICE_LAYER_MIN_ZOOM = 12;
 
 export type GasPriceMapPoint = {
   id: string;
-  state: string;
+  state?: string;
+  name?: string;
+  address?: string;
   lat: number;
   lng: number;
   currency?: string;
@@ -16,6 +18,9 @@ export type GasPriceMapPoint = {
   midGrade?: string | null;
   premium?: string | null;
   diesel?: string | null;
+  distance_miles?: number | null;
+  source?: string | null;
+  is_estimated?: boolean;
 };
 
 type Props = {
@@ -25,25 +30,32 @@ type Props = {
 };
 
 function shortPrice(raw: string | null | undefined): string {
-  if (!raw) return '—';
+  if (!raw) return '--';
   const n = parseFloat(String(raw).replace(/[^0-9.]/g, ''));
   if (Number.isFinite(n)) return `$${n.toFixed(2)}`;
   const t = String(raw).trim();
-  return t.length > 6 ? `${t.slice(0, 5)}…` : t;
+  return t.length > 6 ? `${t.slice(0, 5)}...` : t;
 }
 
 /**
- * State average regular gas price — white circular badge, same footprint as {@link CameraMarkers}.
+ * Local regular gas price badge, same footprint as {@link CameraMarkers}.
  */
 export default React.memo(function GasPriceMarkers({ points, zoomLevel, referenceCoordinate }: Props) {
   const onTap = useCallback((p: GasPriceMapPoint) => {
+    const title = p.name || p.state || 'Nearby station';
+    const distance =
+      typeof p.distance_miles === 'number' && Number.isFinite(p.distance_miles)
+        ? `\nDistance: ${p.distance_miles.toFixed(1)} mi`
+        : '';
+    const address = p.address ? `\n${p.address}` : '';
+    const priceNote = p.is_estimated ? '\nEstimated local price - verify at pump.' : '\nVerify at pump before purchase.';
     const lines = [
-      `Regular: ${p.regular ?? '—'}`,
-      `Mid-grade: ${p.midGrade ?? '—'}`,
-      `Premium: ${p.premium ?? '—'}`,
-      `Diesel: ${p.diesel ?? '—'}`,
-    ].join('\n');
-    Alert.alert(`${p.state} (avg.)`, lines, [{ text: 'OK' }]);
+      `Regular: ${p.regular ?? '--'}`,
+      `Mid-grade: ${p.midGrade ?? '--'}`,
+      `Premium: ${p.premium ?? '--'}`,
+      `Diesel: ${p.diesel ?? '--'}`,
+    ].join('\n') + distance + address + priceNote;
+    Alert.alert(title, lines, [{ text: 'OK' }]);
   }, []);
 
   const list = sortAndCapMarkers(points, referenceCoordinate, zoomLevel, 'gasPrice');
@@ -71,7 +83,7 @@ export default React.memo(function GasPriceMarkers({ points, zoomLevel, referenc
             style={({ pressed }) => [styles.hit, pressed && styles.hitPressed]}
             hitSlop={6}
             accessibilityRole="button"
-            accessibilityLabel={`${p.state} average gas ${shortPrice(p.regular)} per gallon regular`}
+            accessibilityLabel={`${p.name || p.state || 'Nearby station'} gas ${shortPrice(p.regular)} per gallon regular, verify at pump`}
           >
             <View style={styles.puckOuter}>
               <View style={styles.puckInner}>
@@ -122,7 +134,7 @@ const styles = StyleSheet.create({
   priceText: {
     fontSize: 10,
     fontWeight: '900',
-    letterSpacing: -0.35,
+    letterSpacing: 0,
     color: '#0f172a',
     fontVariant: Platform.OS === 'ios' ? ['tabular-nums'] : undefined,
   },

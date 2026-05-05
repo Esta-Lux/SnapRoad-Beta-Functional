@@ -64,7 +64,7 @@ type Props = {
   haversineMeters: (lat1: number, lng1: number, lat2: number, lng2: number) => number;
   placePhotoThumbUri: (photoRef?: string, maxWidth?: number) => string | undefined;
   searchResultPriceHint: (item: GeocodeResult) => string | null;
-  /** Statewide average regular (nearest centroid to GPS) — CollectAPI overlay, not pump price. */
+  /** Nearby station regular price; users should verify at pump. */
   gasChipAvgRegular?: string | null;
 };
 
@@ -83,7 +83,7 @@ function renderExploreChip(chip: Chip, props: Props, s: Record<string, any>): Re
   const gasShort = chip.key === 'nearbyGas' ? props.gasChipAvgRegular : null;
   const a11y =
     chip.key === 'nearbyGas' && gasShort
-      ? `${chip.label}, statewide average regular about ${gasShort} per gallon, not pump price; opens nearby stations`
+      ? `${chip.label}, nearby regular about ${gasShort} per gallon; verify at pump; opens nearby stations`
       : chip.label;
   return (
     <TouchableOpacity
