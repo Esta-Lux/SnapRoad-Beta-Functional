@@ -679,7 +679,6 @@ export default function MapScreen() {
   const sdkStepGap = useSdkStepGapDisplay(nav.isNavigating, nav.navigationProgress);
 
   const navLogicRef = useRef<MapboxNavigationViewRef | null>(null);
-  const lastSdkVoiceSpeakRef = useRef<{ text: string; at: number }>({ text: '', at: 0 });
   const [navLogicCoords, setNavLogicCoords] = useState<Array<{ latitude: number; longitude: number }>>([]);
   const handleNavLogicFailure = useCallback((message?: string) => {
     console.warn('[NavLogicSDK] disabling hidden navigation engine for this trip', message ?? 'unknown error');
@@ -769,23 +768,15 @@ export default function MapScreen() {
     [nav.applySdkRouteGeometry],
   );
 
-  const handleSdkVoiceInstruction = useCallback(
-    (text?: string) => {
-      const t = (text ?? '').trim();
-      if (!t) return;
-      ingestSdkVoiceSubtitle(t);
-      if (navVoiceMuted) return;
-      const now = Date.now();
-      const last = lastSdkVoiceSpeakRef.current;
-      if (last.text === t && now - last.at < 6500) return;
-      lastSdkVoiceSpeakRef.current = { text: t, at: now };
-      speak(t, 'high', drivingMode, {
-        rateSource: 'navigation_fixed',
-        forceAllowDuringSdk: true,
-      });
-    },
-    [drivingMode, navVoiceMuted],
-  );
+  /**
+   * SDK `RouteVoiceController` plays turn-by-turn (Mapbox prosody on components like street names).
+   * We only ingest for HUD / repeat-last; do not mirror with Expo `Speech.speak` — that doubled voices.
+   */
+  const handleSdkVoiceInstruction = useCallback((text?: string) => {
+    const t = (text ?? '').trim();
+    if (!t) return;
+    ingestSdkVoiceSubtitle(t);
+  }, []);
 
   const handleSdkFinalDestinationArrival = useCallback(() => {
     const dest = nav.navigationData?.destination;
@@ -4611,7 +4602,7 @@ export default function MapScreen() {
           pointerEvents="none"
           navigationLogicOnly
           coordinates={navLogicCoords}
-          mute
+          mute={navVoiceMuted}
           locale="en-US"
           routeProfile={routeProfileForPlatform()}
           drivingMode={drivingMode}
