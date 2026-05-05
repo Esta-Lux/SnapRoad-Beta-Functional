@@ -5341,6 +5341,7 @@ export default function MapScreen() {
         searchResultPriceHint={searchResultPriceHint}
         gasChipAvgRegular={gasChipAvgRegularShort}
         gasChipPriceSource={gasChipPriceSource}
+        bottomChromeReserve={tabBarHeight + 8}
         floatingMapTools={
           !nav.showRoutePreview ? (
             <View style={s.mapToolStack} pointerEvents="box-none">
@@ -6892,7 +6893,7 @@ const s = StyleSheet.create({
   quickPlace: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, marginRight: 8, minWidth: 110, borderWidth: 1, ...shadow(6, 0.1) },
   qpTitle: { fontSize: 14, fontWeight: '600' },
   qpSub: { fontSize: 11, maxWidth: 100 },
-  results: { marginTop: 6, borderRadius: 16, maxHeight: 280, overflow: 'hidden', borderWidth: 1, ...shadow(16, 0.18) },
+  results: { marginTop: 6, borderRadius: 16, overflow: 'hidden', borderWidth: 1, ...shadow(16, 0.18) },
   recentHeader: { fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
   resultRow: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
   resultName: { fontSize: 15, fontWeight: '600' },

@@ -1,5 +1,19 @@
-import React, { useMemo, useState } from 'react';
-import { FlatList, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  FlatList,
+  Image,
+  Keyboard,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   FadeIn,
@@ -71,6 +85,8 @@ type Props = {
   gasChipPriceSource?: 'nearby_station' | 'state_index' | null;
   /** Map layers / compass / Orion — rendered under the category chips, right-aligned. */
   floatingMapTools?: React.ReactNode;
+  /** Bottom reserve when sizing panel (typically tab bar height). */
+  bottomChromeReserve?: number;
 };
 
 const CATEGORY_CHIPS: Chip[] = [
@@ -140,6 +156,37 @@ function renderExploreChip(chip: Chip, props: Props, s: Record<string, any>): Re
 export default function MapSearchTopBar(props: Props) {
   if (!props.visible) return null;
   const s = props.styles as Record<string, any>;
+  const { height: windowHeight } = useWindowDimensions();
+  const safeInsets = useSafeAreaInsets();
+  const [searchChromeH, setSearchChromeH] = useState(0);
+  const [keyboardTopY, setKeyboardTopY] = useState<number | null>(null);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const subShow = Keyboard.addListener(showEvent, (e) => {
+      const y =
+        typeof e.endCoordinates.screenY === 'number' && e.endCoordinates.screenY > 0
+          ? e.endCoordinates.screenY
+          : windowHeight - e.endCoordinates.height;
+      setKeyboardTopY(y - 10);
+    });
+    const subHide = Keyboard.addListener(hideEvent, () => setKeyboardTopY(null));
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, [windowHeight]);
+
+  const chromeReserve = props.bottomChromeReserve ?? safeInsets.bottom + 88;
+
+  const resultsPanelHeight = useMemo(() => {
+    if (!props.isSearchFocused) return undefined;
+    const chromeH = searchChromeH > 8 ? searchChromeH : 120;
+    const panelTopAbs = props.topInset + 8 + chromeH + 6;
+    const bottomClamp = keyboardTopY != null ? keyboardTopY : windowHeight - chromeReserve;
+    return Math.max(200, Math.min(Math.floor(bottomClamp - panelTopAbs - 6), Math.floor(windowHeight * 0.72)));
+  }, [props.isSearchFocused, props.topInset, searchChromeH, keyboardTopY, windowHeight, chromeReserve]);
 
   const focusGlow = useSharedValue(props.isSearchFocused ? 1 : 0);
   React.useEffect(() => {
@@ -164,68 +211,84 @@ export default function MapSearchTopBar(props: Props) {
 
   return (
     <View style={[s.topBar, { top: props.topInset + 8, zIndex: 26 }]} pointerEvents="box-none">
-      <View style={s.searchRow}>
-        <TouchableOpacity
-          style={[s.menuBtn, { backgroundColor: props.colors.surface, borderColor: props.colors.border }]}
-          onPress={() => props.setShowMenu(!props.showMenu)}
+      <View collapsable={false} onLayout={(e) => setSearchChromeH(e.nativeEvent.layout.height)}>
+        <View style={s.searchRow}>
+          <TouchableOpacity
+            style={[s.menuBtn, { backgroundColor: props.colors.surface, borderColor: props.colors.border }]}
+            onPress={() => props.setShowMenu(!props.showMenu)}
+          >
+            <Ionicons name="menu" size={18} color={props.colors.text} />
+          </TouchableOpacity>
+          <Animated.View
+            style={[
+              s.searchPill,
+              { backgroundColor: props.colors.surface, borderColor: props.colors.border },
+              pillAnim,
+            ]}
+          >
+            <Ionicons name="search-outline" size={15} color={props.colors.textTertiary} />
+            <TextInput
+              style={[s.searchInput, { color: props.colors.text }]}
+              placeholder="Where to?"
+              placeholderTextColor={props.colors.textTertiary}
+              value={props.searchQuery}
+              onChangeText={props.onSearchChange}
+              onFocus={() => props.setIsSearchFocused(true)}
+              blurOnSubmit={false}
+              returnKeyType="search"
+              onSubmitEditing={props.onSubmitSearch}
+              clearButtonMode="while-editing"
+            />
+            {props.searchQuery.length > 0 ? (
+              <TouchableOpacity onPress={props.onClearSearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close-circle" size={18} color={props.colors.textTertiary} />
+              </TouchableOpacity>
+            ) : props.onOpenOrion ? (
+              <TouchableOpacity
+                onPress={props.onOpenOrion}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={{ marginLeft: 10, paddingLeft: 4 }}
+                accessibilityLabel="Open Orion chat"
+              >
+                <Ionicons name="chatbubbles-outline" size={16} color={props.colors.textTertiary} />
+              </TouchableOpacity>
+            ) : null}
+          </Animated.View>
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="handled"
+          style={{ marginTop: 8, maxHeight: 48 }}
+          contentContainerStyle={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+            paddingRight: 16,
+          }}
         >
-          <Ionicons name="menu" size={18} color={props.colors.text} />
-        </TouchableOpacity>
-        <Animated.View
-          style={[
-            s.searchPill,
-            { backgroundColor: props.colors.surface, borderColor: props.colors.border },
-            pillAnim,
-          ]}
-        >
-          <Ionicons name="search-outline" size={15} color={props.colors.textTertiary} />
-          <TextInput
-            style={[s.searchInput, { color: props.colors.text }]}
-            placeholder="Where to?"
-            placeholderTextColor={props.colors.textTertiary}
-            value={props.searchQuery}
-            onChangeText={props.onSearchChange}
-            onFocus={() => props.setIsSearchFocused(true)}
-            blurOnSubmit={false}
-            returnKeyType="search"
-            onSubmitEditing={props.onSubmitSearch}
-            clearButtonMode="while-editing"
-          />
-          {props.searchQuery.length > 0 ? (
-            <TouchableOpacity onPress={props.onClearSearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="close-circle" size={18} color={props.colors.textTertiary} />
-            </TouchableOpacity>
-          ) : props.onOpenOrion ? (
-            <TouchableOpacity
-              onPress={props.onOpenOrion}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              style={{ marginLeft: 10, paddingLeft: 4 }}
-              accessibilityLabel="Open Orion chat"
-            >
-              <Ionicons name="chatbubbles-outline" size={16} color={props.colors.textTertiary} />
-            </TouchableOpacity>
-          ) : null}
-        </Animated.View>
+          {CATEGORY_CHIPS.map((chip) => renderExploreChip(chip, props, s))}
+        </ScrollView>
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator
-        nestedScrollEnabled
-        keyboardShouldPersistTaps="handled"
-        style={{ marginTop: 8, maxHeight: 48 }}
-        contentContainerStyle={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 8,
-          paddingRight: 16,
-        }}
-      >
-        {CATEGORY_CHIPS.map((chip) => renderExploreChip(chip, props, s))}
-      </ScrollView>
-
-      {props.floatingMapTools ? (
+      {!props.isSearchFocused && props.floatingMapTools ? (
         <View style={{ marginTop: 6, width: '100%', alignItems: 'flex-end' }} pointerEvents="box-none">
+          {props.floatingMapTools}
+        </View>
+      ) : null}
+
+      {props.isSearchFocused && props.floatingMapTools ? (
+        <View
+          style={{
+            position: 'absolute',
+            right: 0,
+            top: (searchChromeH > 8 ? searchChromeH : 118) + 4,
+            zIndex: 5,
+          }}
+          pointerEvents="box-none"
+        >
           {props.floatingMapTools}
         </View>
       ) : null}
@@ -265,6 +328,9 @@ export default function MapSearchTopBar(props: Props) {
             s.results,
             premiumStyles.panel,
             { backgroundColor: props.colors.surface, borderColor: props.colors.border },
+            typeof resultsPanelHeight === 'number'
+              ? { height: resultsPanelHeight, flexDirection: 'column' as const }
+              : null,
           ]}
         >
           {!queryActive && (
@@ -280,9 +346,11 @@ export default function MapSearchTopBar(props: Props) {
             />
           )}
           {props.isSearching && queryActive ? (
-            <SkeletonResults colors={props.colors} />
+            <View style={{ flex: 1 }}>
+              <SkeletonResults colors={props.colors} />
+            </View>
           ) : queryActive && props.searchResults.length === 0 ? (
-            <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+            <View style={{ flex: 1, justifyContent: 'center', paddingVertical: 24, alignItems: 'center' }}>
               <Ionicons name="search-outline" size={22} color={props.colors.textTertiary} />
               <Text style={{ color: props.colors.textTertiary, fontSize: 13, marginTop: 6 }}>
                 {props.searchQuery.trim().length < 2 ? 'Keep typing to search...' : 'No results found'}
@@ -290,9 +358,16 @@ export default function MapSearchTopBar(props: Props) {
             </View>
           ) : (
             <FlatList
+              style={{ flex: 1 }}
+              contentContainerStyle={{
+                flexGrow: 1,
+                paddingBottom: 12,
+                paddingRight: props.floatingMapTools ? 54 : 0,
+              }}
               data={panelData(queryActive, activeTab, props)}
               keyExtractor={(item, i) => `${item.place_id || item.name}-${i}`}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
               ListEmptyComponent={
                 <View style={{ paddingVertical: 22, alignItems: 'center' }}>
                   <Ionicons
