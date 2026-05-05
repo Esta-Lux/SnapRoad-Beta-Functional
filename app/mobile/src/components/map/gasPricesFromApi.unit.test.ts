@@ -114,7 +114,7 @@ test('nearestGasPricePointByLocation picks closer station', () => {
   assert.equal(n?.name, 'Near Station');
 });
 
-test('formatLocalGasRegularSummary includes station and pump verification', () => {
+test('formatLocalGasRegularSummary includes station and CollectAPI note', () => {
   const s = formatLocalGasRegularSummary({
     id: 'x',
     name: 'Kroger Gas',
@@ -125,7 +125,7 @@ test('formatLocalGasRegularSummary includes station and pump verification', () =
   });
   assert.ok(s.includes('Kroger Gas'));
   assert.ok(s.includes('$3.20'));
-  assert.ok(s.includes('verify at pump'));
+  assert.ok(/CollectAPI/i.test(s));
 });
 
 test('formatStateGasRegularSummary includes price', () => {

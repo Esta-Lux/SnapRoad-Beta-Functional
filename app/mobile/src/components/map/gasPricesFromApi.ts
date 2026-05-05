@@ -197,8 +197,12 @@ export function formatLocalGasRegularSummary(p: GasPriceMapPoint): string {
     typeof p.distance_miles === 'number' && Number.isFinite(p.distance_miles)
       ? ` (${p.distance_miles.toFixed(1)} mi)`
       : '';
-  const note = p.is_estimated ? 'estimated; verify at pump' : 'verify at pump';
-  return `${label}${distance}: ${reg}/gal regular - ${note}.`;
+  const note = p.is_estimated
+    ? 'estimated — prices vary by station'
+    : isLocalStationGasRow(p)
+      ? 'CollectAPI station listing'
+      : 'state fuel index — station prices may differ';
+  return `${label}${distance}: ${reg}/gal regular (${note}).`;
 }
 
 /** Backward-compatible export for older callers/tests during rollout. */

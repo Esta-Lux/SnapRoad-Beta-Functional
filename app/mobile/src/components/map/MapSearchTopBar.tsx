@@ -65,8 +65,12 @@ type Props = {
   haversineMeters: (lat1: number, lng1: number, lat2: number, lng2: number) => number;
   placePhotoThumbUri: (photoRef?: string, maxWidth?: number) => string | undefined;
   searchResultPriceHint: (item: GeocodeResult) => string | null;
-  /** Nearby station regular price; users should verify at pump. */
+  /** Compact regular price for the Nearby Gas chip (CollectAPI / fuel feed). */
   gasChipAvgRegular?: string | null;
+  /** Whether the chip price is from nearby station rows or a state index fallback. */
+  gasChipPriceSource?: 'nearby_station' | 'state_index' | null;
+  /** Map layers / compass / Orion — rendered under the category chips, right-aligned. */
+  floatingMapTools?: React.ReactNode;
 };
 
 const CATEGORY_CHIPS: Chip[] = [
@@ -84,7 +88,11 @@ function renderExploreChip(chip: Chip, props: Props, s: Record<string, any>): Re
   const gasShort = chip.key === 'nearbyGas' ? props.gasChipAvgRegular : null;
   const a11y =
     chip.key === 'nearbyGas' && gasShort
-      ? `${chip.label}, nearby regular about ${gasShort} per gallon; verify at pump; opens nearby stations`
+      ? props.gasChipPriceSource === 'nearby_station'
+        ? `${chip.label}, regular ${gasShort} per gallon at nearby stations from CollectAPI`
+        : props.gasChipPriceSource === 'state_index'
+          ? `${chip.label}, statewide average regular about ${gasShort} per gallon from CollectAPI`
+          : `${chip.label}, regular about ${gasShort} per gallon; opens nearby stations`
       : chip.label;
   return (
     <TouchableOpacity
@@ -215,6 +223,12 @@ export default function MapSearchTopBar(props: Props) {
       >
         {CATEGORY_CHIPS.map((chip) => renderExploreChip(chip, props, s))}
       </ScrollView>
+
+      {props.floatingMapTools ? (
+        <View style={{ marginTop: 6, width: '100%', alignItems: 'flex-end' }} pointerEvents="box-none">
+          {props.floatingMapTools}
+        </View>
+      ) : null}
 
       {!props.isSearchFocused && favoritesAndQuick.length > 0 && (
         <FlatList

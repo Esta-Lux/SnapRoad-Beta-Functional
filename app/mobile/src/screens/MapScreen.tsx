@@ -308,8 +308,8 @@ function placeCardFuelHint(
   const chip = matchedRegular?.regular ? formatUsdPerGalChip(matchedRegular.regular) : null;
   if (chip) {
     const note =
-      matchedRegular?.is_estimated === true ? ' Estimated from area survey — verify at pump.' : ' Verify at pump before fueling.';
-    return `Regular about ${chip}/gal.${note}`;
+      matchedRegular?.is_estimated === true ? ' Estimated — confirm at pump if needed.' : ' CollectAPI.';
+    return `Regular ${chip}/gal.${note}`;
   }
   if (typeof place.price_level === 'number' && place.price_level >= 1 && place.price_level <= 4) {
     return `Typical cost tier ${'$'.repeat(place.price_level)}. No live pump price for this listing — confirm at pump.`;
@@ -561,6 +561,14 @@ export default function MapScreen() {
   // ── Driving mode ──
   const [drivingMode, setDrivingMode] = useState<DrivingMode>('adaptive');
   const modeConfig = DRIVING_MODES[drivingMode];
+
+  const exploreMapHudGlass = useMemo(
+    () => ({
+      discFill: isLight ? 'rgba(255,255,255,0.52)' : 'rgba(19,32,52,0.48)',
+      discBorder: isLight ? 'rgba(15,23,42,0.24)' : 'rgba(226,232,240,0.3)',
+    }),
+    [isLight],
+  );
 
   const [navVoiceMuted, setNavVoiceMuted] = useState(false);
   const [navLogicRuntimeDisabled, setNavLogicRuntimeDisabled] = useState(false);
@@ -2048,6 +2056,7 @@ export default function MapScreen() {
   const [cameraLocations, setCameraLocations] = useState<CameraLocation[]>([]);
   /** Cheapest nearby regular (~$/gal chip) — local stations preferred, then statewide CollectAPI. */
   const [gasChipAvgRegularShort, setGasChipAvgRegularShort] = useState<string | null>(null);
+  const [gasChipPriceSource, setGasChipPriceSource] = useState<'nearby_station' | 'state_index' | null>(null);
   /** Stations from `/api/fuel/prices` for badges + correlation with Google-place rows (map markers). */
   const [localStationGasMarkers, setLocalStationGasMarkers] = useState<GasPriceMapPoint[]>([]);
   const [selectedTrafficCamera, setSelectedTrafficCamera] = useState<CameraLocation | null>(null);
@@ -2606,6 +2615,7 @@ export default function MapScreen() {
   useEffect(() => {
     if (!mapTabFocused) {
       setGasChipAvgRegularShort(null);
+      setGasChipPriceSource(null);
       setLocalStationGasMarkers([]);
       tripFuelContextRef.current = null;
       return;
@@ -2615,6 +2625,7 @@ export default function MapScreen() {
     if (!Number.isFinite(lat0) || !Number.isFinite(lng0)) {
       setLocalStationGasMarkers([]);
       setGasChipAvgRegularShort(null);
+      setGasChipPriceSource(null);
       return;
     }
 
@@ -2639,6 +2650,7 @@ export default function MapScreen() {
 
         if (localChip != null && localUsd != null) {
           setGasChipAvgRegularShort(localChip);
+          setGasChipPriceSource('nearby_station');
           tripFuelContextRef.current = {
             stateLabel: 'Nearby',
             priceUsdPerGal: localUsd,
@@ -2648,6 +2660,7 @@ export default function MapScreen() {
 
         tripFuelContextRef.current = null;
         setGasChipAvgRegularShort(null);
+        setGasChipPriceSource(null);
 
         if (!collectRes.success || collectRes.data == null) {
           if (!collectRes.success) logMapDataIssue('GET /api/map/gas-prices', collectRes.error);
@@ -2663,6 +2676,7 @@ export default function MapScreen() {
         const nearestState = nearestGasPricePointByLocation(lat0, lng0, stateRows);
         const stateChip = nearestState ? formatUsdPerGalChip(nearestState.regular) : null;
         setGasChipAvgRegularShort(stateChip);
+        setGasChipPriceSource(nearestState && stateChip ? 'state_index' : null);
         if (nearestState && parseUsdPerGallonNumber(nearestState.regular) != null) {
           tripFuelContextRef.current = {
             stateLabel: nearestState.state || nearestState.name || 'Regional',
@@ -2673,6 +2687,7 @@ export default function MapScreen() {
       .catch((e) => {
         logMapDataIssue('GET /api/fuel/prices batch', e);
         setGasChipAvgRegularShort(null);
+        setGasChipPriceSource(null);
         setLocalStationGasMarkers([]);
         tripFuelContextRef.current = null;
       });
@@ -3729,7 +3744,7 @@ export default function MapScreen() {
       nearbyGas: {
         title: 'Nearby Gas',
         subtitle:
-          'Gas stations near you (typical tier when Google provides it). Chip shows statewide regular avg — not pump price.',
+          'Stations near you. Tap a row for details; chip price is from CollectAPI (nearby snapshot or state index when needed).',
         type: 'gas_station',
         radius: 15000,
         limit: 20,
@@ -3738,7 +3753,7 @@ export default function MapScreen() {
       gas: {
         title: 'Nearby Gas',
         subtitle:
-          'Gas stations near you (typical tier when Google provides it). Chip shows statewide regular avg — not pump price.',
+          'Stations near you. Tap a row for details; chip price is from CollectAPI (nearby snapshot or state index when needed).',
         type: 'gas_station',
         radius: 15000,
         limit: 20,
@@ -5322,6 +5337,110 @@ export default function MapScreen() {
         placePhotoThumbUri={placePhotoThumbUri}
         searchResultPriceHint={searchResultPriceHint}
         gasChipAvgRegular={gasChipAvgRegularShort}
+        gasChipPriceSource={gasChipPriceSource}
+        floatingMapTools={
+          !nav.showRoutePreview ? (
+            <View style={s.mapToolStack} pointerEvents="box-none">
+              <TouchableOpacity
+                style={[
+                  s.mapToolDisc,
+                  {
+                    backgroundColor: exploreMapHudGlass.discFill,
+                    borderColor: exploreMapHudGlass.discBorder,
+                  },
+                ]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setShowStylePicker(true);
+                }}
+                accessibilityLabel="Map layers and style"
+              >
+                <Ionicons name="layers-outline" size={20} color={colors.text} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  s.mapToolDisc,
+                  {
+                    backgroundColor:
+                      followMode === 'heading'
+                        ? 'rgba(59,130,246,0.88)'
+                        : followMode === 'follow'
+                          ? 'rgba(16,185,129,0.88)'
+                          : exploreMapHudGlass.discFill,
+                    borderColor:
+                      followMode !== 'free' ? 'rgba(255,255,255,0.45)' : exploreMapHudGlass.discBorder,
+                  },
+                ]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  setFollowMode((prev) => {
+                    const next = prev === 'free' ? 'follow' : prev === 'follow' ? 'heading' : 'free';
+                    if (next === 'follow') {
+                      setIsExploring(false);
+                      setCompassMode(false);
+                      setCameraLocked(true);
+                    } else if (next === 'heading') {
+                      setIsExploring(false);
+                      setCompassMode(true);
+                      setCameraLocked(true);
+                    } else {
+                      setCompassMode(false);
+                    }
+                    return next;
+                  });
+                }}
+                accessibilityLabel="Map orientation: free map, follow, or heading"
+              >
+                <Ionicons
+                  name={followMode === 'heading' ? 'navigate' : followMode === 'follow' ? 'locate' : 'compass-outline'}
+                  size={20}
+                  color={followMode !== 'free' ? '#fff' : colors.text}
+                />
+              </TouchableOpacity>
+              {!activeTripSummary && !selectedPlace && !selectedPlaceId && (
+                <SpotlightTarget id="map.orionFab" style={{ alignItems: 'center' }}>
+                  <OrionQuickMic
+                    visible={!showOrion}
+                    compactHudFab
+                    interactionMode="explore"
+                    isPremium={Boolean(user?.isPremium)}
+                    context={orionContext}
+                    onOpenChat={() => setShowOrion(true)}
+                    onSuggestions={(items) => setOrionPendingSuggestions(items)}
+                    onReply={(text) => setOrionQuickReply(text)}
+                    onAction={(action: {
+                      type: string;
+                      name?: string;
+                      lat?: number;
+                      lng?: number;
+                      address?: string;
+                    }) => {
+                      if (action.type === 'navigate' && action.lat != null && action.lng != null) {
+                        const dest = {
+                          name: action.name ?? 'Destination',
+                          address: typeof action.address === 'string' ? action.address : '',
+                          lat: action.lat,
+                          lng: action.lng,
+                        };
+                        handleStartDirections(dest);
+                      } else if (action.type === 'add_stop' && action.lat && action.lng) {
+                        nav.addWaypoint({ lat: action.lat, lng: action.lng, name: action.name ?? 'Stop' });
+                      } else if (action.type === 'mode' && action.name) {
+                        const m = action.name.toLowerCase();
+                        if (m === 'calm' || m === 'adaptive' || m === 'sport') setDrivingMode(m as DrivingMode);
+                      } else if (action.type === 'mute_voice') {
+                        setNavVoiceMuted(true);
+                        stopSpeaking();
+                      } else if (action.type === 'unmute_voice') {
+                        setNavVoiceMuted(false);
+                      }
+                    }}
+                  />
+                </SpotlightTarget>
+              )}
+            </View>
+          ) : null
+        }
       />
 
       {/* ═══ TURN CARD — 3-state model (preview / active / confirm + cruise); same gradients per mode ═ */}
@@ -6391,97 +6510,6 @@ export default function MapScreen() {
         );
       })()}
 
-      {!nav.isNavigating && !nav.showRoutePreview && (
-        <View style={[s.mapToolStack, { bottom: tabBarHeight + 8 }]} pointerEvents="box-none">
-          <TouchableOpacity
-            style={[s.mapToolDisc, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setShowStylePicker(true);
-            }}
-            accessibilityLabel="Map layers and style"
-          >
-            <Ionicons name="layers-outline" size={20} color={colors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              s.mapToolDisc,
-              {
-                backgroundColor:
-                  followMode === 'heading' ? '#3B82F6' : followMode === 'follow' ? '#10B981' : colors.surface,
-                borderColor: followMode !== 'free' ? 'transparent' : colors.border,
-              },
-            ]}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              setFollowMode((prev) => {
-                const next = prev === 'free' ? 'follow' : prev === 'follow' ? 'heading' : 'free';
-                if (next === 'follow') {
-                  setIsExploring(false);
-                  setCompassMode(false);
-                  setCameraLocked(true);
-                } else if (next === 'heading') {
-                  setIsExploring(false);
-                  setCompassMode(true);
-                  setCameraLocked(true);
-                } else {
-                  setCompassMode(false);
-                }
-                return next;
-              });
-            }}
-            accessibilityLabel="Map orientation: free map, follow, or heading"
-          >
-            <Ionicons
-              name={followMode === 'heading' ? 'navigate' : followMode === 'follow' ? 'locate' : 'compass-outline'}
-              size={20}
-              color={followMode !== 'free' ? '#fff' : colors.text}
-            />
-          </TouchableOpacity>
-          {!activeTripSummary && !selectedPlace && !selectedPlaceId && (
-            <SpotlightTarget id="map.orionFab" style={{ alignItems: 'center' }}>
-              <OrionQuickMic
-                visible={!showOrion}
-                compactHudFab
-                interactionMode="explore"
-                isPremium={Boolean(user?.isPremium)}
-                context={orionContext}
-                onOpenChat={() => setShowOrion(true)}
-                onSuggestions={(items) => setOrionPendingSuggestions(items)}
-                onReply={(text) => setOrionQuickReply(text)}
-                onAction={(action: {
-                  type: string;
-                  name?: string;
-                  lat?: number;
-                  lng?: number;
-                  address?: string;
-                }) => {
-                  if (action.type === 'navigate' && action.lat != null && action.lng != null) {
-                    const dest = {
-                      name: action.name ?? 'Destination',
-                      address: typeof action.address === 'string' ? action.address : '',
-                      lat: action.lat,
-                      lng: action.lng,
-                    };
-                    handleStartDirections(dest);
-                  } else if (action.type === 'add_stop' && action.lat && action.lng) {
-                    nav.addWaypoint({ lat: action.lat, lng: action.lng, name: action.name ?? 'Stop' });
-                  } else if (action.type === 'mode' && action.name) {
-                    const m = action.name.toLowerCase();
-                    if (m === 'calm' || m === 'adaptive' || m === 'sport') setDrivingMode(m as DrivingMode);
-                  } else if (action.type === 'mute_voice') {
-                    setNavVoiceMuted(true);
-                    stopSpeaking();
-                  } else if (action.type === 'unmute_voice') {
-                    setNavVoiceMuted(false);
-                  }
-                }}
-              />
-            </SpotlightTarget>
-          )}
-        </View>
-      )}
-
       {isLocating && <View style={[s.locBanner, { top: insets.top + 84 }]}><Text style={s.locT}>Finding your location...</Text></View>}
 
       {showTrafficSafety &&
@@ -6492,7 +6520,7 @@ export default function MapScreen() {
             style={[
               s.mapLayerHint,
               {
-                bottom: tabBarHeight + 168,
+                bottom: tabBarHeight + 112,
                 backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(30,30,46,0.94)',
                 borderColor: colors.border,
               },
@@ -7351,11 +7379,8 @@ const s = StyleSheet.create({
   speedLimitPlateTop: { fontSize: 5.5, fontWeight: '900', letterSpacing: 0.2, lineHeight: 7 },
   speedLimitPlateMid: { fontSize: 6.5, fontWeight: '900', letterSpacing: 0.2, lineHeight: 8 },
   speedLimitPlateNum: { fontSize: 16, fontWeight: '900', lineHeight: 18, marginTop: 1 },
-  /** Baidu-style vertical stack above the tab bar: layers → compass/follow → Orion. */
+  /** Under search chips (right): layers → compass/follow → Orion. */
   mapToolStack: {
-    position: 'absolute',
-    right: 14,
-    zIndex: 12,
     flexDirection: 'column',
     alignItems: 'center',
     gap: 10,
@@ -7366,7 +7391,7 @@ const s = StyleSheet.create({
     borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     ...Platform.select({
       ios: {
         shadowColor: '#020617',

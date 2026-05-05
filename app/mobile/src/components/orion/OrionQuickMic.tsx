@@ -557,6 +557,12 @@ export default function OrionQuickMic({
           style={[
             styles.grad,
             compactHudFab ? { width: fabSize, height: fabSize, borderRadius: fabSize / 2 } : null,
+            compactHudFab
+              ? {
+                  borderWidth: 1,
+                  borderColor: 'rgba(248,250,252,0.42)',
+                }
+              : null,
           ]}
         >
           <Ionicons name={fabIcon} size={iconSize} color="#fff" />

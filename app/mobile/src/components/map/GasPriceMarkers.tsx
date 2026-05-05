@@ -48,7 +48,7 @@ export default React.memo(function GasPriceMarkers({ points, zoomLevel, referenc
         ? `\nDistance: ${p.distance_miles.toFixed(1)} mi`
         : '';
     const address = p.address ? `\n${p.address}` : '';
-    const priceNote = p.is_estimated ? '\nEstimated local price - verify at pump.' : '\nVerify at pump before purchase.';
+    const priceNote = p.is_estimated ? '\nEstimated — confirm at pump if needed.' : '\nCollectAPI snapshot (prices vary by station).';
     const lines = [
       `Regular: ${p.regular ?? '--'}`,
       `Mid-grade: ${p.midGrade ?? '--'}`,
@@ -83,7 +83,11 @@ export default React.memo(function GasPriceMarkers({ points, zoomLevel, referenc
             style={({ pressed }) => [styles.hit, pressed && styles.hitPressed]}
             hitSlop={6}
             accessibilityRole="button"
-            accessibilityLabel={`${p.name || p.state || 'Nearby station'} gas ${shortPrice(p.regular)} per gallon regular, verify at pump`}
+            accessibilityLabel={
+              p.is_estimated
+                ? `${p.name || p.state || 'Nearby station'}, regular about ${shortPrice(p.regular)} per gallon — estimated`
+                : `${p.name || p.state || 'Nearby station'}, regular ${shortPrice(p.regular)} per gallon — CollectAPI`
+            }
           >
             <View style={styles.puckOuter}>
               <View style={styles.puckInner}>
