@@ -6,12 +6,23 @@ import {
   estimateFuelGallons,
   estimateMileageDeductionUsd,
   formatUsd,
+  sanitizeTripAverageSpeedMph,
+  sanitizeTripDistanceMiles,
+  sanitizeTripSpeedMph,
 } from './driveMetrics';
 
 test('avgSpeedMph uses miles and elapsed seconds', () => {
   assert.equal(avgSpeedMph(30, 3600), 30);
   assert.equal(avgSpeedMph(12, 1800), 24);
   assert.equal(avgSpeedMph(12, 0), 0);
+});
+
+test('trip speed sanitizers reject impossible GPS spikes', () => {
+  assert.equal(sanitizeTripSpeedMph(300), 160);
+  assert.equal(sanitizeTripSpeedMph(-12), 0);
+  assert.equal(sanitizeTripDistanceMiles(10, 120, 72), 2.4);
+  assert.equal(sanitizeTripAverageSpeedMph(10, 120, 72), 72);
+  assert.equal(sanitizeTripAverageSpeedMph(10, 120), 130);
 });
 
 test('fuel and service mileage estimates are bounded and deterministic', () => {

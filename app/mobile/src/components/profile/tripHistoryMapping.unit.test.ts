@@ -80,3 +80,20 @@ test('mapProfileTripHistoryItem accepts legacy route and speed aliases', () => {
   assert.equal(mapped.mileage_value_estimate, 0.27);
   assert.equal(mapped.hard_braking_events, 1);
 });
+
+test('mapProfileTripHistoryItem sanitizes impossible recap speed spikes', () => {
+  const mapped = mapProfileTripHistoryItem({
+    id: 'trip-spike',
+    ended_at: '2026-05-03T06:39:03Z',
+    distance_miles: 10,
+    duration_seconds: 120,
+    avg_speed_mph: 300,
+    max_speed_mph: 72,
+    speeding_events: 1,
+  });
+
+  assert.equal(mapped.distance_miles, 2.4);
+  assert.equal(mapped.avg_speed_mph, 72);
+  assert.equal(mapped.max_speed_mph, 72);
+  assert.equal(mapped.speeding_events, 1);
+});

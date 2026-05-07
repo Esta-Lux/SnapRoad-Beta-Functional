@@ -82,6 +82,25 @@ test('mergeTripCompleteResponse: merges tracking metrics used by trip summary', 
   assert.equal(merged.destination, 'Airport dropoff');
 });
 
+test('mergeTripCompleteResponse: sanitizes impossible speed spikes before summary display', () => {
+  const merged = mergeTripCompleteResponse(baseSummary(), {
+    data: {
+      trip_id: 'trip-spike',
+      counted: true,
+      distance_miles: 10,
+      duration_seconds: 120,
+      avg_speed_mph: 300,
+      max_speed_mph: 72,
+      speeding_events: 1,
+    },
+  });
+
+  assert.equal(merged.distance, 2.4);
+  assert.equal(merged.avg_speed_mph, 72);
+  assert.equal(merged.max_speed_mph, 72);
+  assert.equal(merged.speeding_events, 1);
+});
+
 test('mergeTripCompleteResponse: counted=false when trip_id is null', () => {
   const body = {
     data: {

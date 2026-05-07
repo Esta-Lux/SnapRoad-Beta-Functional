@@ -57,6 +57,21 @@ def test_build_trip_row_carries_service_driver_metrics():
     assert row["duration_minutes"] == 30
 
 
+def test_build_trip_row_sanitizes_impossible_speed_spikes():
+    body = TripCompleteBody(
+        distance_miles=10,
+        duration_seconds=120,
+        safety_score=80,
+        avg_speed_mph=300,
+        max_speed_mph=72,
+    )
+    row = _build_trip_row("trip-spike", "user-1", body, 10, 80, 4, 50)
+
+    assert row["distance_miles"] == 2.4
+    assert row["avg_speed_mph"] == 72
+    assert row["max_speed_mph"] == 72
+
+
 def test_trip_row_to_client_shape_returns_recap_summary_metrics_and_aliases():
     row = {
         "id": "trip-2",
@@ -98,6 +113,20 @@ def test_trip_row_to_client_shape_returns_recap_summary_metrics_and_aliases():
     assert shaped["speeding_events"] == 2
     assert shaped["started_at"] == "2026-05-03T06:37:00Z"
     assert shaped["ended_at"] == "2026-05-03T06:39:03Z"
+
+
+def test_trip_row_to_client_shape_sanitizes_legacy_speed_spikes():
+    shaped = _trip_row_to_client_shape({
+        "id": "trip-spike",
+        "distance_miles": "10",
+        "duration_seconds": 120,
+        "avg_speed_mph": "300",
+        "max_speed_mph": "72",
+    })
+
+    assert shaped["distance_miles"] == 2.4
+    assert shaped["avg_speed_mph"] == 72
+    assert shaped["max_speed_mph"] == 72
 
 
 def test_strip_missing_trip_optional_column_handles_schema_cache_wording():

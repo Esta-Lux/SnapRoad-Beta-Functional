@@ -42,12 +42,14 @@ import {
 import { formatTripPlaceLabel } from '../utils/tripPlaceLabels';
 import { mergeTripCompleteResponse, unwrapTripCompleteData } from '../lib/tripComplete';
 import {
-  avgSpeedMph,
   estimateFuelCostUsd,
   estimateFuelGallons,
   estimateMileageDeductionUsd,
   DEFAULT_FUEL_PRICE_PER_GALLON,
   DEFAULT_FUEL_MPG,
+  sanitizeTripAverageSpeedMph,
+  sanitizeTripDistanceMiles,
+  sanitizeTripSpeedMph,
 } from '../utils/driveMetrics';
 import {
   emptyDriveSafetyState,
@@ -615,17 +617,29 @@ export function useDriveNavigation(params: {
           ? navSdkSnapshot.progress.speedLimitMps
           : null;
     const sdkLimMph = sdkLimMps != null ? speedLimitMpsToMph(sdkLimMps) : null;
+    const sdkSpeedMps =
+      typeof navSdkSnapshot.location?.speed === 'number' && Number.isFinite(navSdkSnapshot.location.speed)
+        ? navSdkSnapshot.location.speed
+        : -1;
+    const sampleSpeedMph = Math.max(
+      Number.isFinite(speed) ? speed : 0,
+      sdkSpeedMps >= 0 ? sdkSpeedMps * 2.237 : 0,
+    );
     const steps = navigationData?.maxspeeds;
+    const edgeIdx = navigationProgress?.snapped?.segmentIndex;
     const idx = Math.max(
       0,
-      Math.min(currentStepIndex, Math.max(0, (steps?.length ?? 1) - 1)),
+      Math.min(
+        typeof edgeIdx === 'number' && Number.isFinite(edgeIdx) ? edgeIdx : currentStepIndex,
+        Math.max(0, (steps?.length ?? 1) - 1),
+      ),
     );
     const stepLimit =
       steps && typeof steps[idx] === 'number' && Number.isFinite(steps[idx] as number) ? (steps[idx] as number) : null;
     const limitMph = sdkLimMph ?? stepLimit;
     driveSafetyRef.current = processDriveSafetySample(driveSafetyRef.current, {
       atMs,
-      speedMph: Number.isFinite(speed) ? speed : 0,
+      speedMph: sampleSpeedMph,
       speedLimitMph: limitMph,
       gpsAccuracyM: typeof gpsAccuracy === 'number' && Number.isFinite(gpsAccuracy) ? gpsAccuracy : null,
       isNavigating: true,
@@ -635,7 +649,9 @@ export function useDriveNavigation(params: {
     speed,
     gpsAccuracy,
     currentStepIndex,
+    navigationProgress?.snapped?.segmentIndex,
     navigationData?.maxspeeds,
+    navSdkSnapshot.location?.speed,
     navSdkSnapshot.location?.speedLimitMps,
     navSdkSnapshot.progress?.speedLimitMps,
   ]);
@@ -1274,10 +1290,12 @@ export function useDriveNavigation(params: {
     const odoMiles = odoMeters / 1609.34;
     const totalRouteMi = (navigationData?.distance ?? 0) / 1609.34;
     const blendedMi = Math.max(polyMiles, odoMiles);
-    const distMiles =
+    const maxSpeedRaw = sanitizeTripSpeedMph(maxSpeedMphRef.current);
+    const rawDistMiles =
       totalRouteMi > 0
         ? Math.max(0, Math.min(blendedMi, totalRouteMi + 0.12))
         : Math.max(0, blendedMi);
+    const distMiles = sanitizeTripDistanceMiles(rawDistMiles, durationSec, maxSpeedRaw || undefined);
     const roundedDist = Math.max(0, Math.round(distMiles * 100) / 100);
 
     const safetySnap = driveSafetyRef.current;
@@ -1296,9 +1314,8 @@ export function useDriveNavigation(params: {
     const tripStartMs = tripStartTimeRef.current;
     const startedAtIso = tripStartMs ? new Date(tripStartMs).toISOString() : undefined;
     const endedAtIso = new Date(now).toISOString();
-    const avgSpeed = Math.round(avgSpeedMph(roundedDist, durationSec) * 10) / 10;
-    const maxSpeedRaw = Math.max(0, maxSpeedMphRef.current);
-    /** Floor max at avg so a quirky ref reset can't make max < avg in the row. */
+    const avgSpeed = Math.round(sanitizeTripAverageSpeedMph(roundedDist, durationSec, maxSpeedRaw || undefined) * 10) / 10;
+    /** Floor max at avg only after avg is bounded by the observed max when one exists. */
     const maxSpeed = Math.round(Math.max(avgSpeed, maxSpeedRaw) * 10) / 10;
     const fuelGallons = Math.round(estimateFuelGallons(roundedDist) * 100) / 100;
     const fuelCtx = tripFuelContextRef?.current;
@@ -1407,6 +1424,15 @@ export function useDriveNavigation(params: {
       bumpStatsVersionRef.current();
     }).catch(() => { /* offline — summary already shown */ });
   }, [navigationData, navigationProgressCoord, tripFuelContextRef]);
+
+  const completeNavigationAtDestination = useCallback(() => {
+    if (!isNavigatingRef.current) return;
+    autoEndNavTriggeredRef.current = true;
+    autoEndFromArrivalRef.current = true;
+    arrivalNearStreakRef.current = 2;
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    stopNavigation();
+  }, [stopNavigation]);
 
   const dismissTripSummary = useCallback(() => setTripSummary(null), []);
 
@@ -1589,20 +1615,13 @@ export function useDriveNavigation(params: {
     if (navSdkHeadless) return;
     if (!isNavigating || !navigationData?.destination) return;
     if (autoEndNavTriggeredRef.current) return;
-    if (navigationProgress?.nextStep?.kind !== 'arrive') {
-      arrivalNearStreakRef.current = 0;
-      return;
-    }
-    const speedMps = speed * 0.44704;
-    if (speedMps >= 2.2) {
-      arrivalNearStreakRef.current = 0;
-      return;
-    }
     const dest = navigationData.destination;
     if (!Number.isFinite(dest.lat) || !Number.isFinite(dest.lng)) return;
 
+    const speedMps = speed * 0.44704;
     const crow = haversineMeters(navigationProgressCoord.lat, navigationProgressCoord.lng, dest.lat, dest.lng);
     const remainMi = liveEta?.distanceMiles;
+    const remainMeters = navigationProgress?.distanceRemainingMeters;
     const remainingSec =
       navigationProgress?.durationRemainingSeconds ??
       (liveEta?.etaMinutes != null ? liveEta.etaMinutes * 60 : null);
@@ -1615,7 +1634,23 @@ export function useDriveNavigation(params: {
     const physicallyAtDestination =
       crow <= ARRIVAL_TIGHT_CROW_METERS &&
       (remainMi == null || remainMi <= ARRIVAL_TIGHT_ROUTE_MI);
-    if ((!timeNear || (!withinRoute && !withinCrow)) && !physicallyAtDestination) {
+    const finalStepVisible = navigationProgress?.nextStep?.kind === 'arrive';
+    const routeNearlyDone =
+      typeof remainMeters === 'number' &&
+      Number.isFinite(remainMeters) &&
+      remainMeters <= 95;
+    if (speedMps >= 3.6 && !physicallyAtDestination) {
+      arrivalNearStreakRef.current = 0;
+      return;
+    }
+    if (
+      !physicallyAtDestination &&
+      !(
+        timeNear &&
+        (withinRoute || withinCrow || routeNearlyDone) &&
+        (finalStepVisible || withinCrow || routeNearlyDone)
+      )
+    ) {
       arrivalNearStreakRef.current = 0;
       return;
     }
@@ -1640,6 +1675,7 @@ export function useDriveNavigation(params: {
     navigationProgressCoord.lng,
     liveEta?.distanceMiles,
     liveEta?.etaMinutes,
+    navigationProgress?.distanceRemainingMeters,
     navigationProgress?.durationRemainingSeconds,
     navigationProgress?.nextStep?.kind,
     speed,
@@ -1661,7 +1697,7 @@ export function useDriveNavigation(params: {
    *
    * This effect mirrors the JS path above but gated specifically to the
    * SDK trip:
-   *   - speed < 1.5 mph (parked / pulled in)
+   *   - not moving fast unless physically at destination (stale SDK speed should not block arrival)
    *   - crow distance to destination ≤ 35 m, OR remaining route distance ≤ 0.06 mi
    *   - must hold for 2 consecutive samples (GPS flicker guard)
    *   - session age ≥ 5 s (no false fire on start in driveway)
@@ -1681,10 +1717,6 @@ export function useDriveNavigation(params: {
       navSdkSnapshot.location?.speed ??
       navigationProgress?.displayCoord?.speedMps ??
       speed * 0.44704;
-    if (!Number.isFinite(speedMps) || speedMps >= 0.67) {
-      arrivalNearStreakRef.current = 0;
-      return;
-    }
 
     const matched = navSdkSnapshot.location;
     const lat =
@@ -1709,6 +1741,10 @@ export function useDriveNavigation(params: {
     const physicallyAtDestination =
       crow <= ARRIVAL_TIGHT_CROW_METERS &&
       (remainMi == null || remainMi <= ARRIVAL_TIGHT_ROUTE_MI);
+    if (Number.isFinite(speedMps) && speedMps >= 3.6 && !physicallyAtDestination) {
+      arrivalNearStreakRef.current = 0;
+      return;
+    }
     if ((!timeNear || (!withinCrow && !withinRoute)) && !physicallyAtDestination) {
       arrivalNearStreakRef.current = 0;
       return;
@@ -2177,6 +2213,7 @@ export function useDriveNavigation(params: {
     updateNavigationDestination,
     startNavigation,
     stopNavigation,
+    completeNavigationAtDestination,
     dismissTripSummary,
     updatePosition,
     addWaypoint,

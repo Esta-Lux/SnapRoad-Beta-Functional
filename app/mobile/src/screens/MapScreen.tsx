@@ -860,12 +860,12 @@ export default function MapScreen() {
     const timeNear =
       typeof remainingSec === 'number' &&
       Number.isFinite(remainingSec) &&
-      remainingSec <= 90;
+      remainingSec <= 180;
     const distanceNear =
       typeof remainingMeters === 'number' &&
       Number.isFinite(remainingMeters) &&
-      remainingMeters <= 130;
-    const physicallyAtDestination = crow <= 25;
+      remainingMeters <= 260;
+    const physicallyAtDestination = crow <= 55;
     if (!physicallyAtDestination && (!timeNear || !distanceNear)) {
       if (__DEV__) {
         console.warn('[MapScreen] Ignored early SDK arrival callback', {
@@ -876,7 +876,7 @@ export default function MapScreen() {
       }
       return;
     }
-    nav.stopNavigation();
+    nav.completeNavigationAtDestination();
   }, [
     nav.navigationData?.destination?.lat,
     nav.navigationData?.destination?.lng,
@@ -885,7 +885,7 @@ export default function MapScreen() {
     nav.sdkNavLocation,
     nav.navigationProgressCoord.lat,
     nav.navigationProgressCoord.lng,
-    nav.stopNavigation,
+    nav.completeNavigationAtDestination,
   ]);
 
   const sdkRouteHandoffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

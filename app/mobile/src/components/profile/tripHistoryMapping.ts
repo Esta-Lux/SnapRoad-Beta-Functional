@@ -1,4 +1,9 @@
 import type { ProfileTripHistoryItem } from './types';
+import {
+  sanitizeTripAverageSpeedMph,
+  sanitizeTripDistanceMiles,
+  sanitizeTripSpeedMph,
+} from '../../utils/driveMetrics';
 
 /** Accept flat arrays or legacy envelopes so Insights trip KPIs never silently read as empty. */
 export function recentTripsListFromPayload(root: unknown): unknown[] {
@@ -44,6 +49,12 @@ function firstNumber(t: Record<string, unknown>, keys: string[], fallback = 0): 
   const value = firstValue(t, keys);
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
+}
+
+function saneAvgSpeed(rawAvg: number, distanceMiles: number, durationSeconds: number, maxSpeedMph: number): number {
+  const avg = sanitizeTripSpeedMph(rawAvg, 130);
+  if (avg > 0 && (!maxSpeedMph || avg <= maxSpeedMph)) return avg;
+  return sanitizeTripAverageSpeedMph(distanceMiles, durationSeconds, maxSpeedMph || undefined);
 }
 
 function toIsoIfValid(s: string): string {
@@ -95,6 +106,21 @@ export function mapProfileTripHistoryItem(raw: unknown, idx = 0): ProfileTripHis
       ? Number(durMinRaw)
       : Math.round(durSec / 60);
 
+  const maxSpeedMph = sanitizeTripSpeedMph(
+    firstNumber(t, ['max_speed_mph', 'maxSpeedMph', 'top_speed_mph', 'max_speed']),
+  );
+  const distanceMiles = sanitizeTripDistanceMiles(
+    firstNumber(t, ['distance_miles', 'distanceMiles', 'distance']),
+    durSec,
+    maxSpeedMph || undefined,
+  );
+  const avgSpeedMph = saneAvgSpeed(
+    firstNumber(t, ['avg_speed_mph', 'avgSpeedMph', 'avg_speed', 'average_speed_mph']),
+    distanceMiles,
+    durSec,
+    maxSpeedMph,
+  );
+
   return {
     id: String(firstValue(t, ['id', 'trip_id', 'tripId']) ?? idx),
     date: display.date,
@@ -120,14 +146,14 @@ export function mapProfileTripHistoryItem(raw: unknown, idx = 0): ProfileTripHis
       ],
       'End',
     ) || 'End',
-    distance_miles: firstNumber(t, ['distance_miles', 'distanceMiles', 'distance']),
+    distance_miles: distanceMiles,
     duration_minutes: durMin,
     duration_seconds: durSec,
     gems_earned: firstNumber(t, ['gems_earned', 'gemsEarned', 'gems']),
     xp_earned: firstNumber(t, ['xp_earned', 'xpEarned', 'xp']),
     safety_score: firstNumber(t, ['safety_score', 'safetyScore', 'safety']),
-    avg_speed_mph: firstNumber(t, ['avg_speed_mph', 'avgSpeedMph', 'avg_speed', 'average_speed_mph']),
-    max_speed_mph: firstNumber(t, ['max_speed_mph', 'maxSpeedMph', 'top_speed_mph', 'max_speed']),
+    avg_speed_mph: avgSpeedMph,
+    max_speed_mph: Math.max(maxSpeedMph, avgSpeedMph),
     fuel_used_gallons: firstNumber(t, ['fuel_used_gallons', 'fuelUsedGallons', 'fuel_gallons']),
     fuel_cost_estimate: firstNumber(t, ['fuel_cost_estimate', 'fuelCostEstimate', 'fuel_cost_usd', 'fuel_cost']),
     mileage_value_estimate: firstNumber(t, [

@@ -9,6 +9,7 @@
  * functions: easy to unit test, easy to keep stable as the UI evolves.
  */
 import type { ProfileGemTxItem, ProfileTripHistoryItem } from './types';
+import { sanitizeTripSpeedMph } from '../../utils/driveMetrics';
 
 export type TimeRangePreset = 'day' | 'week' | 'month' | 'custom';
 
@@ -187,9 +188,10 @@ export function computeKpis(trips: ProfileTripHistoryItem[]): InsightsKpis {
     if (Number.isFinite(g)) gems += g;
     const x = Number(t.xp_earned ?? 0);
     if (Number.isFinite(x)) xp += x;
-    const peak = Number(t.max_speed_mph ?? 0);
+    const peak = sanitizeTripSpeedMph(Number(t.max_speed_mph ?? 0));
     if (Number.isFinite(peak) && peak > topSpeed) topSpeed = peak;
-    const avg = Number(t.avg_speed_mph ?? 0);
+    const rawAvg = sanitizeTripSpeedMph(Number(t.avg_speed_mph ?? 0), 130);
+    const avg = peak > 0 ? Math.min(rawAvg, peak) : rawAvg;
     if (Number.isFinite(avg) && avg > 0) {
       const w = Number.isFinite(m) && m > 0 ? m : 0;
       if (w > 0) {

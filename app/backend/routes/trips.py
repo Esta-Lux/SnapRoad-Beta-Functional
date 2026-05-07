@@ -33,6 +33,9 @@ current_user_id = get_current_user_id()
 trips_db = get_trips_store()
 fuel_logs = get_fuel_logs_store()
 FUEL_PRICES = get_fuel_prices()
+
+_MAX_TRIP_SPEED_MPH = 160.0
+_MAX_TRIP_AVG_SPEED_MPH = 130.0
 XP_CONFIG = get_xp_config()
 
 try:
@@ -98,6 +101,49 @@ def _float_or_zero(value: Any) -> float:
         return 0.0
 
 
+def _float_or_none(value: Any) -> Optional[float]:
+    try:
+        n = float(value)
+        return n if math.isfinite(n) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _sanitize_speed_mph(value: Any, max_mph: float = _MAX_TRIP_SPEED_MPH) -> float:
+    n = _float_or_none(value)
+    if n is None:
+        return 0.0
+    return max(0.0, min(float(max_mph), n))
+
+
+def _sanitize_trip_distance_miles(
+    distance_miles: Any,
+    duration_seconds: Any,
+    observed_max_speed_mph: Any = None,
+) -> float:
+    distance = max(0.0, _float_or_zero(distance_miles))
+    duration = _float_or_none(duration_seconds)
+    if not duration or duration <= 0 or distance <= 0:
+        return distance
+    observed_max = _sanitize_speed_mph(observed_max_speed_mph)
+    cap_speed = observed_max if observed_max > 0 else _MAX_TRIP_AVG_SPEED_MPH
+    return min(distance, max(0.0, (duration / 3600.0) * cap_speed))
+
+
+def _sanitize_avg_speed_mph(
+    distance_miles: Any,
+    duration_seconds: Any,
+    observed_max_speed_mph: Any = None,
+) -> float:
+    distance = max(0.0, _float_or_zero(distance_miles))
+    duration = _float_or_none(duration_seconds)
+    if not duration or duration <= 0 or distance <= 0:
+        return 0.0
+    avg = min(_MAX_TRIP_AVG_SPEED_MPH, distance / (duration / 3600.0))
+    observed_max = _sanitize_speed_mph(observed_max_speed_mph)
+    return min(avg, observed_max) if observed_max > 0 else avg
+
+
 def _int_or_zero(value: Any) -> int:
     try:
         return int(float(value or 0))
@@ -129,9 +175,22 @@ def _trip_row_to_client_shape(r: dict) -> dict:
         "endLocation",
         "to",
     )
-    distance = _float_or_zero(_first_present(r, "distance_miles", "distance"))
-    avg_speed = _float_or_zero(_first_present(r, "avg_speed_mph", "avg_speed", "average_speed_mph"))
-    max_speed = _float_or_zero(_first_present(r, "max_speed_mph", "top_speed_mph", "max_speed"))
+    max_speed = _sanitize_speed_mph(_first_present(r, "max_speed_mph", "top_speed_mph", "max_speed"))
+    distance = _sanitize_trip_distance_miles(
+        _first_present(r, "distance_miles", "distance"),
+        dur_sec,
+        max_speed or None,
+    )
+    avg_candidate = _sanitize_speed_mph(
+        _first_present(r, "avg_speed_mph", "avg_speed", "average_speed_mph"),
+        _MAX_TRIP_AVG_SPEED_MPH,
+    )
+    avg_speed = (
+        avg_candidate
+        if avg_candidate > 0 and (max_speed <= 0 or avg_candidate <= max_speed)
+        else _sanitize_avg_speed_mph(distance, dur_sec, max_speed or None)
+    )
+    max_speed = max(max_speed, avg_speed)
     fuel_used = _float_or_zero(_first_present(r, "fuel_used_gallons", "fuel_gallons"))
     fuel_cost = _float_or_zero(_first_present(r, "fuel_cost_estimate", "fuel_cost_usd", "fuel_cost"))
     mileage_value = _float_or_zero(
@@ -552,19 +611,21 @@ def _build_trip_row(
 ) -> dict:
     now_iso = datetime.now(timezone.utc).isoformat()
     duration_seconds = _int_for_pg(body.duration_seconds)
+    distance = _sanitize_trip_distance_miles(
+        distance,
+        duration_seconds,
+        body.max_speed_mph if body.max_speed_mph is not None else body.avg_speed_mph,
+    )
+    observed_max_speed = _sanitize_speed_mph(body.max_speed_mph)
+    avg_candidate = _sanitize_speed_mph(body.avg_speed_mph, _MAX_TRIP_AVG_SPEED_MPH)
     avg_speed = (
-        float(body.avg_speed_mph)
-        if body.avg_speed_mph is not None and math.isfinite(float(body.avg_speed_mph))
-        else (float(distance) / (duration_seconds / 3600.0) if duration_seconds > 0 else 0.0)
+        avg_candidate
+        if avg_candidate > 0 and (observed_max_speed <= 0 or avg_candidate <= observed_max_speed)
+        else _sanitize_avg_speed_mph(distance, duration_seconds, observed_max_speed or None)
     )
     # Max speed: trust the client's smoothed peak when present; otherwise fall back to avg
     # (never below avg, never above a sane highway ceiling).
-    if body.max_speed_mph is not None and math.isfinite(float(body.max_speed_mph)):
-        max_speed = max(0.0, min(160.0, float(body.max_speed_mph)))
-    else:
-        max_speed = max(0.0, avg_speed)
-    if max_speed < avg_speed:
-        max_speed = avg_speed
+    max_speed = max(observed_max_speed, avg_speed)
     fuel_used = (
         float(body.fuel_used_gallons)
         if body.fuel_used_gallons is not None and math.isfinite(float(body.fuel_used_gallons))
@@ -755,7 +816,11 @@ def _read_profile_totals_after_trip(user_id: str) -> Optional[Dict[str, Any]]:
 def complete_trip(request: Request, body: TripCompleteBody, user: CurrentUser):
     """Persist a completed trip to Supabase and update profile stats."""
     user_id = str(user.get("user_id") or user.get("id") or "").strip()
-    distance = max(0, body.distance_miles)
+    distance = _sanitize_trip_distance_miles(
+        body.distance_miles,
+        body.duration_seconds,
+        body.max_speed_mph if body.max_speed_mph is not None else body.avg_speed_mph,
+    )
     if body.duration_seconds < _MIN_TRIP_SECONDS or distance < _MIN_TRIP_MILES:
         return {
             "success": True,
@@ -861,6 +926,9 @@ def complete_trip(request: Request, body: TripCompleteBody, user: CurrentUser):
         "fuel_used_gallons": trip_row.get("fuel_used_gallons"),
         "fuel_cost_estimate": trip_row.get("fuel_cost_estimate"),
         "mileage_value_estimate": trip_row.get("mileage_value_estimate"),
+        "hard_braking_events": trip_row.get("hard_braking_events"),
+        "speeding_events": trip_row.get("speeding_events"),
+        "incidents_reported": trip_row.get("incidents_reported"),
     }
     if profile_totals is not None:
         payload["profile"] = profile_totals

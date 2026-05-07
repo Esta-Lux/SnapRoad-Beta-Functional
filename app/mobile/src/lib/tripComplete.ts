@@ -5,6 +5,11 @@
  */
 
 import type { TripSummary } from '../types/tripSummary';
+import {
+  sanitizeTripAverageSpeedMph,
+  sanitizeTripDistanceMiles,
+  sanitizeTripSpeedMph,
+} from '../utils/driveMetrics';
 
 /** Shape of the unwrapped `/api/trips/complete` success body (inside `data`). */
 export interface TripCompleteApiData {
@@ -20,6 +25,9 @@ export interface TripCompleteApiData {
   fuel_used_gallons?: number;
   fuel_cost_estimate?: number;
   mileage_value_estimate?: number;
+  hard_braking_events?: number;
+  speeding_events?: number;
+  incidents_reported?: number;
   origin?: string;
   destination?: string;
   profile?: {
@@ -51,6 +59,27 @@ export function mergeTripCompleteResponse(base: TripSummary, body: unknown): Tri
   const d = unwrapTripCompleteData(body);
 
   const apiCounted = d.counted !== false && d.trip_id != null;
+  const durationSeconds =
+    d.duration_seconds != null ? Number(d.duration_seconds) : base.duration_seconds;
+  const durationForSanitize =
+    durationSeconds != null && Number.isFinite(durationSeconds)
+      ? durationSeconds
+      : Math.max(0, Number(base.duration ?? 0) * 60);
+  const apiMaxSpeed = d.max_speed_mph != null ? Number(d.max_speed_mph) : base.max_speed_mph;
+  const safeMaxSpeed = sanitizeTripSpeedMph(apiMaxSpeed);
+  const safeDistance = sanitizeTripDistanceMiles(
+    Number(d.distance_miles ?? base.distance),
+    durationForSanitize,
+    safeMaxSpeed || undefined,
+  );
+  const rawAvgSpeed = d.avg_speed_mph != null ? Number(d.avg_speed_mph) : base.avg_speed_mph;
+  const safeAvgFromTelemetry = sanitizeTripSpeedMph(rawAvgSpeed, 130);
+  const safeAvgSpeed =
+    safeAvgFromTelemetry > 0 && (!safeMaxSpeed || safeAvgFromTelemetry <= safeMaxSpeed)
+      ? safeAvgFromTelemetry
+      : sanitizeTripAverageSpeedMph(safeDistance, durationForSanitize, safeMaxSpeed || undefined);
+  const mergedMaxSpeed =
+    safeMaxSpeed > 0 || safeAvgSpeed > 0 ? Math.max(safeMaxSpeed, safeAvgSpeed) : base.max_speed_mph;
   const profRaw = d.profile;
   const profileSnap =
     profRaw && typeof profRaw === 'object'
@@ -69,16 +98,21 @@ export function mergeTripCompleteResponse(base: TripSummary, body: unknown): Tri
     gems_earned: Number(d.gems_earned ?? base.gems_earned),
     xp_earned: Number(d.xp_earned ?? base.xp_earned),
     safety_score: Number(d.safety_score ?? base.safety_score),
-    distance: Number(d.distance_miles ?? base.distance),
+    distance: safeDistance,
     origin: typeof d.origin === 'string' && d.origin.trim() ? d.origin : base.origin,
     destination: typeof d.destination === 'string' && d.destination.trim() ? d.destination : base.destination,
-    duration_seconds: d.duration_seconds != null ? Number(d.duration_seconds) : base.duration_seconds,
-    avg_speed_mph: d.avg_speed_mph != null ? Number(d.avg_speed_mph) : base.avg_speed_mph,
-    max_speed_mph: d.max_speed_mph != null ? Number(d.max_speed_mph) : base.max_speed_mph,
+    duration_seconds: durationSeconds,
+    avg_speed_mph: safeAvgSpeed || base.avg_speed_mph,
+    max_speed_mph: mergedMaxSpeed,
     fuel_used_gallons: d.fuel_used_gallons != null ? Number(d.fuel_used_gallons) : base.fuel_used_gallons,
     fuel_cost_estimate: d.fuel_cost_estimate != null ? Number(d.fuel_cost_estimate) : base.fuel_cost_estimate,
     mileage_value_estimate:
       d.mileage_value_estimate != null ? Number(d.mileage_value_estimate) : base.mileage_value_estimate,
+    hard_braking_events:
+      d.hard_braking_events != null ? Number(d.hard_braking_events) : base.hard_braking_events,
+    speeding_events: d.speeding_events != null ? Number(d.speeding_events) : base.speeding_events,
+    incidents_reported:
+      d.incidents_reported != null ? Number(d.incidents_reported) : base.incidents_reported,
     counted: apiCounted,
     profile_totals: profileSnap ?? base.profile_totals,
   };

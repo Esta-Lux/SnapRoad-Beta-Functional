@@ -9,6 +9,9 @@ import {
   estimateFuelCostUsd,
   estimateFuelGallons,
   estimateMileageDeductionUsd,
+  sanitizeTripAverageSpeedMph,
+  sanitizeTripDistanceMiles,
+  sanitizeTripSpeedMph,
 } from '../utils/driveMetrics';
 import { tripSafetyScoreFromEventCounts } from '../utils/driveSafetyEvents';
 import { formatTripPlaceLabel } from '../utils/tripPlaceLabels';
@@ -143,8 +146,14 @@ export function useNativeNavBridge(params: {
     const progress = lastProgressRef.current;
     const nowMs = Date.now();
     const durationSec = Math.max(1, Math.round((nowMs - startTimeRef.current) / 1000));
-    const distanceMeters = Math.max(0, progress?.distanceTraveled ?? 0);
-    const distanceMiles = distanceMeters / 1609.34;
+    const rawDistanceMeters = Math.max(0, progress?.distanceTraveled ?? 0);
+    const observedMaxSpeed = sanitizeTripSpeedMph(maxSpeedMphRef.current);
+    const distanceMiles = sanitizeTripDistanceMiles(
+      rawDistanceMeters / 1609.34,
+      durationSec,
+      observedMaxSpeed || undefined,
+    );
+    const distanceMeters = distanceMiles * 1609.34;
     const roundedDistanceMiles = Math.round(distanceMiles * 10) / 10;
     const qualifiesTrip =
       distanceMiles >= NATIVE_NAV_MIN_QUALIFYING_MI &&
@@ -172,12 +181,11 @@ export function useNativeNavBridge(params: {
         { name: destination.name, address: destination.address },
         'Destination',
       );
-      const avgSpeed =
-        metrics.durationSec > 0
-          ? Math.round((dist / (metrics.durationSec / 3600)) * 10) / 10
-          : 0;
-      const maxSpeed =
-        Math.round(Math.max(avgSpeed, maxSpeedMphRef.current) * 10) / 10;
+      const observedMaxSpeed = sanitizeTripSpeedMph(maxSpeedMphRef.current);
+      const avgSpeed = Math.round(
+        sanitizeTripAverageSpeedMph(dist, metrics.durationSec, observedMaxSpeed || undefined) * 10,
+      ) / 10;
+      const maxSpeed = Math.round(Math.max(avgSpeed, observedMaxSpeed) * 10) / 10;
       const fuelGal = Math.round(estimateFuelGallons(dist) * 100) / 100;
 
       return {

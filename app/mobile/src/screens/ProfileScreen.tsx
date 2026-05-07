@@ -57,6 +57,7 @@ import { ProfileStatsStrip, ProfileTabBar } from '../components/profile/ProfileS
 import PlaceAlertsDashboardModal from '../components/profile/PlaceAlertsDashboardModal';
 import { registerCommutePushToken } from '../utils/pushNotifications';
 import { mapProfileTripHistoryItem, recentTripsListFromPayload } from '../components/profile/tripHistoryMapping';
+import { sanitizeTripSpeedMph } from '../utils/driveMetrics';
 
 export default function ProfileScreen() {
   const navigation = useNavigation<ProfileStackScreenNavigationProp>();
@@ -325,8 +326,8 @@ export default function ProfileScreen() {
                   speeding_events_total: Number((beh as Record<string, unknown>).speeding_events_total ?? 0),
                 }
               : { hard_braking_events_total: 0, speeding_events_total: 0 },
-          topSpeedMph: Number(weekly.top_speed_mph ?? 0),
-          avgSpeedMph: Number(weekly.avg_speed_mph ?? 0),
+          topSpeedMph: sanitizeTripSpeedMph(Number(weekly.top_speed_mph ?? 0)),
+          avgSpeedMph: sanitizeTripSpeedMph(Number(weekly.avg_speed_mph ?? 0), 130),
           fuelUsedGallons: Number(weekly.fuel_used_gallons ?? 0),
           fuelCostEstimate: Number(weekly.fuel_cost_estimate ?? 0),
           mileageValueEstimate: Number(weekly.mileage_value_estimate ?? 0),
