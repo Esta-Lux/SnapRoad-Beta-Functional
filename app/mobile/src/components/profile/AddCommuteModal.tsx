@@ -68,7 +68,7 @@ export default function AddCommuteModal({
   const [name, setName] = useState('My commute');
   const [leaveBy, setLeaveBy] = useState('08:00');
   const [alertMin, setAlertMin] = useState('120');
-  const [monitorMin, setMonitorMin] = useState('180');
+  const [monitorMin, setMonitorMin] = useState('120');
   const [notifyEveryMin, setNotifyEveryMin] = useState('30');
   const [maxPushes, setMaxPushes] = useState('3');
   const [dayMap, setDayMap] = useState<Record<string, boolean>>(() =>
@@ -277,7 +277,7 @@ export default function AddCommuteModal({
       return;
     }
     const am = Math.max(5, Math.min(parseInt(alertMin, 10) || 120, 24 * 60));
-    const monitor = Math.max(15, Math.min(parseInt(monitorMin, 10) || 180, 12 * 60));
+    const monitor = Math.max(15, Math.min(parseInt(monitorMin, 10) || 120, 12 * 60));
     const every = Math.max(5, Math.min(parseInt(notifyEveryMin, 10) || 30, 240));
     const max = Math.max(1, Math.min(parseInt(maxPushes, 10) || 3, 12));
     let tz = 'America/New_York';
@@ -325,10 +325,9 @@ export default function AddCommuteModal({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 8 }}
       >
-        <Text style={[styles.title, { color: text }]}>Commute alert</Text>
+        <Text style={[styles.title, { color: text }]}>Commute Alerts</Text>
         <Text style={[styles.sub, { color: sub }]}>
-          Set where you leave, where you need to go, and how aggressively SnapRoad should scan for traffic so the app
-          can protect your time, fuel, and road stress.
+          Save your route once. SnapRoad scans 2h before leave time and sends short push updates when traffic matters.
         </Text>
 
         <Text style={[styles.label, { color: sub }]}>Commute name</Text>
@@ -389,8 +388,7 @@ export default function AddCommuteModal({
         {originMode === 'address' ? (
           <View style={{ marginBottom: 12 }}>
             <Text style={{ color: sub, fontSize: 11, marginBottom: 6 }}>
-              Type for suggestions — saved places, recent map picks, then Google/Mapbox results (location-biased when GPS
-              is available).
+              Type an address or pick a saved place.
             </Text>
             <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
               <TextInput
@@ -448,13 +446,13 @@ export default function AddCommuteModal({
 
         {originMode === 'current' ? (
           <Text style={{ color: sub, fontSize: 13, marginBottom: 12 }}>
-            {locOk ? 'Uses your last GPS fix — open Map for the freshest position.' : 'Waiting for GPS. Switch to Address if needed.'}
+            {locOk ? 'Uses your latest GPS fix.' : 'Waiting for GPS. Switch to Address if needed.'}
           </Text>
         ) : null}
 
         <Text style={[styles.label, { color: sub }]}>Destination</Text>
         <Text style={{ color: sub, fontSize: 11, marginBottom: 6 }}>
-          Same smart suggestions as the map search — type a few letters to see results.
+          Type a few letters, then select the exact place.
         </Text>
         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 }}>
           <TextInput
@@ -513,7 +511,7 @@ export default function AddCommuteModal({
           placeholderTextColor={sub}
           style={[styles.input, { color: text, borderColor: border, backgroundColor: cardBg }]}
         />
-        <Text style={[styles.label, { color: sub }]}>Alert minutes before leaving</Text>
+        <Text style={[styles.label, { color: sub }]}>Start scanning before leave</Text>
         <TextInput
           value={alertMin}
           onChangeText={setAlertMin}
@@ -524,18 +522,18 @@ export default function AddCommuteModal({
         />
         <View style={styles.gridRow}>
           <View style={styles.gridCell}>
-            <Text style={[styles.label, { color: sub }]}>Scan for</Text>
+            <Text style={[styles.label, { color: sub }]}>Scan window</Text>
             <TextInput
               value={monitorMin}
               onChangeText={setMonitorMin}
               keyboardType="number-pad"
-              placeholder="180"
+              placeholder="120"
               placeholderTextColor={sub}
               style={[styles.input, { color: text, borderColor: border, backgroundColor: cardBg }]}
             />
           </View>
           <View style={styles.gridCell}>
-            <Text style={[styles.label, { color: sub }]}>Every</Text>
+            <Text style={[styles.label, { color: sub }]}>Alert spacing</Text>
             <TextInput
               value={notifyEveryMin}
               onChangeText={setNotifyEveryMin}
@@ -558,7 +556,7 @@ export default function AddCommuteModal({
           </View>
         </View>
         <Text style={{ color: sub, fontSize: 12, lineHeight: 16, marginTop: -6, marginBottom: 12 }}>
-          Minutes: scan window, alert spacing, and max pushes per commute window.
+          Minutes. Default is a 2h scan, 30m spacing, and 3 pushes max.
         </Text>
         <Text style={[styles.label, { color: sub }]}>Days</Text>
         <View style={styles.dayRow}>
@@ -585,7 +583,7 @@ export default function AddCommuteModal({
           onPress={() => void submit()}
           disabled={saving}
         >
-          <Text style={styles.saveBtnText}>{saving ? 'Saving…' : 'Save commute'}</Text>
+          <Text style={styles.saveBtnText}>{saving ? 'Saving...' : 'Save commute alert'}</Text>
         </TouchableOpacity>
       </ScrollView>
     </Modal>

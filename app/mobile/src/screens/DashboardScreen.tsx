@@ -155,7 +155,7 @@ function FamilyPreview({ colors, isLight }: { colors: ReturnType<typeof useTheme
           { icon: 'locate-outline', label: 'Live Tracking', desc: 'Real-time family locations' },
           { icon: 'shield-checkmark-outline', label: 'Teen Controls', desc: 'Speed limits & curfews' },
           { icon: 'alert-circle-outline', label: 'SOS Alerts', desc: 'Emergency notifications' },
-          { icon: 'notifications-outline', label: 'Place Alerts', desc: 'Arrive/leave geofences' },
+          { icon: 'navigate-outline', label: 'Commute Alerts', desc: 'Route traffic nudges' },
           { icon: 'bar-chart-outline', label: 'Trip Reports', desc: 'Teen driving insights' },
         ].map((f) => (
           <View key={f.label} style={[styles.featureCard, { backgroundColor: isLight ? '#fff' : 'rgba(255,255,255,0.04)', borderColor: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)' }]}>

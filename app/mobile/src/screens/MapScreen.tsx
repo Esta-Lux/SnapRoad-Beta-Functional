@@ -6723,11 +6723,6 @@ export default function MapScreen() {
               screen: 'ProfileMain',
               params: { openSupport: true },
             });
-          } else if (screen === 'PlaceAlerts') {
-            (rnNav as { navigate: (name: string, params?: object) => void }).navigate('Profile', {
-              screen: 'ProfileMain',
-              params: { openPlaceAlerts: true },
-            });
           } else if (screen === 'CommuteAlerts') {
             (rnNav as { navigate: (name: string, params?: object) => void }).navigate('Profile', {
               screen: 'ProfileMain',

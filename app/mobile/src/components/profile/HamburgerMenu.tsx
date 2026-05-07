@@ -33,7 +33,6 @@ export type HamburgerMenuTarget =
   | 'Social'
   | 'Offers'
   | 'Convoy'
-  | 'PlaceAlerts'
   | 'CommuteAlerts'
   | 'Wallet'
   | 'Profile'
@@ -105,17 +104,9 @@ export default function HamburgerMenu({ visible, onClose, isLight, onNavigate, o
       action: () => runAfterMenuClose(onClose, () => onNavigate('Convoy')),
     },
     {
-      icon: actionMeta('place_alerts')?.icon ?? 'notifications-outline',
-      label: actionMeta('place_alerts')?.label ?? 'Place Alerts',
-      description: actionMeta('place_alerts')?.description ?? 'Saved-place arrival timing.',
-      accent: '#3B82F6',
-      availability: actionMeta('place_alerts')?.availability,
-      action: () => runAfterMenuClose(onClose, () => onNavigate('PlaceAlerts')),
-    },
-    {
       icon: actionMeta('commute_alerts')?.icon ?? 'navigate-outline',
       label: actionMeta('commute_alerts')?.label ?? 'Commute Alerts',
-      description: actionMeta('commute_alerts')?.description ?? 'Traffic scan notifications.',
+      description: actionMeta('commute_alerts')?.description ?? 'Start, destination, traffic scans, and push alerts.',
       accent: '#10B981',
       availability: actionMeta('commute_alerts')?.availability,
       action: () => runAfterMenuClose(onClose, () => onNavigate('CommuteAlerts')),
@@ -211,7 +202,7 @@ export default function HamburgerMenu({ visible, onClose, isLight, onNavigate, o
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.title, { color: text }]}>SnapRoad command center</Text>
-              <Text style={[styles.subtitle, { color: sub }]}>Every action is wired, gated, or marked as coming soon.</Text>
+              <Text style={[styles.subtitle, { color: sub }]}>Core actions, cleanly wired.</Text>
             </View>
           </View>
 

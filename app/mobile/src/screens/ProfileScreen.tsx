@@ -13,7 +13,6 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../hooks/useLocation';
 import { api } from '../api/client';
-import { unwrapApiData as unwrapOffersApiData } from '../api/dto/offers';
 import {
   parseProfilePatch,
   unwrapApiData as unwrapProfileApiData,
@@ -54,7 +53,6 @@ import {
 } from '../components/profile/ProfileSections';
 import type { ProfileOverviewActionItem } from '../components/profile/types';
 import { ProfileStatsStrip, ProfileTabBar } from '../components/profile/ProfileScreenBlocks';
-import PlaceAlertsDashboardModal from '../components/profile/PlaceAlertsDashboardModal';
 import { registerCommutePushToken } from '../utils/pushNotifications';
 import { mapProfileTripHistoryItem, recentTripsListFromPayload } from '../components/profile/tripHistoryMapping';
 import { sanitizeTripSpeedMph } from '../utils/driveMetrics';
@@ -90,10 +88,6 @@ export default function ProfileScreen() {
   const [showAddCommute, setShowAddCommute] = useState(false);
   const [notifSyncing, setNotifSyncing] = useState(false);
 
-  const [placeAlerts, setPlaceAlerts] = useState<{ id: string; name: string; address?: string; alert_minutes_before: number; days_of_week: string[]; realtime_push?: boolean }[]>([]);
-  const [placeAlertLimit, setPlaceAlertLimit] = useState(5);
-  const [placeAlertPremium, setPlaceAlertPremium] = useState(false);
-
   const [vehicleType, setVehicleType] = useState<'car' | 'motorcycle'>('car');
   const [tallVehicle, setTallVehicle] = useState(false);
   const [vehicleHeight, setVehicleHeight] = useState('');
@@ -126,7 +120,6 @@ export default function ProfileScreen() {
   const [showConcern, setShowConcern] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [showDriverSnapshot, setShowDriverSnapshot] = useState(false);
-  const [showPlaceAlertsDashboard, setShowPlaceAlertsDashboard] = useState(false);
   const scrollRef = useRef<ScrollView | null>(null);
   const commuteSectionY = useRef(0);
   const [weeklyRecap, setWeeklyRecap] = useState<ProfileWeeklyRecap>({
@@ -280,13 +273,6 @@ export default function ProfileScreen() {
         setCommutes(Array.isArray(cw.data) ? cw.data : []);
         setCommuteLimit(Number(cw.limit ?? 5));
       }
-      api.get('/api/place-alerts').then((r) => {
-        const d = unwrapOffersApiData(r?.data);
-        if (Array.isArray(d)) setPlaceAlerts(d);
-        const meta = (r?.data as Record<string, unknown> | undefined) ?? {};
-        setPlaceAlertLimit(Number(meta.limit ?? 5));
-        setPlaceAlertPremium(Boolean(meta.is_premium ?? false));
-      }).catch(() => {});
       const notifPayload = (unwrapProfileApiData(notifRes.data) as Record<string, unknown>) ?? {};
       const push = (notifPayload.push_notifications && typeof notifPayload.push_notifications === 'object'
         ? (notifPayload.push_notifications as Record<string, unknown>)
@@ -406,13 +392,6 @@ export default function ProfileScreen() {
     if (!statsVersion) return;
     void loadData('silent');
   }, [statsVersion, loadData]);
-
-  useEffect(() => {
-    if (route.params?.openPlaceAlerts) {
-      setShowPlaceAlertsDashboard(true);
-      navigation.setParams({ openPlaceAlerts: undefined });
-    }
-  }, [route.params?.openPlaceAlerts, navigation]);
 
   useEffect(() => {
     if (!route.params?.openCommuteReminders) return;
@@ -804,20 +783,24 @@ export default function ProfileScreen() {
               activeOpacity={0.92}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                setShowPlaceAlertsDashboard(true);
+                if (commutes.length === 0) {
+                  setShowAddCommute(true);
+                  return;
+                }
+                scrollRef.current?.scrollTo({ y: Math.max(0, commuteSectionY.current - 20), animated: true });
               }}
-              style={[styles.placeAlertDash, { backgroundColor: cardBg, borderColor: colors.border, marginHorizontal: 16, marginBottom: 12 }]}
+              style={[styles.commuteAlertDash, { backgroundColor: cardBg, borderColor: colors.border, marginHorizontal: 16, marginBottom: 12 }]}
               accessibilityRole="button"
-              accessibilityLabel="Open place alerts dashboard"
+              accessibilityLabel="Open commute alerts"
             >
-              <View style={[styles.placeAlertIconWrap, { backgroundColor: 'rgba(59,130,246,0.12)' }]}>
-                <Ionicons name="notifications-outline" size={22} color={colors.primary} />
+              <View style={[styles.commuteAlertIconWrap, { backgroundColor: 'rgba(59,130,246,0.12)' }]}>
+                <Ionicons name="navigate-outline" size={22} color={colors.primary} />
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={[styles.placeAlertDashTitle, { color: text }]}>Place alerts</Text>
-                <Text style={[styles.placeAlertDashSub, { color: sub }]} numberOfLines={2}>
-                  Starting point, destination, leave time, how early to warn, and repeat days. Premium adds real-time push for traffic ahead.
-                  {placeAlerts.length > 0 ? ` ${placeAlerts.length} active.` : ''}
+                <Text style={[styles.commuteAlertDashTitle, { color: text }]}>Commute Alerts</Text>
+                <Text style={[styles.commuteAlertDashSub, { color: sub }]} numberOfLines={2}>
+                  Start, destination, days, leave time, and max push alerts. Scans begin 2h before you leave.
+                  {commutes.length > 0 ? ` ${commutes.length} active.` : ''}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={sub} />
@@ -854,9 +837,9 @@ export default function ProfileScreen() {
                 commuteSectionY.current = e.nativeEvent.layout.y;
               }}
             >
-              <SectionHeader title={`Commute reminders (${commutes.length}/${commuteLimit})`} isLight={isLight} />
+              <SectionHeader title={`Commute Alerts (${commutes.length}/${commuteLimit})`} isLight={isLight} />
               <Text style={{ color: sub, fontSize: 12, paddingHorizontal: 16, marginBottom: 6, marginTop: -6, lineHeight: 16 }}>
-                Recurring A→B route scans for leave-time, traffic, fuel, and stress savings. Push notifications are only used for commute alerts.
+                Saved A-to-B scans. SnapRoad watches traffic before leave time and pushes short updates when the route gets busy.
               </Text>
               <CommuteRoutesSection
                 cardBg={cardBg}
@@ -1193,16 +1176,6 @@ export default function ProfileScreen() {
           }
         }}
       />
-      <PlaceAlertsDashboardModal
-        visible={showPlaceAlertsDashboard}
-        onClose={() => setShowPlaceAlertsDashboard(false)}
-        places={places}
-        userLocation={location}
-        placeAlerts={placeAlerts}
-        placeAlertLimit={placeAlertLimit}
-        placeAlertPremium={placeAlertPremium}
-        onRefresh={() => void loadData('silent')}
-      />
       <AddCommuteModal
         visible={showAddCommute}
         onClose={() => setShowAddCommute(false)}
@@ -1273,7 +1246,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   upgradeSmallText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  placeAlertDash: {
+  commuteAlertDash: {
     marginHorizontal: 16,
     marginBottom: 12,
     borderRadius: 14,
@@ -1283,9 +1256,9 @@ const styles = StyleSheet.create({
     gap: 12,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  placeAlertIconWrap: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  placeAlertDashTitle: { fontSize: 16, fontWeight: '800' },
-  placeAlertDashSub: { fontSize: 12, fontWeight: '500', marginTop: 2, lineHeight: 16 },
+  commuteAlertIconWrap: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  commuteAlertDashTitle: { fontSize: 16, fontWeight: '800' },
+  commuteAlertDashSub: { fontSize: 12, fontWeight: '500', marginTop: 2, lineHeight: 16 },
   valueCard: {
     marginHorizontal: 16,
     marginBottom: 12,

@@ -446,7 +446,7 @@ export function CommuteRoutesSection({
       ) : routes.length === 0 ? (
         <View style={[styles.card, { backgroundColor: cardBg, borderWidth: StyleSheet.hairlineWidth, borderColor: border }]}>
           <Text style={{ color: sub, fontSize: 13, textAlign: 'center', lineHeight: 18 }}>
-            Save a route with leave time and days. We&apos;ll nudge you before you need to head out (push when you allow notifications).
+            Add a starting address, destination, days, leave time, and alert count. Push updates stay short.
           </Text>
         </View>
       ) : (
@@ -465,7 +465,7 @@ export function CommuteRoutesSection({
                 Leave {r.leave_by_time} · alert {r.alert_minutes_before >= 60 ? `${Math.round(r.alert_minutes_before / 60)}h` : `${r.alert_minutes_before}m`} before
               </Text>
               <Text style={{ color: sub, fontSize: 10, marginTop: 2 }}>
-                Scan {r.monitoring_duration_minutes ?? 180}m · every {r.notification_interval_minutes ?? 30}m · max {r.max_notifications_per_window ?? 3}
+                Scan {r.monitoring_duration_minutes ?? 120}m · every {r.notification_interval_minutes ?? 30}m · max {r.max_notifications_per_window ?? 3}
               </Text>
               <Text style={{ color: sub, fontSize: 10, marginTop: 2 }}>
                 {(r.days_of_week || []).map((d) => DAY_LABELS[d] || d).join(' ')}
@@ -812,7 +812,7 @@ const styles = StyleSheet.create({
   userEmail: { fontSize: 13, marginBottom: 8 },
   planBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4 },
   planBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  card: { marginHorizontal: 16, borderRadius: 12, padding: 16, marginBottom: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 2 },
+  card: { marginHorizontal: 16, borderRadius: 14, padding: 14, marginBottom: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.035, shadowRadius: 8, elevation: 1 },
   settingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
   settingLabel: { flex: 1, fontSize: 14, fontWeight: '500' },
   presetsRow: { flexDirection: 'row', gap: 6, marginVertical: 8 },
@@ -836,20 +836,20 @@ const styles = StyleSheet.create({
   planName: { fontSize: 16, fontWeight: '700', marginBottom: 4 },
   upgradeBtn: { backgroundColor: '#3B82F6', borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 12 },
   upgradeBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  progressCard: { marginHorizontal: 16, marginBottom: 8, borderRadius: 12, overflow: 'hidden' },
-  progressGradient: { paddingHorizontal: 12, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  progressCard: { marginHorizontal: 16, marginBottom: 8, borderRadius: 14, overflow: 'hidden' },
+  progressGradient: { paddingHorizontal: 12, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', gap: 10 },
   progressLevelIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' },
   progressLevelText: { color: '#fff', fontSize: 14, fontWeight: '800' },
   progressTitle: { color: '#fff', fontSize: 14, fontWeight: '800' },
   progressSub: { color: 'rgba(255,255,255,0.86)', fontSize: 11, marginTop: 1 },
   progressAction: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  actionRow: { marginHorizontal: 16, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 12, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  actionRow: { marginHorizontal: 16, borderRadius: 14, paddingVertical: 11, paddingHorizontal: 12, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(148,163,184,0.18)' },
   actionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionIconWrap: { width: 28, height: 28, borderRadius: 8, backgroundColor: 'rgba(59,130,246,0.15)', alignItems: 'center', justifyContent: 'center' },
   actionTitle: { fontSize: 14, fontWeight: '700' },
   actionBadge: { color: '#F59E0B', fontSize: 9, fontWeight: '800', backgroundColor: 'rgba(245,158,11,0.14)', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
   actionSub: { fontSize: 11, marginTop: 1 },
-  shareScoreCta: { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  shareScoreCta: { borderRadius: 14, paddingHorizontal: 12, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
   shareScoreTitle: { color: '#fff', fontSize: 14, fontWeight: '800' },
   shareScoreSub: { color: 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 1 },
   upsellTop: { paddingHorizontal: 20, paddingVertical: 22, alignItems: 'center' },

@@ -1,6 +1,6 @@
 -- Commute alert scan windows: how long SnapRoad watches, alert spacing, and daily caps.
 ALTER TABLE public.commute_routes
-  ADD COLUMN IF NOT EXISTS monitoring_duration_minutes INTEGER NOT NULL DEFAULT 180,
+  ADD COLUMN IF NOT EXISTS monitoring_duration_minutes INTEGER NOT NULL DEFAULT 120,
   ADD COLUMN IF NOT EXISTS notification_interval_minutes INTEGER NOT NULL DEFAULT 30,
   ADD COLUMN IF NOT EXISTS max_notifications_per_window INTEGER NOT NULL DEFAULT 3,
   ADD COLUMN IF NOT EXISTS last_push_at TIMESTAMPTZ,

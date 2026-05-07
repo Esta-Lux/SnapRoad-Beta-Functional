@@ -10,7 +10,6 @@ export type AppActionTarget =
   | 'profile'
   | 'offers_hub'
   | 'profile_billing'
-  | 'place_alerts'
   | 'commute_alerts'
   | 'support'
   | 'share'
@@ -66,17 +65,9 @@ export const APP_ACTION_AUDIT: AppActionContract[] = [
   {
     id: 'commute_alerts',
     label: 'Commute Alerts',
-    description: 'Recurring road scans and push notifications.',
+    description: 'A-to-B route scans, traffic timing, and push notifications.',
     icon: 'navigate-outline',
     target: 'commute_alerts',
-    availability: 'works',
-  },
-  {
-    id: 'place_alerts',
-    label: 'Place Alerts',
-    description: 'Saved-place arrival and traffic timing alerts.',
-    icon: 'notifications-outline',
-    target: 'place_alerts',
     availability: 'works',
   },
   {

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 import 'react-native-gesture-handler';
 import React from 'react';
 import * as WebBrowser from 'expo-web-browser';
@@ -70,6 +71,19 @@ const RewardsStack = createStackNavigator();
 const ProfileStack = createStackNavigator();
 const PublicStack = createStackNavigator();
 const rootNavigationRef = createNavigationContainerRef();
+
+function openCommuteAlertsFromNotification() {
+  if (!rootNavigationRef.isReady()) return;
+  rootNavigationRef.dispatch(
+    CommonActions.navigate({
+      name: 'Profile',
+      params: {
+        screen: 'ProfileMain',
+        params: { openCommuteReminders: true },
+      },
+    }),
+  );
+}
 
 /** Map stack only — defer requiring MapScreen until the authenticated map tab loads (not at App.tsx parse time). */
 let mapScreenComponent: React.ComponentType<any> | null = null;
@@ -583,10 +597,22 @@ function RootNavigator() {
           notification.request.content.title ??
           (data?.type === 'commute_traffic_alert' ? 'Traffic update' : 'Time to head out');
         const body = notification.request.content.body ?? '';
-        Alert.alert(title, body, [{ text: 'OK' }], { cancelable: true });
+        Alert.alert(title, body, [
+          { text: 'Later', style: 'cancel' },
+          { text: 'Open', onPress: openCommuteAlertsFromNotification },
+        ], { cancelable: true });
       }
     });
-    return () => subReceive.remove();
+    const subResponse = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as Record<string, unknown> | undefined;
+      if (data?.type === 'commute_alert' || data?.type === 'commute_traffic_alert') {
+        openCommuteAlertsFromNotification();
+      }
+    });
+    return () => {
+      subReceive.remove();
+      subResponse.remove();
+    };
   }, []);
 
   const linking = React.useMemo<any>(() => ({

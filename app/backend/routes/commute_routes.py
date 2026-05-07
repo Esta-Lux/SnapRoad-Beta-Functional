@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from database import get_supabase
 from limiter import limiter
 from middleware.auth import get_current_user
-from services.commute_traffic_mapbox import should_notify_traffic_delay, traffic_vs_baseline_seconds
+from services.commute_traffic_mapbox import commute_traffic_snapshot, should_notify_traffic_delay
 from services.expo_push import send_expo_push
 from services.internal_request_auth import verify_commute_internal_request
 from services.supabase_service import sb_get_profile
@@ -76,7 +76,7 @@ class CommuteRouteCreate(BaseModel):
     leave_by_time: str = Field(..., description="HH:MM local")
     tz: str = "America/New_York"
     alert_minutes_before: int = 120
-    monitoring_duration_minutes: int = 180
+    monitoring_duration_minutes: int = 120
     notification_interval_minutes: int = 30
     max_notifications_per_window: int = 3
     days_of_week: List[str] = Field(default_factory=lambda: list(DAY_KEYS))
@@ -153,7 +153,7 @@ def create_commute_route(
     if not normalized_days:
         raise HTTPException(status_code=422, detail="Select at least one weekday.")
 
-    mon = _safe_int(body.monitoring_duration_minutes, 180, 15, 12 * 60)
+    mon = _safe_int(body.monitoring_duration_minutes, 120, 15, 12 * 60)
     nint = _safe_int(body.notification_interval_minutes, 30, 5, 240)
     nmax = _safe_int(body.max_notifications_per_window, 3, 1, 12)
 
@@ -218,7 +218,7 @@ def update_commute_route(
     if "alert_minutes_before" in updates and updates["alert_minutes_before"] is not None:
         updates["alert_minutes_before"] = max(5, min(int(updates["alert_minutes_before"]), 24 * 60))
     if "monitoring_duration_minutes" in updates and updates["monitoring_duration_minutes"] is not None:
-        updates["monitoring_duration_minutes"] = _safe_int(updates["monitoring_duration_minutes"], 180, 15, 12 * 60)
+        updates["monitoring_duration_minutes"] = _safe_int(updates["monitoring_duration_minutes"], 120, 15, 12 * 60)
     if "notification_interval_minutes" in updates and updates["notification_interval_minutes"] is not None:
         updates["notification_interval_minutes"] = _safe_int(updates["notification_interval_minutes"], 30, 5, 240)
     if "max_notifications_per_window" in updates and updates["max_notifications_per_window"] is not None:
@@ -333,6 +333,44 @@ def _mark_window_push_sent(sb, route_id: str, now_utc: datetime, day_key: str, r
     ).eq("id", route_id).execute()
 
 
+def _minutes_from_seconds(sec: object, fallback: int = 1) -> int:
+    try:
+        value = float(sec)
+    except (TypeError, ValueError):
+        return fallback
+    return max(fallback, int(round(value / 60.0)))
+
+
+def _commute_scan_push_copy(dest: str, leave_by_time: object, *, is_premium: bool) -> tuple[str, str]:
+    title = "Commute alert"
+    if is_premium:
+        return (
+            title,
+            f"SnapRoad is scanning your route to {dest}. Leave by {leave_by_time}; we'll push if traffic changes.",
+        )
+    return (
+        title,
+        f"Route scan started for {dest}. Leave by {leave_by_time}; open SnapRoad for the cleanest road.",
+    )
+
+
+def _commute_traffic_push_copy(dest: str, snapshot) -> tuple[str, str]:
+    extra_min = _minutes_from_seconds(snapshot.extra_sec)
+    traffic_min = _minutes_from_seconds(snapshot.primary_duration_sec)
+    baseline_min = _minutes_from_seconds(snapshot.baseline_duration_sec)
+    save_min = _minutes_from_seconds(snapshot.alternate_saves_sec, fallback=0)
+    title = "Route busy"
+    if snapshot.alternate_saves_sec >= 120:
+        return (
+            title,
+            f"Route to {dest} is +{extra_min} min. Cleaner road saves ~{save_min} min; open SnapRoad to reroute.",
+        )
+    return (
+        title,
+        f"Route to {dest} is busy: {traffic_min} min vs ~{baseline_min}. Leave early or open SnapRoad.",
+    )
+
+
 @router.post("/internal/dispatch")
 async def dispatch_commute_alerts(request: Request):
     """Cron/worker: send push alerts when leave window approaches.
@@ -366,7 +404,7 @@ async def dispatch_commute_alerts(request: Request):
         leave_local = now_local.replace(hour=hm[0], minute=hm[1], second=0, microsecond=0)
         alert_min = int(route.get("alert_minutes_before") or 120)
         notify_at = leave_local - timedelta(minutes=alert_min)
-        monitor_min = _safe_int(route.get("monitoring_duration_minutes"), 180, 15, 12 * 60)
+        monitor_min = _safe_int(route.get("monitoring_duration_minutes"), 120, 15, 12 * 60)
         window_end = min(leave_local, notify_at + timedelta(minutes=monitor_min))
         if not (notify_at <= now_local <= window_end):
             continue
@@ -380,23 +418,17 @@ async def dispatch_commute_alerts(request: Request):
             continue
         origin = route.get("origin_label") or "Start"
         dest = route.get("dest_label") or "Destination"
-        title = "Commute scan"
-        if is_premium:
-            body = (
-                f"Leave by {route.get('leave_by_time')} for {dest}. "
-                "SnapRoad is watching traffic so you can save time, fuel, and road stress."
-            )
-        else:
-            body = (
-                f"Leave by {route.get('leave_by_time')} for {dest}. "
-                "Leave early if roads are heavy, or open SnapRoad for an efficient route."
-            )
+        title, body = _commute_scan_push_copy(dest, route.get("leave_by_time"), is_premium=is_premium)
         data = {
             "type": "commute_alert",
             "commute_id": route.get("id"),
             "leave_by_time": route.get("leave_by_time"),
             "origin_label": origin,
             "dest_label": dest,
+            "origin_lat": route.get("origin_lat"),
+            "origin_lng": route.get("origin_lng"),
+            "dest_lat": route.get("dest_lat"),
+            "dest_lng": route.get("dest_lng"),
             "alert_minutes_before": alert_min,
             "monitoring_duration_minutes": monitor_min,
             "max_notifications_per_window": _safe_int(route.get("max_notifications_per_window"), 3, 1, 12),
@@ -417,7 +449,7 @@ async def dispatch_commute_alerts(request: Request):
 @router.post("/internal/dispatch-traffic")
 async def dispatch_commute_traffic_alerts(request: Request):
     """
-    Cron/worker (Premium only): poll Mapbox driving-traffic vs driving for each qualifying commute
+    Cron/worker: poll Mapbox driving-traffic alternatives for each qualifying commute
     and push when delay exceeds COMMUTE_TRAFFIC_* thresholds.
 
     Auth: same HMAC / legacy headers as POST /internal/dispatch. Legacy plain header must match
@@ -427,7 +459,7 @@ async def dispatch_commute_traffic_alerts(request: Request):
 
     Env:
       COMMUTE_TRAFFIC_DISPATCH_SECRET — optional; falls back to COMMUTE_DISPATCH_SECRET (legacy header only)
-      COMMUTE_TRAFFIC_WINDOW_START_BEFORE_LEAVE_MIN — default 180 (first poll starts this many minutes before leave_by)
+      COMMUTE_TRAFFIC_WINDOW_START_BEFORE_LEAVE_MIN — default 120 (first poll starts this many minutes before leave_by)
       COMMUTE_TRAFFIC_MIN_EXTRA_SEC — default 300 (absolute delay vs non-traffic baseline)
       COMMUTE_TRAFFIC_EXTRA_RATIO — default 0.12 (delay must also exceed ratio * baseline when combined with min via max())
       COMMUTE_TRAFFIC_PUSH_COOLDOWN_SEC — default 2700 (per-route minimum gap between traffic pushes)
@@ -440,7 +472,7 @@ async def dispatch_commute_traffic_alerts(request: Request):
         legacy_plain_secret_expected=legacy_secret or None,
     )
 
-    window_min = max(30, min(360, int(os.getenv("COMMUTE_TRAFFIC_WINDOW_START_BEFORE_LEAVE_MIN", "180"))))
+    window_min = max(30, min(360, int(os.getenv("COMMUTE_TRAFFIC_WINDOW_START_BEFORE_LEAVE_MIN", "120"))))
     min_extra = float(os.getenv("COMMUTE_TRAFFIC_MIN_EXTRA_SEC", "300"))
     min_ratio = float(os.getenv("COMMUTE_TRAFFIC_EXTRA_RATIO", "0.12"))
     default_cooldown = max(600, min(24 * 3600, int(os.getenv("COMMUTE_TRAFFIC_PUSH_COOLDOWN_SEC", "2700"))))
@@ -464,9 +496,6 @@ async def dispatch_commute_traffic_alerts(request: Request):
                 skipped += 1
                 continue
             prof_row = sb_get_profile(str(uid)) or {}
-            if not profile_row_is_premium(prof_row):
-                skipped += 1
-                continue
 
             tz_name = route.get("tz") or "UTC"
             now_local = _local_now(str(tz_name))
@@ -510,15 +539,15 @@ async def dispatch_commute_traffic_alerts(request: Request):
             d_lat = float(route.get("dest_lat"))
             d_lng = float(route.get("dest_lng"))
 
-            t_sec, b_sec, extra_sec = traffic_vs_baseline_seconds(
+            snapshot = commute_traffic_snapshot(
                 o_lat, o_lng, d_lat, d_lng, http=http,
             )
-            if extra_sec is None or t_sec is None or b_sec is None:
+            if snapshot.extra_sec is None or snapshot.primary_duration_sec is None or snapshot.baseline_duration_sec is None:
                 errors += 1
                 continue
 
             if not should_notify_traffic_delay(
-                float(extra_sec), float(b_sec), min_extra_sec=min_extra, min_ratio=min_ratio
+                float(snapshot.extra_sec), float(snapshot.baseline_duration_sec), min_extra_sec=min_extra, min_ratio=min_ratio
             ):
                 skipped += 1
                 continue
@@ -529,23 +558,28 @@ async def dispatch_commute_traffic_alerts(request: Request):
                 continue
 
             dest = route.get("dest_label") or "your destination"
-            extra_min = max(1, int(round(float(extra_sec) / 60.0)))
-            traffic_min = max(1, int(round(float(t_sec) / 60.0)))
-            baseline_min = max(1, int(round(float(b_sec) / 60.0)))
+            extra_min = _minutes_from_seconds(snapshot.extra_sec)
+            traffic_min = _minutes_from_seconds(snapshot.primary_duration_sec)
+            baseline_min = _minutes_from_seconds(snapshot.baseline_duration_sec)
+            alternate_save_min = _minutes_from_seconds(snapshot.alternate_saves_sec, fallback=0)
 
-            title = "Traffic heavier than usual"
-            body = (
-                f"Route to {dest}: about +{extra_min} min vs typical right now "
-                f"({traffic_min} min drive vs ~{baseline_min} min baseline). Leave a bit earlier or open SnapRoad for an alternate route."
-            )
+            title, body = _commute_traffic_push_copy(dest, snapshot)
             data = {
                 "type": "commute_traffic_alert",
                 "commute_id": route.get("id"),
                 "leave_by_time": route.get("leave_by_time"),
+                "origin_lat": route.get("origin_lat"),
+                "origin_lng": route.get("origin_lng"),
+                "dest_lat": route.get("dest_lat"),
+                "dest_lng": route.get("dest_lng"),
                 "dest_label": dest,
                 "extra_minutes": extra_min,
                 "traffic_duration_min": traffic_min,
                 "baseline_duration_min": baseline_min,
+                "alternate_saves_min": alternate_save_min,
+                "primary_congestion": snapshot.primary_congestion,
+                "best_congestion": snapshot.best_congestion,
+                "route_count": snapshot.route_count,
                 "monitoring_duration_minutes": monitor_min,
                 "max_notifications_per_window": _safe_int(route.get("max_notifications_per_window"), 3, 1, 12),
                 "suggested_actions": ["leave_early", "alternate_route"],
@@ -556,7 +590,7 @@ async def dispatch_commute_traffic_alerts(request: Request):
                     sb.table("commute_routes").update(
                         {
                             "last_traffic_push_at": now_iso,
-                            "last_traffic_extra_sec": int(round(float(extra_sec))),
+                            "last_traffic_extra_sec": int(round(float(snapshot.extra_sec))),
                             "last_push_at": now_iso,
                             "last_push_date": day_key,
                             "push_window_day": day_key,
