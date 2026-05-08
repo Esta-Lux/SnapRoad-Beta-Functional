@@ -6102,7 +6102,6 @@ export default function MapScreen() {
                 ...(activeTripSummary.max_speed_mph != null && activeTripSummary.max_speed_mph > 0
                   ? [{ l: 'Top speed', v: `${Math.round(activeTripSummary.max_speed_mph)} mph`, c: colors.danger, i: 'flash-off-outline' as const }]
                   : []),
-                { l: 'Fuel est.', v: `${(activeTripSummary.fuel_used_gallons ?? 0).toFixed(2)} gal`, c: colors.warning, i: 'flash-outline' as const },
                 {
                   l: 'Fuel cost',
                   v:
@@ -6113,7 +6112,6 @@ export default function MapScreen() {
                   c: colors.text,
                   i: 'card-outline' as const,
                 },
-                { l: 'Mileage value', v: formatUsd(activeTripSummary.mileage_value_estimate ?? 0), c: colors.success, i: 'receipt-outline' as const },
                 { l: 'Rewards', v: `+${activeTripSummary.gems_earned} gems`, c: colors.warning, i: 'diamond-outline' as const },
                 ...(activeTripSummary.xp_earned != null && activeTripSummary.xp_earned > 0
                   ? [{ l: 'XP', v: `+${activeTripSummary.xp_earned} xp`, c: colors.primary, i: 'trending-up-outline' as const }]
@@ -6129,7 +6127,8 @@ export default function MapScreen() {
               ))}
             </View>
             {(activeTripSummary.hard_braking_events ?? 0) > 0 ||
-            (activeTripSummary.speeding_events ?? 0) > 0 ? (
+            (activeTripSummary.speeding_events ?? 0) > 0 ||
+            (activeTripSummary.hard_acceleration_events ?? 0) > 0 ? (
               <View
                 style={{
                   flexDirection: 'row',
@@ -6178,13 +6177,33 @@ export default function MapScreen() {
                     </Text>
                   </View>
                 ) : null}
+                {(activeTripSummary.hard_acceleration_events ?? 0) > 0 ? (
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: 999,
+                      backgroundColor: `${colors.warning}1A`,
+                      borderWidth: StyleSheet.hairlineWidth,
+                      borderColor: `${colors.warning}55`,
+                    }}
+                  >
+                    <Ionicons name="trending-up-outline" size={12} color={colors.warning} />
+                    <Text style={{ color: colors.warning, fontSize: 11, fontWeight: '700' }}>
+                      {activeTripSummary.hard_acceleration_events} hard accel{(activeTripSummary.hard_acceleration_events ?? 0) === 1 ? '' : 's'}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
             ) : null}
             <View style={[s.tripServiceCard, { backgroundColor: isLight ? 'rgba(37,99,235,0.08)' : 'rgba(96,165,250,0.12)', borderColor: colors.border }]}>
               <View style={{ flex: 1 }}>
                 <Text style={[s.tripServiceTitle, { color: colors.text }]}>Service-driver log</Text>
                 <Text style={[s.tripServiceSub, { color: colors.textSecondary }]}>
-                  HUD miles, elapsed time, fuel estimate, and route names were saved from the same navigation session for profile history.
+                  Miles, drive time, safety, rewards, speeds, fuel cost, and route names were saved to Insights from this trip.
                 </Text>
               </View>
               <Ionicons name="briefcase-outline" size={22} color={colors.primary} />

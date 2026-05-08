@@ -1300,9 +1300,10 @@ export function useDriveNavigation(params: {
 
     const safetySnap = driveSafetyRef.current;
     const hardBrakingCt = safetySnap.hardBrakingEvents;
+    const hardAccelerationCt = safetySnap.hardAccelerationEvents;
     const speedingCt = safetySnap.speedingEvents;
     driveSafetyRef.current = emptyDriveSafetyState();
-    const tripSafetyScore = tripSafetyScoreFromEventCounts(hardBrakingCt, speedingCt);
+    const tripSafetyScore = tripSafetyScoreFromEventCounts(hardBrakingCt, speedingCt, hardAccelerationCt);
     const originName = formatTripPlaceLabel(
       { name: navigationData?.origin?.name, address: navigationData?.origin?.address },
       'Start',
@@ -1377,6 +1378,7 @@ export function useDriveNavigation(params: {
       fuel_cost_estimate: fuelCostUsd,
       mileage_value_estimate: Math.round(estimateMileageDeductionUsd(roundedDist) * 100) / 100,
       hard_braking_events: hardBrakingCt,
+      hard_acceleration_events: hardAccelerationCt,
       speeding_events: speedingCt,
       incidents_reported: 0,
       counted: qualifiesTrip,
@@ -1411,6 +1413,7 @@ export function useDriveNavigation(params: {
       fuel_cost_estimate: Math.round(fuelCostUsd * 100) / 100,
       mileage_value_estimate: Math.round(estimateMileageDeductionUsd(roundedDist) * 100) / 100,
       hard_braking_events: hardBrakingCt,
+      hard_acceleration_events: hardAccelerationCt,
       speeding_events: speedingCt,
       incidents_reported: 0,
       region_state: fuelCtx?.stateLabel,

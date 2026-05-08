@@ -24,6 +24,7 @@ export interface TripSummary {
   mileage_value_estimate?: number;
   /** Real safety-event counts forwarded to backend; 0 when not tracked. */
   hard_braking_events?: number;
+  hard_acceleration_events?: number;
   speeding_events?: number;
   incidents_reported?: number;
   /** False = trip sheet still shows, but drive did not meet min distance/time for rewards. */

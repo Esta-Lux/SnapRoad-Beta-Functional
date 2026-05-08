@@ -2,9 +2,11 @@ export type DriveSafetyState = {
   lastSampleMs: number | null;
   lastSpeedMph: number | null;
   lastHardBrakeAtMs: number | null;
+  lastHardAccelerationAtMs: number | null;
   speedingSinceMs: number | null;
   lastSpeedingEventAtMs: number | null;
   hardBrakingEvents: number;
+  hardAccelerationEvents: number;
   speedingEvents: number;
 };
 
@@ -19,6 +21,9 @@ export type DriveSafetySample = {
 const HARD_BRAKE_DECEL_MPH_PER_SEC = 8;
 const HARD_BRAKE_MIN_START_SPEED_MPH = 12;
 const HARD_BRAKE_COOLDOWN_MS = 8000;
+const HARD_ACCEL_MPH_PER_SEC = 8;
+const HARD_ACCEL_MIN_END_SPEED_MPH = 12;
+const HARD_ACCEL_COOLDOWN_MS = 8000;
 const SPEEDING_HOLD_MS = 10000;
 const SPEEDING_COOLDOWN_MS = 30000;
 const MAX_REASONABLE_SPEED_MPH = 160;
@@ -29,9 +34,11 @@ export function emptyDriveSafetyState(): DriveSafetyState {
     lastSampleMs: null,
     lastSpeedMph: null,
     lastHardBrakeAtMs: null,
+    lastHardAccelerationAtMs: null,
     speedingSinceMs: null,
     lastSpeedingEventAtMs: null,
     hardBrakingEvents: 0,
+    hardAccelerationEvents: 0,
     speedingEvents: 0,
   };
 }
@@ -42,15 +49,20 @@ export function speedLimitMpsToMph(mps: number | null | undefined): number | nul
 }
 
 /** Per-trip score (0–100) from telemetry counts; 100 when no incidents. */
-export function tripSafetyScoreFromEventCounts(hardBrakingEvents: number, speedingEvents: number): number {
+export function tripSafetyScoreFromEventCounts(
+  hardBrakingEvents: number,
+  speedingEvents: number,
+  hardAccelerationEvents = 0,
+): number {
   const h = Math.max(0, Math.floor(Number(hardBrakingEvents)) || 0);
   const s = Math.max(0, Math.floor(Number(speedingEvents)) || 0);
-  const raw = 100 - h * 8 - s * 10;
+  const a = Math.max(0, Math.floor(Number(hardAccelerationEvents)) || 0);
+  const raw = 100 - h * 8 - s * 10 - a * 6;
   return Math.round(Math.max(0, Math.min(100, raw)));
 }
 
 function speedingThresholdMph(limitMph: number): number {
-  return limitMph + Math.max(7, limitMph * 0.15);
+  return limitMph + 5;
 }
 
 export function processDriveSafetySample(
@@ -84,10 +96,19 @@ export function processDriveSafetySample(
         next.lastHardBrakeAtMs = sample.atMs;
       }
     }
+    if (elapsedSec >= 0.5 && elapsedSec <= 5 && speed >= HARD_ACCEL_MIN_END_SPEED_MPH) {
+      const accel = (speed - prevSpeed) / elapsedSec;
+      const sinceLastAccel =
+        next.lastHardAccelerationAtMs == null ? Number.POSITIVE_INFINITY : sample.atMs - next.lastHardAccelerationAtMs;
+      if (accel >= HARD_ACCEL_MPH_PER_SEC && sinceLastAccel >= HARD_ACCEL_COOLDOWN_MS) {
+        next.hardAccelerationEvents += 1;
+        next.lastHardAccelerationAtMs = sample.atMs;
+      }
+    }
   }
 
   const limit = sample.speedLimitMph;
-  if (typeof limit === 'number' && Number.isFinite(limit) && limit > 0 && speed >= speedingThresholdMph(limit)) {
+  if (typeof limit === 'number' && Number.isFinite(limit) && limit > 0 && speed > speedingThresholdMph(limit)) {
     next.speedingSinceMs = next.speedingSinceMs ?? sample.atMs;
     const heldMs = sample.atMs - next.speedingSinceMs;
     const sinceLastSpeeding =

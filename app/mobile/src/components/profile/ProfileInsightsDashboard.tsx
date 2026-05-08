@@ -165,13 +165,6 @@ export default function ProfileInsightsDashboard({
   }, [dailyMilesPoints]);
 
   /** Week view: server weekly total can include trips not yet in the recent-history list. */
-  const kpiMilesDisplay = useMemo(() => {
-    let m = kpis.miles;
-    if (preset === 'week' && isPremium && weeklyRecap.totalMiles > 0) {
-      m = Math.max(m, weeklyRecap.totalMiles);
-    }
-    return m;
-  }, [kpis.miles, preset, isPremium, weeklyRecap.totalMiles]);
   const kpiTripsDisplay = useMemo(() => {
     let n = kpis.trips;
     if (preset === 'week' && isPremium && weeklyRecap.totalTrips > 0) {
@@ -420,7 +413,7 @@ export default function ProfileInsightsDashboard({
             <View style={{ flex: 1 }}>
               <Text style={styles.heroEyebrow}>YOUR TRACKING</Text>
               <Text style={styles.heroTitle}>
-                {kpiTripsDisplay} {kpiTripsDisplay === 1 ? 'trip' : 'trips'} · {kpiMilesDisplay.toFixed(1)} mi
+                {kpiTripsDisplay} {kpiTripsDisplay === 1 ? 'trip' : 'trips'} · ${kpis.fuelCostUsd.toFixed(2)} fuel
               </Text>
               <Text style={styles.heroSub}>
                 {preset === 'day'
@@ -493,11 +486,11 @@ export default function ProfileInsightsDashboard({
         <View style={styles.kpiGrid}>
           {kpiTile('car-outline', String(kpiTripsDisplay), 'Trips', deltas.trips, colors.primary)}
           {kpiTile(
-            'location-outline',
-            kpiMilesDisplay.toFixed(1),
-            'Miles',
-            deltas.miles,
-            colors.primary,
+            'card-outline',
+            `$${kpis.fuelCostUsd.toFixed(kpis.fuelCostUsd >= 10 ? 0 : 2)}`,
+            'Fuel cost',
+            deltas.fuelCostUsd,
+            colors.success,
           )}
           {kpiTile(
             'shield-checkmark-outline',
@@ -536,7 +529,7 @@ export default function ProfileInsightsDashboard({
         <Text
           style={[typography.caption, { color: colors.textTertiary, marginTop: 6, marginBottom: spacing.sm, lineHeight: 18 }]}
         >
-          Miles and trips reflect qualifying drives in this range. Deltas compare to the same length window before it.
+          Trips, fuel cost, and safety reflect qualifying drives in this range. Deltas compare to the same length window before it.
         </Text>
 
         {weeklyRecap.highlights && weeklyRecap.highlights.length > 0 ? (
@@ -583,10 +576,12 @@ export default function ProfileInsightsDashboard({
                 </LinearGradient>
               ) : weeklyRecap.behavior &&
                 (weeklyRecap.behavior.hard_braking_events_total > 0 ||
+                  (weeklyRecap.behavior.hard_acceleration_events_total ?? 0) > 0 ||
                   weeklyRecap.behavior.speeding_events_total > 0) ? (
                 <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: spacing.sm }}>
                   This week: {weeklyRecap.behavior.hard_braking_events_total} hard braking segments ·{' '}
-                  {weeklyRecap.behavior.speeding_events_total} speeding events (from synced trips).
+                  {weeklyRecap.behavior.hard_acceleration_events_total ?? 0} hard acceleration segments ·{' '}
+                  {weeklyRecap.behavior.speeding_events_total} speeding events from synced trips.
                 </Text>
               ) : !weeklyRecap.orionCommentary && isPremium ? (
                 <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: spacing.sm }}>
@@ -885,19 +880,11 @@ export default function ProfileInsightsDashboard({
                 </View>
               ) : null}
               <View style={styles.tripStatCell}>
-                <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Fuel est.</Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Fuel cost</Text>
                 <Text style={{ color: colors.success, fontSize: 18, fontWeight: '900' }}>
-                  {(tripDetail.fuel_used_gallons ?? 0).toFixed(2)} gal
+                  {formatUsd(tripDetail.fuel_cost_estimate ?? 0)}
                 </Text>
               </View>
-              {(tripDetail.mileage_value_estimate ?? 0) > 0 ? (
-                <View style={styles.tripStatCell}>
-                  <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Mileage value</Text>
-                  <Text style={{ color: colors.success, fontSize: 18, fontWeight: '900' }}>
-                    {formatUsd(tripDetail.mileage_value_estimate ?? 0)}
-                  </Text>
-                </View>
-              ) : null}
               <View style={styles.tripStatCell}>
                 <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Safety</Text>
                 <Text style={{ color: colors.text, fontSize: 18, fontWeight: '900' }}>
@@ -922,7 +909,8 @@ export default function ProfileInsightsDashboard({
               ) : null}
             </View>
             {(tripDetail.hard_braking_events ?? 0) > 0 ||
-            (tripDetail.speeding_events ?? 0) > 0 ? (
+            (tripDetail.speeding_events ?? 0) > 0 ||
+            (tripDetail.hard_acceleration_events ?? 0) > 0 ? (
               <View
                 style={{
                   flexDirection: 'row',
@@ -966,6 +954,25 @@ export default function ProfileInsightsDashboard({
                     <Text style={{ color: colors.danger, fontSize: 11, fontWeight: '700' }}>
                       {tripDetail.speeding_events} speeding event
                       {(tripDetail.speeding_events ?? 0) === 1 ? '' : 's'}
+                    </Text>
+                  </View>
+                ) : null}
+                {(tripDetail.hard_acceleration_events ?? 0) > 0 ? (
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: 999,
+                      backgroundColor: `${colors.warning}1A`,
+                    }}
+                  >
+                    <Ionicons name="trending-up-outline" size={12} color={colors.warning} />
+                    <Text style={{ color: colors.warning, fontSize: 11, fontWeight: '700' }}>
+                      {tripDetail.hard_acceleration_events} hard accel
+                      {(tripDetail.hard_acceleration_events ?? 0) === 1 ? '' : 's'}
                     </Text>
                   </View>
                 ) : null}

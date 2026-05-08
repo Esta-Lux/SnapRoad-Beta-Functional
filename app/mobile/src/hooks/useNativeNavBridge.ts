@@ -13,7 +13,11 @@ import {
   sanitizeTripDistanceMiles,
   sanitizeTripSpeedMph,
 } from '../utils/driveMetrics';
-import { tripSafetyScoreFromEventCounts } from '../utils/driveSafetyEvents';
+import {
+  emptyDriveSafetyState,
+  processDriveSafetySample,
+  tripSafetyScoreFromEventCounts,
+} from '../utils/driveSafetyEvents';
 import { formatTripPlaceLabel } from '../utils/tripPlaceLabels';
 import {
   mergeTripCompleteResponse,
@@ -113,6 +117,7 @@ export function useNativeNavBridge(params: {
   const lastProgressMsRef = useRef<number>(0);
   const lastDistanceMRef = useRef<number>(0);
   const maxSpeedMphRef = useRef(0);
+  const driveSafetyRef = useRef(emptyDriveSafetyState());
   const [arrivedAtDestination, setArrivedAtDestination] = useState(false);
 
   /**
@@ -140,6 +145,13 @@ export function useNativeNavBridge(params: {
     if (mph > maxSpeedMphRef.current) {
       maxSpeedMphRef.current = mph;
     }
+    driveSafetyRef.current = processDriveSafetySample(driveSafetyRef.current, {
+      atMs: now,
+      speedMph: mph,
+      speedLimitMph: null,
+      gpsAccuracyM: null,
+      isNavigating: true,
+    });
   }, []);
 
   const getTripMetrics = useCallback((): NativeNavTripMetrics => {
@@ -176,7 +188,16 @@ export function useNativeNavBridge(params: {
       const metrics = getTripMetrics();
       const durationMin = Math.max(1, Math.round(metrics.durationSec / 60));
       const dist = metrics.roundedDistanceMiles;
-      const tripSafetyScore = tripSafetyScoreFromEventCounts(0, 0);
+      const safetySnap = driveSafetyRef.current;
+      const hardBrakingEvents = safetySnap.hardBrakingEvents;
+      const hardAccelerationEvents = safetySnap.hardAccelerationEvents;
+      const speedingEvents = safetySnap.speedingEvents;
+      driveSafetyRef.current = emptyDriveSafetyState();
+      const tripSafetyScore = tripSafetyScoreFromEventCounts(
+        hardBrakingEvents,
+        speedingEvents,
+        hardAccelerationEvents,
+      );
       const destLabel = formatTripPlaceLabel(
         { name: destination.name, address: destination.address },
         'Destination',
@@ -205,8 +226,9 @@ export function useNativeNavBridge(params: {
         fuel_used_gallons: fuelGal,
         fuel_cost_estimate: Math.round(estimateFuelCostUsd(dist) * 100) / 100,
         mileage_value_estimate: Math.round(estimateMileageDeductionUsd(dist) * 100) / 100,
-        hard_braking_events: 0,
-        speeding_events: 0,
+        hard_braking_events: hardBrakingEvents,
+        hard_acceleration_events: hardAccelerationEvents,
+        speeding_events: speedingEvents,
         incidents_reported: 0,
         counted: metrics.qualifiesTrip,
         arrivedAtDestination: arrived,
@@ -242,8 +264,9 @@ export function useNativeNavBridge(params: {
           fuel_used_gallons: base.fuel_used_gallons,
           fuel_cost_estimate: base.fuel_cost_estimate,
           mileage_value_estimate: base.mileage_value_estimate,
-          hard_braking_events: 0,
-          speeding_events: 0,
+          hard_braking_events: base.hard_braking_events ?? 0,
+          hard_acceleration_events: base.hard_acceleration_events ?? 0,
+          speeding_events: base.speeding_events ?? 0,
           incidents_reported: 0,
         });
         // Race the network call against a timeout so the trip-end UI never blocks on a slow

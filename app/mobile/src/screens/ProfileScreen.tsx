@@ -130,7 +130,7 @@ export default function ProfileScreen() {
     aiTip: '',
     highlights: [],
     orionCommentary: null,
-    behavior: { hard_braking_events_total: 0, speeding_events_total: 0 },
+    behavior: { hard_braking_events_total: 0, hard_acceleration_events_total: 0, speeding_events_total: 0 },
     fuelUsedGallons: 0,
     fuelCostEstimate: 0,
     mileageValueEstimate: 0,
@@ -287,7 +287,7 @@ export default function ProfileScreen() {
           aiTip: '',
           highlights: [],
           orionCommentary: null,
-          behavior: { hard_braking_events_total: 0, speeding_events_total: 0 },
+          behavior: { hard_braking_events_total: 0, hard_acceleration_events_total: 0, speeding_events_total: 0 },
           topSpeedMph: 0,
           avgSpeedMph: 0,
           fuelUsedGallons: 0,
@@ -309,9 +309,10 @@ export default function ProfileScreen() {
             beh && typeof beh === 'object'
               ? {
                   hard_braking_events_total: Number((beh as Record<string, unknown>).hard_braking_events_total ?? 0),
+                  hard_acceleration_events_total: Number((beh as Record<string, unknown>).hard_acceleration_events_total ?? 0),
                   speeding_events_total: Number((beh as Record<string, unknown>).speeding_events_total ?? 0),
                 }
-              : { hard_braking_events_total: 0, speeding_events_total: 0 },
+              : { hard_braking_events_total: 0, hard_acceleration_events_total: 0, speeding_events_total: 0 },
           topSpeedMph: sanitizeTripSpeedMph(Number(weekly.top_speed_mph ?? 0)),
           avgSpeedMph: sanitizeTripSpeedMph(Number(weekly.avg_speed_mph ?? 0), 130),
           fuelUsedGallons: Number(weekly.fuel_used_gallons ?? 0),

@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 _TRIP_RECAP_SELECT_FULL = (
     "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, "
-    "ended_at, created_at, hard_braking_events, speeding_events, "
+    "ended_at, created_at, hard_braking_events, hard_acceleration_events, speeding_events, "
     "max_speed_mph, avg_speed_mph, fuel_used_gallons, fuel_cost_estimate, mileage_value_estimate"
 )
 _TRIP_RECAP_SELECT_MIN = (
@@ -885,21 +885,35 @@ def get_driving_score(user: CurrentUser):
     user_id = str(user.get("user_id") or user.get("id") or "").strip() or current_user_id
     if not user_id_is_premium(user_id):
         raise HTTPException(status_code=403, detail=MSG_PREMIUM_REQUIRED)
-    tip_templates = {"speed": "Try cruise control on highways.", "braking": "Start braking earlier for smoother stops.", "acceleration": "Ease into the gas pedal.", "following": "The 3-second rule is your friend!", "turns": "Keep signaling even when no one's around.", "focus": "Mount your phone for hands-free navigation!"}
+    tip_templates = {
+        "speed": "Keep your cruise target within 5 mph of the posted limit.",
+        "braking": "Start braking earlier for smoother stops.",
+        "acceleration": "Ease into the gas pedal after stops and turns.",
+    }
     try:
         sb = get_supabase()
         profile = sb_get_profile(user_id) or {}
         base_score = int(profile.get("safety_score", 0))
         is_premium = profile_row_is_premium(profile)
 
-        trips = (
-            sb.table("trips")
-            .select("safety_score, hard_braking_events, speeding_events, ended_at, created_at")
-            .or_(f"user_id.eq.{user_id},profile_id.eq.{user_id}")
-            .order("ended_at", desc=True)
-            .limit(50)
-            .execute()
-        )
+        try:
+            trips = (
+                sb.table("trips")
+                .select("safety_score, hard_braking_events, hard_acceleration_events, speeding_events, ended_at, created_at")
+                .or_(f"user_id.eq.{user_id},profile_id.eq.{user_id}")
+                .order("ended_at", desc=True)
+                .limit(50)
+                .execute()
+            )
+        except Exception:
+            trips = (
+                sb.table("trips")
+                .select("safety_score, hard_braking_events, speeding_events, ended_at, created_at")
+                .or_(f"user_id.eq.{user_id},profile_id.eq.{user_id}")
+                .order("ended_at", desc=True)
+                .limit(50)
+                .execute()
+            )
         rows = trips.data or []
 
         if not rows:
@@ -907,25 +921,21 @@ def get_driving_score(user: CurrentUser):
                 {"id": "speed", "name": "Speed Compliance", "score": 0, "trend": "stable", "description": "Staying within speed limits"},
                 {"id": "braking", "name": "Smooth Braking", "score": 0, "trend": "stable", "description": "Gradual, safe braking"},
                 {"id": "acceleration", "name": "Smooth Acceleration", "score": 0, "trend": "stable", "description": "Gradual speed increases"},
-                {"id": "following", "name": "Following Distance", "score": 0, "trend": "stable", "description": "Safe distance from other cars"},
-                {"id": "turns", "name": "Turn Signals", "score": 0, "trend": "stable", "description": "Signaling before turns"},
-                {"id": "focus", "name": "Focus Time", "score": 0, "trend": "stable", "description": "Minimal phone distractions"},
             ]
             return {"success": True, "data": {"overall_score": base_score, "metrics": metrics, "orion_tips": [], "last_updated": datetime.now().isoformat(), "no_data": True, "premium_insights": is_premium}}
 
         avg_safety = sum(float(r.get("safety_score", 0)) for r in rows) / len(rows)
         avg_braking = sum(int(r.get("hard_braking_events", 0)) for r in rows) / len(rows)
+        avg_accel = sum(int(r.get("hard_acceleration_events", 0)) for r in rows) / len(rows)
         avg_speeding = sum(int(r.get("speeding_events", 0)) for r in rows) / len(rows)
         speed_score = max(0, min(100, int(100 - avg_speeding * 10)))
         braking_score = max(0, min(100, int(100 - avg_braking * 8)))
+        acceleration_score = max(0, min(100, int(100 - avg_accel * 6)))
 
         metrics = [
-            {"id": "speed", "name": "Speed Compliance", "score": speed_score, "trend": "stable", "description": "Staying within speed limits"},
+            {"id": "speed", "name": "Speed Compliance", "score": speed_score, "trend": "stable", "description": "Posted limit plus 5 mph tolerance"},
             {"id": "braking", "name": "Smooth Braking", "score": braking_score, "trend": "stable", "description": "Gradual, safe braking"},
-            {"id": "acceleration", "name": "Smooth Acceleration", "score": int(avg_safety), "trend": "stable", "description": "Gradual speed increases"},
-            {"id": "following", "name": "Following Distance", "score": min(100, int(avg_safety) + 5), "trend": "stable", "description": "Safe distance from other cars"},
-            {"id": "turns", "name": "Turn Signals", "score": min(100, int(avg_safety) + 3), "trend": "stable", "description": "Signaling before turns"},
-            {"id": "focus", "name": "Focus Time", "score": int(avg_safety), "trend": "stable", "description": "Minimal phone distractions"},
+            {"id": "acceleration", "name": "Smooth Acceleration", "score": acceleration_score, "trend": "stable", "description": "Gradual speed increases"},
         ]
         sorted_metrics = sorted(metrics, key=lambda x: x["score"])
         orion_tips = []
@@ -938,7 +948,7 @@ def get_driving_score(user: CurrentUser):
             raise
         u = _user_state(user_id)
         base_score = u.get("safety_score", 0)
-        metrics = [{"id": k, "name": k.title(), "score": base_score, "trend": "stable", "description": ""} for k in ("speed", "braking", "acceleration", "following", "turns", "focus")]
+        metrics = [{"id": k, "name": k.title(), "score": base_score, "trend": "stable", "description": ""} for k in ("speed", "braking", "acceleration")]
         return {"success": True, "data": {"overall_score": base_score, "metrics": metrics, "orion_tips": [], "last_updated": datetime.now().isoformat(), "premium_insights": False}}
 
 
@@ -1038,6 +1048,7 @@ def get_weekly_recap(
         best_safety = max(safety_scores) if safety_scores else 0
         longest = max((float(t.get("distance_miles", 0)) for t in trips), default=0)
         hard_sum = sum(int(t.get("hard_braking_events") or 0) for t in trips)
+        accel_sum = sum(int(t.get("hard_acceleration_events") or 0) for t in trips)
         speed_sum = sum(int(t.get("speeding_events") or 0) for t in trips)
         fuel_gallons_sum = sum(float(t.get("fuel_used_gallons") or 0) for t in trips)
         fuel_cost_sum = sum(float(t.get("fuel_cost_estimate") or 0) for t in trips)
@@ -1061,6 +1072,7 @@ def get_weekly_recap(
                 "miles_rounded": round(total_miles, 1),
                 "safety_avg": safety_avg,
                 "hard_braking_events_total": hard_sum,
+                "hard_acceleration_events_total": accel_sum,
                 "speeding_events_total": speed_sum,
                 "fuel_used_gallons": round(fuel_gallons_sum, 2),
                 "fuel_cost_estimate": round(fuel_cost_sum, 2),
@@ -1082,7 +1094,11 @@ def get_weekly_recap(
             "range_days": days if not (start and end) else None,
             "orion_commentary": orion_commentary,
             "premium_insights": is_premium,
-            "behavior": {"hard_braking_events_total": hard_sum, "speeding_events_total": speed_sum},
+            "behavior": {
+                "hard_braking_events_total": hard_sum,
+                "hard_acceleration_events_total": accel_sum,
+                "speeding_events_total": speed_sum,
+            },
             "top_speed_mph": round(top_speed, 1),
             "avg_speed_mph": round(avg_speed_overall, 1),
             "fuel_used_gallons": round(fuel_gallons_sum, 2),
@@ -1108,7 +1124,11 @@ def get_weekly_recap(
                 "highlights": [],
                 "orion_commentary": None,
                 "premium_insights": False,
-                "behavior": {"hard_braking_events_total": 0, "speeding_events_total": 0},
+                "behavior": {
+                    "hard_braking_events_total": 0,
+                    "hard_acceleration_events_total": 0,
+                    "speeding_events_total": 0,
+                },
                 "top_speed_mph": 0.0,
                 "avg_speed_mph": 0.0,
                 "fuel_used_gallons": 0.0,

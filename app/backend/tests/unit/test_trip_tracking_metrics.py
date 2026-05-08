@@ -44,6 +44,7 @@ def test_build_trip_row_carries_service_driver_metrics():
         fuel_used_gallons=0.493,
         fuel_cost_estimate=1.78,
         mileage_value_estimate=8.27,
+        hard_acceleration_events=2,
     )
     row = _build_trip_row("trip-1", "user-1", body, 12.34, 91, 4, 123)
 
@@ -54,6 +55,7 @@ def test_build_trip_row_carries_service_driver_metrics():
     assert row["fuel_used_gallons"] == 0.493
     assert row["fuel_cost_estimate"] == 1.78
     assert row["mileage_value_estimate"] == 8.27
+    assert row["hard_acceleration_events"] == 2
     assert row["duration_minutes"] == 30
 
 
@@ -88,6 +90,7 @@ def test_trip_row_to_client_shape_returns_recap_summary_metrics_and_aliases():
         "fuel_cost_estimate": "0.14",
         "mileage_value_estimate": "0.71",
         "hard_brakes": "1",
+        "hard_accels": "2",
         "speeding_events": "2",
         "started_at": "2026-05-03T06:37:00Z",
         "ended_at": "2026-05-03T06:39:03Z",
@@ -110,6 +113,7 @@ def test_trip_row_to_client_shape_returns_recap_summary_metrics_and_aliases():
     assert shaped["fuel_cost_estimate"] == 0.14
     assert shaped["mileage_value_estimate"] == 0.71
     assert shaped["hard_braking_events"] == 1
+    assert shaped["hard_acceleration_events"] == 2
     assert shaped["speeding_events"] == 2
     assert shaped["started_at"] == "2026-05-03T06:37:00Z"
     assert shaped["ended_at"] == "2026-05-03T06:39:03Z"

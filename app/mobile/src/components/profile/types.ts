@@ -17,7 +17,11 @@ export type ProfileWeeklyRecap = {
   aiTip?: string;
   highlights?: string[];
   orionCommentary?: string | null;
-  behavior?: { hard_braking_events_total: number; speeding_events_total: number };
+  behavior?: {
+    hard_braking_events_total: number;
+    hard_acceleration_events_total?: number;
+    speeding_events_total: number;
+  };
   /** Top instantaneous speed across the recap window (mph). */
   topSpeedMph?: number;
   /** Average speed across the recap window (mph). */
@@ -58,6 +62,7 @@ export type ProfileTripHistoryItem = {
   duration_seconds?: number;
   /** Behavioral counts forwarded from the trip row when present. */
   hard_braking_events?: number;
+  hard_acceleration_events?: number;
   speeding_events?: number;
   incidents_reported?: number;
   tripEndedAtIso?: string;

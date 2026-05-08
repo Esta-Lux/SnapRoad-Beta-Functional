@@ -163,6 +163,11 @@ export function mapProfileTripHistoryItem(raw: unknown, idx = 0): ProfileTripHis
       'mileage_value',
     ]),
     hard_braking_events: firstNumber(t, ['hard_braking_events', 'hardBrakingEvents', 'hard_brakes']),
+    hard_acceleration_events: firstNumber(t, [
+      'hard_acceleration_events',
+      'hardAccelerationEvents',
+      'hard_accels',
+    ]),
     speeding_events: firstNumber(t, ['speeding_events', 'speedingEvents', 'speeding']),
     incidents_reported: firstNumber(t, ['incidents_reported', 'incidentsReported']),
     tripEndedAtIso,

@@ -26,6 +26,7 @@ export interface TripCompleteApiData {
   fuel_cost_estimate?: number;
   mileage_value_estimate?: number;
   hard_braking_events?: number;
+  hard_acceleration_events?: number;
   speeding_events?: number;
   incidents_reported?: number;
   origin?: string;
@@ -110,6 +111,8 @@ export function mergeTripCompleteResponse(base: TripSummary, body: unknown): Tri
       d.mileage_value_estimate != null ? Number(d.mileage_value_estimate) : base.mileage_value_estimate,
     hard_braking_events:
       d.hard_braking_events != null ? Number(d.hard_braking_events) : base.hard_braking_events,
+    hard_acceleration_events:
+      d.hard_acceleration_events != null ? Number(d.hard_acceleration_events) : base.hard_acceleration_events,
     speeding_events: d.speeding_events != null ? Number(d.speeding_events) : base.speeding_events,
     incidents_reported:
       d.incidents_reported != null ? Number(d.incidents_reported) : base.incidents_reported,

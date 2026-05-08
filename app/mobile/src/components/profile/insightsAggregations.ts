@@ -28,8 +28,12 @@ export type InsightsKpis = {
   avgSpeedMph: number;
   /** Sum of `fuel_used_gallons` across the bucket. */
   fuelGallons: number;
+  /** Sum of `fuel_cost_estimate` across the bucket. */
+  fuelCostUsd: number;
   /** Sum of `hard_braking_events` across the bucket. */
   hardBrakingTotal: number;
+  /** Sum of `hard_acceleration_events` across the bucket. */
+  hardAccelerationTotal: number;
   /** Sum of `speeding_events` across the bucket. */
   speedingTotal: number;
   /** Longest single trip distance in miles. */
@@ -42,6 +46,7 @@ export type InsightsDeltas = {
   /** `(current - previous) / previous`, or `null` when previous == 0. */
   trips: number | null;
   miles: number | null;
+  fuelCostUsd: number | null;
   gems: number | null;
   topSpeedMph: number | null;
   avgSafety: number | null;
@@ -152,7 +157,9 @@ export function computeKpis(trips: ProfileTripHistoryItem[]): InsightsKpis {
       topSpeedMph: 0,
       avgSpeedMph: 0,
       fuelGallons: 0,
+      fuelCostUsd: 0,
       hardBrakingTotal: 0,
+      hardAccelerationTotal: 0,
       speedingTotal: 0,
       longestTripMiles: 0,
     };
@@ -169,7 +176,9 @@ export function computeKpis(trips: ProfileTripHistoryItem[]): InsightsKpis {
   let plainSpeedSum = 0;
   let plainSpeedCount = 0;
   let fuel = 0;
+  let fuelCostUsd = 0;
   let hard = 0;
+  let hardAccel = 0;
   let speeding = 0;
   let longest = 0;
 
@@ -204,7 +213,10 @@ export function computeKpis(trips: ProfileTripHistoryItem[]): InsightsKpis {
     }
     const f = Number(t.fuel_used_gallons ?? 0);
     if (Number.isFinite(f) && f > 0) fuel += f;
+    const fc = Number(t.fuel_cost_estimate ?? 0);
+    if (Number.isFinite(fc) && fc > 0) fuelCostUsd += fc;
     hard += Number(t.hard_braking_events ?? 0) || 0;
+    hardAccel += Number(t.hard_acceleration_events ?? 0) || 0;
     speeding += Number(t.speeding_events ?? 0) || 0;
   }
 
@@ -224,7 +236,9 @@ export function computeKpis(trips: ProfileTripHistoryItem[]): InsightsKpis {
     topSpeedMph: topSpeed,
     avgSpeedMph: avgSpeed,
     fuelGallons: fuel,
+    fuelCostUsd,
     hardBrakingTotal: hard,
+    hardAccelerationTotal: hardAccel,
     speedingTotal: speeding,
     longestTripMiles: longest,
   };
@@ -241,6 +255,7 @@ export function computeDeltas(current: InsightsKpis, previous: InsightsKpis): In
   return {
     trips: pctDelta(current.trips, previous.trips),
     miles: pctDelta(current.miles, previous.miles),
+    fuelCostUsd: pctDelta(current.fuelCostUsd, previous.fuelCostUsd),
     gems: pctDelta(current.gemsFromTrips, previous.gemsFromTrips),
     topSpeedMph: pctDelta(current.topSpeedMph, previous.topSpeedMph),
     avgSafety: pctDelta(current.avgSafety, previous.avgSafety),

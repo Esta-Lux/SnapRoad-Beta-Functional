@@ -197,6 +197,7 @@ def _trip_row_to_client_shape(r: dict) -> dict:
         _first_present(r, "mileage_value_estimate", "mileage_value_usd", "mileage_value"),
     )
     hard_braking = _int_or_zero(_first_present(r, "hard_braking_events", "hard_brakes"))
+    hard_acceleration = _int_or_zero(_first_present(r, "hard_acceleration_events", "hard_accels"))
     speeding = _int_or_zero(_first_present(r, "speeding_events", "speeding"))
     return {
         "id": str(r.get("id")),
@@ -220,6 +221,7 @@ def _trip_row_to_client_shape(r: dict) -> dict:
         "fuel_cost_estimate": fuel_cost,
         "mileage_value_estimate": mileage_value,
         "hard_braking_events": hard_braking,
+        "hard_acceleration_events": hard_acceleration,
         "speeding_events": speeding,
         "incidents_reported": _int_or_zero(r.get("incidents_reported")),
     }
@@ -545,6 +547,7 @@ class TripCompleteBody(BaseModel):
     fuel_cost_estimate: Optional[float] = None
     mileage_value_estimate: Optional[float] = None
     hard_braking_events: int = 0
+    hard_acceleration_events: int = 0
     speeding_events: int = 0
     incidents_reported: int = 0
     region_state: Optional[str] = None
@@ -669,6 +672,7 @@ def _build_trip_row(
         "started_at": body.started_at or now_iso,
         "ended_at": body.ended_at or now_iso,
         "hard_braking_events": _int_for_pg(body.hard_braking_events),
+        "hard_acceleration_events": _int_for_pg(body.hard_acceleration_events),
         "speeding_events": _int_for_pg(body.speeding_events),
         "incidents_reported": _int_for_pg(body.incidents_reported),
         "created_at": now_iso,
@@ -706,6 +710,7 @@ def _strip_missing_trip_optional_column(trip_row: dict, exc: BaseException) -> b
         "fuel_used_gallons",
         "fuel_cost_estimate",
         "mileage_value_estimate",
+        "hard_acceleration_events",
     )
     for col in optional_columns:
         if col in trip_row and _is_missing_trip_column_error(exc, col):
@@ -927,6 +932,7 @@ def complete_trip(request: Request, body: TripCompleteBody, user: CurrentUser):
         "fuel_cost_estimate": trip_row.get("fuel_cost_estimate"),
         "mileage_value_estimate": trip_row.get("mileage_value_estimate"),
         "hard_braking_events": trip_row.get("hard_braking_events"),
+        "hard_acceleration_events": trip_row.get("hard_acceleration_events"),
         "speeding_events": trip_row.get("speeding_events"),
         "incidents_reported": trip_row.get("incidents_reported"),
     }

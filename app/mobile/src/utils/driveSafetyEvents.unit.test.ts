@@ -45,6 +45,54 @@ test('processDriveSafetySample counts sustained speeding episode', () => {
   assert.equal(state.speedingEvents, 1);
 });
 
+test('processDriveSafetySample allows speed limit plus 5 mph and counts above that', () => {
+  let state = emptyDriveSafetyState();
+  for (const atMs of [0, 5000, 10000, 11000]) {
+    state = processDriveSafetySample(state, {
+      atMs,
+      speedMph: 60,
+      speedLimitMph: 55,
+      gpsAccuracyM: 8,
+      isNavigating: true,
+    });
+  }
+  assert.equal(state.speedingEvents, 0);
+  for (const atMs of [20000, 25000, 30000, 31000]) {
+    state = processDriveSafetySample(state, {
+      atMs,
+      speedMph: 61,
+      speedLimitMph: 55,
+      gpsAccuracyM: 8,
+      isNavigating: true,
+    });
+  }
+  assert.equal(state.speedingEvents, 1);
+});
+
+test('processDriveSafetySample counts one hard acceleration with cooldown', () => {
+  let state = emptyDriveSafetyState();
+  state = processDriveSafetySample(state, {
+    atMs: 1000,
+    speedMph: 5,
+    gpsAccuracyM: 10,
+    isNavigating: true,
+  });
+  state = processDriveSafetySample(state, {
+    atMs: 3000,
+    speedMph: 25,
+    gpsAccuracyM: 10,
+    isNavigating: true,
+  });
+  assert.equal(state.hardAccelerationEvents, 1);
+  state = processDriveSafetySample(state, {
+    atMs: 5000,
+    speedMph: 45,
+    gpsAccuracyM: 10,
+    isNavigating: true,
+  });
+  assert.equal(state.hardAccelerationEvents, 1);
+});
+
 test('processDriveSafetySample ignores poor accuracy spikes', () => {
   let state = emptyDriveSafetyState();
   state = processDriveSafetySample(state, {
@@ -74,5 +122,6 @@ test('tripSafetyScoreFromEventCounts is perfect with no events', () => {
 
 test('tripSafetyScoreFromEventCounts applies penalties and clamps', () => {
   assert.equal(tripSafetyScoreFromEventCounts(2, 1), 74);
+  assert.equal(tripSafetyScoreFromEventCounts(2, 1, 1), 68);
   assert.equal(tripSafetyScoreFromEventCounts(20, 20), 0);
 });
