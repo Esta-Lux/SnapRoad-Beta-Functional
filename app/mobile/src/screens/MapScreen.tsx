@@ -61,6 +61,7 @@ import {
   logMapboxAccessDiagnostics,
 } from '../config/mapbox';
 import {
+  effectiveAlternateRouteLineColor,
   effectiveNavRouteColors,
   getDrivingLightPreset,
   standardBasemapStyleImportConfig,
@@ -2237,13 +2238,19 @@ export default function MapScreen() {
   );
   const standardStyleImportsEnabled = usesStandardStyleConfiguration(activeStyleURL);
 
+  const alternateRouteLineColor = useMemo(
+    () => effectiveAlternateRouteLineColor(mapLightPreset, isSatelliteStyle),
+    [mapLightPreset, isSatelliteStyle],
+  );
+  const routeLineLayerSlot = standardStyleImportsEnabled ? ('top' as const) : undefined;
+
   const standardBasemapImportConfig = useMemo(
     () =>
       standardBasemapStyleImportConfig(mapLightPreset, isSatelliteStyle, drivingMode, nav.isNavigating),
     [mapLightPreset, isSatelliteStyle, drivingMode, nav.isNavigating],
   );
 
-  /** Keeps 3D extrusions and route line under label layers where the style exposes anchors. */
+  /** Classic styles: anchor 3D extrusions below labels. On Standard/Satellite the route uses `slot="top"` so it clears 3D buildings. */
   const buildingsBelowLayerId = useMemo(
     () => labelAnchorLayerIdForStyleUrl(activeStyleURL),
     [activeStyleURL],
@@ -4942,7 +4949,7 @@ export default function MapScreen() {
               if (!route.polyline || route.polyline.length < 2) return null;
               const lineOpacity = Math.min(
                 0.78,
-                isSatelliteStyle || mapLightPreset === 'night' ? 0.52 : 0.44,
+                isSatelliteStyle || mapLightPreset === 'night' || mapLightPreset === 'dusk' ? 0.52 : 0.44,
               );
               const geo: GeoJSON.FeatureCollection = {
                 type: 'FeatureCollection',
@@ -4965,8 +4972,9 @@ export default function MapScreen() {
                 >
                   <MGL.LineLayer
                     id={`alt-route-line-${idx}`}
+                    slot={routeLineLayerSlot}
                     style={{
-                      lineColor: '#0A84FF',
+                      lineColor: alternateRouteLineColor,
                       lineWidth: 7,
                       lineOpacity,
                       lineCap: 'round',
@@ -5020,7 +5028,8 @@ export default function MapScreen() {
                       (nav.isNavigating || nav.showRoutePreview)
                     }
                     isRerouting={nav.isRerouting || sdkRouteHandoffUi}
-                    belowLayerID={buildingsBelowLayerId}
+                    belowLayerID={routeLineLayerSlot ? undefined : buildingsBelowLayerId}
+                    layerSlot={routeLineLayerSlot}
                   />
                 );
               })()

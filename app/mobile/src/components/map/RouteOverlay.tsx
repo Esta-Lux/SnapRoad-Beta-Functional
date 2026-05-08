@@ -50,6 +50,11 @@ interface Props {
   isRerouting?: boolean;
   /** Anchor below a known basemap label layer (style-specific). */
   belowLayerID?: string;
+  /**
+   * Mapbox Standard / Standard-Satellite: use slots (not legacy layer ids) for stack order.
+   * `top` keeps the route above 3D buildings; `middle` sits behind extrusions and reads as “missing”.
+   */
+  layerSlot?: 'bottom' | 'middle' | 'top';
   /** Degraded path: one source + one line (fewer native layer inserts). */
   routeRenderVariant?: 'full' | 'minimal';
 }
@@ -72,6 +77,7 @@ export default React.memo(function RouteOverlay({
   showCongestion = false,
   isRerouting = false,
   belowLayerID,
+  layerSlot,
   routeRenderVariant = 'full',
 }: Props) {
   const hasCongestion = showCongestion && congestion && congestion.length > 0;
@@ -231,6 +237,8 @@ export default React.memo(function RouteOverlay({
   const neonCasing = glowOpacity >= 0.42;
   const casingWidthExtra = neonCasing ? 1.25 : 3;
   const casingPaintOpacity = (neonCasing ? 0.28 : 0.7) * (isRerouting ? 0.5 : 1);
+  const anchorBelowId = layerSlot ? undefined : belowLayerID;
+  const lineSlot = layerSlot;
 
   if (routeRenderVariant === 'minimal') {
     const minimalShape: GeoJSON.FeatureCollection = {
@@ -247,7 +255,8 @@ export default React.memo(function RouteOverlay({
       <MapboxGL.ShapeSource id={ROUTE_SOURCE_ID_MINIMAL} shape={minimalShape} lineMetrics={false}>
         <MapboxGL.LineLayer
           id={RouteLineLayerIds.minimalLine}
-          belowLayerID={belowLayerID}
+          belowLayerID={anchorBelowId}
+          slot={lineSlot}
           style={{
             lineColor: routeColor,
             lineWidth: routeWidth + 3,
@@ -269,7 +278,8 @@ export default React.memo(function RouteOverlay({
       {/* Continuous glow on the full-route base feature — no split seam */}
       <MapboxGL.LineLayer
         id={RouteLineLayerIds.glow}
-        belowLayerID={belowLayerID}
+        belowLayerID={anchorBelowId}
+        slot={lineSlot}
         filter={['==', ['get', 'segment'], 'base']}
         style={{
           lineColor: effectiveGlowColor,
@@ -285,6 +295,7 @@ export default React.memo(function RouteOverlay({
       <MapboxGL.LineLayer
         id={RouteLineLayerIds.casing}
         aboveLayerID={RouteLineLayerIds.glow}
+        slot={lineSlot}
         filter={['==', ['get', 'segment'], 'base']}
         style={{
           lineColor: casingColor,
@@ -305,6 +316,7 @@ export default React.memo(function RouteOverlay({
       */}
       <MapboxGL.LineLayer
         id="sr-route-passed"
+        slot={lineSlot}
         filter={['==', ['get', 'segment'], 'passed']}
         style={{
           lineColor: passedColor,
@@ -325,6 +337,7 @@ export default React.memo(function RouteOverlay({
       <MapboxGL.LineLayer
         id={RouteLineLayerIds.ahead}
         aboveLayerID={RouteLineLayerIds.passed}
+        slot={lineSlot}
         filter={['==', ['get', 'segment'], 'ahead']}
         style={{
           lineColor: aheadLineColor,

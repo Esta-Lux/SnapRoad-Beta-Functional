@@ -18,11 +18,11 @@ const SNAP_ROUTE_CASING_STD = '#032C66';
 const SNAP_ROUTE_PASSED = 'rgba(10,132,255,0.42)';
 const SNAP_ROUTE_GLOW = '#5EBBFF';
 
-/** Night / dusk / satellite — same SnapRoad language but higher luminance so the line “glows” on dark imagery. */
-const ROUTE_CORE_HIGH_VIS = '#38BDF8';
-const ROUTE_CASING_HIGH_VIS = 'rgba(125,211,252,0.48)';
-const ROUTE_PASSED_HIGH_VIS = 'rgba(56,189,248,0.55)';
-const ROUTE_GLOW_HIGH_VIS = '#BAE6FD';
+/** Night / dusk / satellite — electric cyan so the route never reads as “murky gray” on dark Standard. */
+const ROUTE_CORE_HIGH_VIS = '#5EE9FF';
+const ROUTE_CASING_HIGH_VIS = 'rgba(224,249,255,0.42)';
+const ROUTE_PASSED_HIGH_VIS = 'rgba(110,240,255,0.64)';
+const ROUTE_GLOW_HIGH_VIS = '#E0F9FF';
 
 function useHighVisibilityRouteInk(
   mapLightPreset: MapboxLightPreset,
@@ -37,7 +37,7 @@ function useHighVisibilityRouteInk(
 
 /**
  * SnapRoad-blue route palette: day/dawn stays iOS `#0A84FF`; Sport + night/dusk/satellite forces
- * luminous `#38BDF8` + casing tuned for dark imagery (Sport always uses this stack — app pins Sport to night).
+ * luminous `#5EE9FF` + casing tuned for dark imagery (Sport always uses this stack — app pins Sport to night).
  */
 export function effectiveNavRouteColors(
   modeConfig: ModeConfig,
@@ -60,8 +60,8 @@ export function effectiveNavRouteColors(
       glowOpacity = Math.max(glowOpacity, 0.4);
       return {
         routeColor: ROUTE_CORE_HIGH_VIS,
-        routeCasing: 'rgba(56,182,246,0.42)',
-        passedColor: 'rgba(45,186,246,0.48)',
+        routeCasing: 'rgba(224,249,255,0.38)',
+        passedColor: 'rgba(110,240,255,0.58)',
         routeGlowColor: ROUTE_GLOW_HIGH_VIS,
         routeGlowOpacity: glowOpacity,
       };
@@ -90,8 +90,9 @@ export function effectiveAlternateRouteLineColor(
   mapLightPreset: MapboxLightPreset,
   isSatellite: boolean,
 ): string {
-  void mapLightPreset;
-  void isSatellite;
+  if (isSatellite || mapLightPreset === 'night' || mapLightPreset === 'dusk') {
+    return 'rgba(94,233,255,0.72)';
+  }
   return 'rgba(10,132,255,0.55)';
 }
 
@@ -123,11 +124,16 @@ export function usesStandardStyleConfiguration(url: string): boolean {
  */
 function standardSatelliteBasemapConfig(
   lightPreset: MapboxLightPreset,
+  isNavigating: boolean,
 ): Record<string, string> {
   return {
     lightPreset,
     // 3D buildings + landmarks on top of satellite imagery.
     show3dObjects: 'true',
+    show3dBuildings: 'true',
+    show3dLandmarks: 'true',
+    show3dFacades: 'true',
+    ...(isNavigating ? { show3dTrees: 'false' } : { show3dTrees: 'true' }),
     // POI / place / road labels sit above the 3D geometry layer in the Standard render order.
     showPointOfInterestLabels: 'true',
     showPlaceLabels: 'true',
@@ -138,6 +144,20 @@ function standardSatelliteBasemapConfig(
     // Documented Standard-Satellite API (v11.11+): max POI density + landmark icons.
     densityPointOfInterestLabels: '5',
     showLandmarkIcons: 'true',
+    showLandmarkIconLabels: 'true',
+    ...poiAndLabelBoostForDarkBasemap(lightPreset),
+  };
+}
+
+/** Stronger POI / landmark text on dark presets so icons don’t “disappear” into the basemap. */
+function poiAndLabelBoostForDarkBasemap(
+  lightPreset: MapboxLightPreset,
+): Record<string, string> {
+  if (lightPreset !== 'night' && lightPreset !== 'dusk') return {};
+  return {
+    colorModePointOfInterestLabels: 'single',
+    colorPointOfInterestLabels: '#EAF2FF',
+    backgroundPointOfInterestLabels: 'circle',
   };
 }
 
@@ -160,14 +180,17 @@ export function standardBasemapStyleImportConfig(
   isNavigating = true,
 ): Record<string, string> {
   void drivingMode;
-  void isNavigating;
   if (isSatellite) {
-    return standardSatelliteBasemapConfig(lightPreset);
+    return standardSatelliteBasemapConfig(lightPreset, isNavigating);
   }
   return {
     lightPreset,
-    // 3D geometry (buildings, landmarks, trees) — one toggle covers all objects.
+    // 3D geometry — granular flags keep building meshes readable (trees optional while navigating).
     show3dObjects: 'true',
+    show3dBuildings: 'true',
+    show3dLandmarks: 'true',
+    show3dFacades: 'true',
+    ...(isNavigating ? { show3dTrees: 'false' } : { show3dTrees: 'true' }),
     // Label layers — all on at max visibility.
     showPointOfInterestLabels: 'true',
     showPlaceLabels: 'true',
@@ -177,5 +200,7 @@ export function standardBasemapStyleImportConfig(
     showAdminBoundaries: 'true',
     densityPointOfInterestLabels: '5',
     showLandmarkIcons: 'true',
+    showLandmarkIconLabels: 'true',
+    ...poiAndLabelBoostForDarkBasemap(lightPreset),
   };
 }
