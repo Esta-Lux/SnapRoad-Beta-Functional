@@ -12,17 +12,22 @@ export type EffectiveRouteColors = {
   routeGlowOpacity: number;
 };
 
-/** Day / dawn Standard — crisp iOS-style blue on light roads. */
+/** Day / dawn Standard — crisp iOS-style blue on light roads with a navy casing. */
 const SNAP_ROUTE_CORE = '#0A84FF';
 const SNAP_ROUTE_CASING_STD = '#032C66';
 const SNAP_ROUTE_PASSED = 'rgba(10,132,255,0.42)';
 const SNAP_ROUTE_GLOW = '#5EBBFF';
 
-/** Night / dusk / satellite — electric cyan so the route never reads as “murky gray” on dark Standard. */
-const ROUTE_CORE_HIGH_VIS = '#5EE9FF';
-const ROUTE_CASING_HIGH_VIS = 'rgba(224,249,255,0.42)';
-const ROUTE_PASSED_HIGH_VIS = 'rgba(110,240,255,0.64)';
-const ROUTE_GLOW_HIGH_VIS = '#E0F9FF';
+/**
+ * Night / dusk / satellite / Sport — Apple-Maps-in-dark idiom:
+ *   vibrant iOS blue core (`#0A84FF`) over a bright white halo casing,
+ *   with a soft cyan underglow. Solid color values; alpha is controlled by
+ *   `RouteOverlay.casingPaintOpacity` so the halo can never collapse to ~0.
+ */
+const ROUTE_CORE_HIGH_VIS = '#0A84FF';
+const ROUTE_CASING_HIGH_VIS = '#FFFFFF';
+const ROUTE_PASSED_HIGH_VIS = 'rgba(180,200,225,0.62)';
+const ROUTE_GLOW_HIGH_VIS = '#5EBBFF';
 
 function useHighVisibilityRouteInk(
   mapLightPreset: MapboxLightPreset,
@@ -50,18 +55,24 @@ export function effectiveNavRouteColors(
 
   const highVis = useHighVisibilityRouteInk(mapLightPreset, isSatellite, drivingMode);
 
-  let glowOpacity = Math.max(modeConfig.routeGlowOpacity, highVis ? 0.46 : 0.3);
+  /**
+   * Glow is the soft outer blur, not the casing. Apple-style dark uses a subdued blue glow
+   * so the bright white halo and `#0A84FF` core stay the dominant read.
+   */
+  let glowOpacity = Math.max(modeConfig.routeGlowOpacity, highVis ? 0.36 : 0.3);
   if (highVis && drivingMode === 'sport') {
-    glowOpacity = Math.max(glowOpacity, 0.54);
+    glowOpacity = Math.max(glowOpacity, 0.42);
   }
 
   if (highVis) {
     if (isSatellite) {
+      // White halo over satellite imagery reads even harder than over Standard night;
+      // pull the underglow up slightly so the line still has a halo at altitude.
       glowOpacity = Math.max(glowOpacity, 0.4);
       return {
         routeColor: ROUTE_CORE_HIGH_VIS,
-        routeCasing: 'rgba(224,249,255,0.38)',
-        passedColor: 'rgba(110,240,255,0.58)',
+        routeCasing: ROUTE_CASING_HIGH_VIS,
+        passedColor: 'rgba(220,230,245,0.6)',
         routeGlowColor: ROUTE_GLOW_HIGH_VIS,
         routeGlowOpacity: glowOpacity,
       };
@@ -85,13 +96,13 @@ export function effectiveNavRouteColors(
   };
 }
 
-/** Alternate route preview lines — same hue family, dimmed. */
+/** Alternate route preview lines — Apple Maps idiom: dimmed iOS blue, slightly brighter on dark. */
 export function effectiveAlternateRouteLineColor(
   mapLightPreset: MapboxLightPreset,
   isSatellite: boolean,
 ): string {
   if (isSatellite || mapLightPreset === 'night' || mapLightPreset === 'dusk') {
-    return 'rgba(94,233,255,0.72)';
+    return 'rgba(94,168,255,0.7)';
   }
   return 'rgba(10,132,255,0.55)';
 }
@@ -149,16 +160,22 @@ function standardSatelliteBasemapConfig(
   };
 }
 
-/** Stronger POI / landmark text on dark presets so icons don’t “disappear” into the basemap. */
+/**
+ * Dark basemap label/POI tuning. Important: do NOT switch
+ * `colorModePointOfInterestLabels` to `single`, and do NOT force
+ * `backgroundPointOfInterestLabels` — those collapse Mapbox's maki icon set
+ * into uniform single-color dots, which reads as "POIs missing" on the map.
+ *
+ * Default (`default` mode, no background override) keeps the variety of icon
+ * fills Mapbox ships with the Standard style at every `densityPointOfInterestLabels`.
+ *
+ * @see https://docs.mapbox.com/map-styles/standard/api/
+ */
 function poiAndLabelBoostForDarkBasemap(
   lightPreset: MapboxLightPreset,
 ): Record<string, string> {
-  if (lightPreset !== 'night' && lightPreset !== 'dusk') return {};
-  return {
-    colorModePointOfInterestLabels: 'single',
-    colorPointOfInterestLabels: '#EAF2FF',
-    backgroundPointOfInterestLabels: 'circle',
-  };
+  void lightPreset;
+  return {};
 }
 
 /**
