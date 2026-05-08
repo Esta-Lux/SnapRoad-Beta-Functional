@@ -19,13 +19,14 @@ from services.trips_ports import (
     get_xp_config,
 )
 from routes.gamification import add_xp_to_user, recompute_profile_level_fields, sync_earned_driver_badges
-from config import ENVIRONMENT
+from config import ENVIRONMENT, TOMTOM_API_KEY
 from services.llm_client import chat_completion_model, get_sync_openai_client
 from database import get_supabase
 from services.supabase_service import sb_get_profile
 from services.premium_access import require_premium_user
 from limiter import limiter
 from services.gas_prices_service import regular_price_usd_for_state_label
+from services.tomtom_fuel import fetch_tomtom_fuel_stations
 
 _trips_log = logging.getLogger(__name__)
 users_db = get_users_store()
@@ -1632,14 +1633,29 @@ def get_fuel_prices(
     lat: Annotated[float, Query(description="Latitude")] = 39.9612,
     lng: Annotated[float, Query(description="Longitude")] = -82.9988,
 ):
-    """Public local fuel snapshot: tries GasBuddy JSON when reachable; otherwise estimated nearby stations."""
-    stations = _fetch_gasbuddy_stations(lat, lng)
-    source = "gasbuddy"
-    is_estimated = False
+    """Public local fuel snapshot: TomTom (if configured + entitled), else GasBuddy JSON, else estimated nearby."""
+    tomtom_configured = bool(TOMTOM_API_KEY)
+    stations: list[dict] = []
+    source = "estimated_local_fallback"
+    is_estimated = True
+
+    if tomtom_configured:
+        stations = fetch_tomtom_fuel_stations(lat, lng)
+        if stations:
+            source = "tomtom"
+            is_estimated = False
+
+    if not stations:
+        stations = _fetch_gasbuddy_stations(lat, lng)
+        if stations:
+            source = "gasbuddy"
+            is_estimated = False
+
     if not stations:
         stations = _mock_nearby_stations(lat, lng)
         source = "estimated_local_fallback"
         is_estimated = True
+
     nearby_stations = _stations_to_nearby(stations, lat, lng)
     return {
         "success": True,
@@ -1650,6 +1666,7 @@ def get_fuel_prices(
             "is_estimated": is_estimated,
             "stations": stations,
             "nearby_stations": nearby_stations,
+            "tomtom_configured": tomtom_configured,
         },
     }
 

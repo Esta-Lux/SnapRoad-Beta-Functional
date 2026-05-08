@@ -115,7 +115,6 @@ if (IS_PRODUCTION) {
   }
   if (!process.env.EXPO_PUBLIC_SUPABASE_URL) missing.push('EXPO_PUBLIC_SUPABASE_URL');
   if (!process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY) missing.push('EXPO_PUBLIC_SUPABASE_ANON_KEY');
-  if (!process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY) missing.push('EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY');
   if (missing.length > 0) {
     console.error(`[SnapRoad] Production build missing critical env vars: ${missing.join(', ')}`);
   }

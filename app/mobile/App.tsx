@@ -808,6 +808,24 @@ export default function App() {
     preloadTtsVoicePreference();
   }, []);
 
+  React.useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { bootstrapAppleIap, shutdownAppleIap } = await import('./src/billing/appleIap');
+        if (cancelled) return;
+        await bootstrapAppleIap();
+      } catch (e) {
+        console.warn('[IAP] bootstrap failed', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      void import('./src/billing/appleIap').then((m) => m.shutdownAppleIap()).catch(() => {});
+    };
+  }, []);
+
   if (apiConfigErr) {
     return <ApiConfigScreen message={apiConfigErr} />;
   }

@@ -53,6 +53,7 @@ import {
 } from '../components/profile/ProfileSections';
 import type { ProfileOverviewActionItem } from '../components/profile/types';
 import { ProfileStatsStrip, ProfileTabBar } from '../components/profile/ProfileScreenBlocks';
+import { startAppleSubscriptionPurchase } from '../billing/appleIap';
 import { registerCommutePushToken } from '../utils/pushNotifications';
 import { mapProfileTripHistoryItem, recentTripsListFromPayload } from '../components/profile/tripHistoryMapping';
 import { sanitizeTripSpeedMph } from '../utils/driveMetrics';
@@ -502,10 +503,19 @@ export default function ProfileScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     if (plan === 'basic') {
-      if ((user?.plan_entitlement_source || '').toLowerCase() === 'admin') {
+      const pes = (user?.plan_entitlement_source || '').toLowerCase();
+      if (pes === 'admin') {
         Alert.alert(
           'Plan managed by your team',
           'Your tier was set by SnapRoad and cannot be switched to Basic from the app. Contact support if you need a change.',
+        );
+        setShowPlanModal(false);
+        return;
+      }
+      if (pes === 'apple') {
+        Alert.alert(
+          'Apple subscription',
+          'To switch to Basic, cancel your subscription in iPhone Settings → Apple ID → Subscriptions. Your Premium access remains until the billing period ends.',
         );
         setShowPlanModal(false);
         return;
@@ -520,6 +530,25 @@ export default function ProfileScreen() {
       }
       setShowPlanModal(false);
       await loadData('silent');
+      return;
+    }
+
+    if (Platform.OS === 'ios') {
+      const uid = user?.id?.trim();
+      if (!uid) {
+        Alert.alert('Sign in required', 'Please sign in to upgrade your plan.');
+        setShowPlanModal(false);
+        return;
+      }
+      try {
+        await startAppleSubscriptionPurchase(plan === 'family' ? 'family' : 'premium', uid);
+        setShowPlanModal(false);
+        await loadData('silent');
+        Alert.alert('Subscription active', 'Your plan has been updated.');
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Could not complete the purchase.';
+        Alert.alert('Purchase', msg);
+      }
       return;
     }
 
@@ -543,7 +572,7 @@ export default function ProfileScreen() {
     }
     setShowPlanModal(false);
     await loadData('silent');
-  }, [updateUser, loadData, user?.email]);
+  }, [updateUser, loadData, user?.email, user?.id, user?.plan_entitlement_source]);
 
   useEffect(() => {
     const status = typeof route.params?.status === 'string' ? route.params.status : '';
@@ -874,6 +903,15 @@ export default function ProfileScreen() {
                 style={{ marginHorizontal: 16, marginBottom: 8, paddingVertical: 10, borderRadius: 11, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, alignItems: 'center', backgroundColor: cardBg }}
                 onPress={async () => {
                   try {
+                    if (Platform.OS === 'ios' && (user?.plan_entitlement_source || '').toLowerCase() === 'apple') {
+                      try {
+                        const { deepLinkToSubscriptions } = await import('react-native-iap');
+                        await deepLinkToSubscriptions({});
+                      } catch {
+                        await Linking.openURL('https://apps.apple.com/account/subscriptions');
+                      }
+                      return;
+                    }
                     const res = await api.post<{ success?: boolean; data?: { url?: string } }>('/api/payments/billing-portal', {
                       return_url: Platform.OS === 'web' ? undefined : 'snaproad://billing/portal',
                     });

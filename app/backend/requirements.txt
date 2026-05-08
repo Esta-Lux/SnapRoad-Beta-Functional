@@ -24,6 +24,7 @@ requests==2.33.1
 # Supabase + Stripe
 supabase==2.28.0
 stripe==14.1.0
+app-store-server-library==3.1.1
 
 # AI
 openai==1.99.9

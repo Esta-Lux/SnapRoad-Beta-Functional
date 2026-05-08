@@ -22,6 +22,8 @@ yarn-error.*
 
 .DS_Store
 *.pem
+# Public Apple Root CA G3 for App Store Server API JWS verification (not a private key).
+!app/backend/certs/apple_root_ca_g3.pem
 
 # Local env files — must never be committed. Rotate any key ever pushed.
 .env
