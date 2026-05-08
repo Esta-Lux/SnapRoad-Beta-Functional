@@ -102,7 +102,7 @@ export type TtsSpeechProfile = {
 /**
  * One house voice for navigation + Orion: calm, clear, young-adult male when
  * the device exposes a matching voice. Expo treats `rate: 1.0` as normal speed;
- * keep mode differences subtle so turn cues stay easy to parse in a car.
+ * keep all driving modes on the same pace so HUD cues feel steady in a car.
  */
 const MODE_SPEECH_PROFILE: Record<DrivingMode, TtsSpeechProfile> = {
   calm: {

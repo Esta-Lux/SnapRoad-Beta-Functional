@@ -72,6 +72,8 @@ const HUD_ROUTE_BLUE = '#0A84FF';
 const HUD_ROUTE_CASING = '#063B82';
 const HUD_ROUTE_PASSED = 'rgba(148,163,184,0.62)';
 const HUD_ROUTE_GLOW = '#38BDF8';
+const HUD_VOICE_RATE = 1.0;
+const HUD_VOICE_PITCH = 0.96;
 
 export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
   calm: {
@@ -119,8 +121,8 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     /** Approx. nav bottom chrome (see `NAV_MAP_BOTTOM_CHROME_PX` in cameraPresets); follow padding uses presets. */
     cameraPaddingBottom: 198,
 
-    speechRate: 1.06,
-    speechPitch: 0.98,
+    speechRate: HUD_VOICE_RATE,
+    speechPitch: HUD_VOICE_PITCH,
 
     lightPreset: 'dawn',
     terrainExaggeration: 1.2,
@@ -181,8 +183,8 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     /** Aligned with `NAV_MAP_BOTTOM_CHROME_PX` in cameraPresets for nav follow framing. */
     cameraPaddingBottom: 198,
 
-    speechRate: 1.06,
-    speechPitch: 0.98,
+    speechRate: HUD_VOICE_RATE,
+    speechPitch: HUD_VOICE_PITCH,
 
     lightPreset: 'day',
     terrainExaggeration: 1.0,
@@ -245,8 +247,8 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     exploreZoom: 15.5,
     cameraPaddingBottom: 198,
 
-    speechRate: 1.06,
-    speechPitch: 0.98,
+    speechRate: HUD_VOICE_RATE,
+    speechPitch: HUD_VOICE_PITCH,
 
     lightPreset: 'dusk',
     terrainExaggeration: 1.4,
