@@ -33,6 +33,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useLocation } from '../hooks/useLocation';
 import { useDriveNavigation } from '../hooks/useDriveNavigation';
+import { useNavigationRuntimeProtection } from '../hooks/useNavigationRuntimeProtection';
 import { useOfflineMaps } from '../hooks/useOfflineMaps';
 import { useSdkStepGapDisplay } from '../hooks/useSdkStepGapDisplay';
 import { usePassiveDriveGems } from '../hooks/usePassiveDriveGems';
@@ -681,6 +682,7 @@ export default function MapScreen() {
     navSdkHeadless: navLogicEffective,
     tripFuelContextRef,
   });
+  useNavigationRuntimeProtection(nav.isNavigating, nav.navigationProgress);
   const offlineMaps = useOfflineMaps();
 
   const promptOfflineMapDownload = useCallback(() => {
