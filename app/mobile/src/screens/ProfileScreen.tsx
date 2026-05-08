@@ -757,24 +757,24 @@ export default function ProfileScreen() {
                 colors={user?.isPremium ? ['#1D4ED8', '#3B82F6'] : ['#475569', '#64748B']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
-                style={{ paddingVertical: 16, paddingHorizontal: 16 }}
+                style={{ paddingVertical: 12, paddingHorizontal: 14 }}
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                   <View style={{ flex: 1, paddingRight: 12 }}>
                     <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, fontWeight: '800', letterSpacing: 0.8 }}>
                       INSIGHTS & RECAP {user?.isPremium ? '' : '· PREMIUM'}
                     </Text>
-                    <Text style={{ color: '#fff', fontSize: 18, fontWeight: '900', marginTop: 6 }}>
+                    <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900', marginTop: 4 }}>
                       {user?.isPremium ? 'Your tracking dashboard' : 'Unlock with Premium'}
                     </Text>
-                    <Text style={{ color: 'rgba(255,255,255,0.88)', fontSize: 13, marginTop: 6 }}>
+                    <Text style={{ color: 'rgba(255,255,255,0.88)', fontSize: 12, marginTop: 4 }} numberOfLines={1}>
                       {user?.isPremium
                         ? 'Trips · Safety · Gems · Fuel · Badges · Orion'
                         : 'Weekly recap, coaching, fuel trends, and badges explorer — upgrade to view.'}
                     </Text>
                   </View>
-                  <View style={{ backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 12, padding: 10 }}>
-                    <Ionicons name={user?.isPremium ? 'stats-chart' : 'lock-closed'} size={26} color="#fff" />
+                  <View style={{ backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 10, padding: 8 }}>
+                    <Ionicons name={user?.isPremium ? 'stats-chart' : 'lock-closed'} size={22} color="#fff" />
                   </View>
                 </View>
               </LinearGradient>
@@ -799,7 +799,7 @@ export default function ProfileScreen() {
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={[styles.commuteAlertDashTitle, { color: text }]}>Commute Alerts</Text>
                 <Text style={[styles.commuteAlertDashSub, { color: sub }]} numberOfLines={2}>
-                  Start, destination, days, leave time, and max push alerts. Scans begin 2h before you leave.
+                  Route scans begin 2h before leave time.
                   {commutes.length > 0 ? ` ${commutes.length} active.` : ''}
                 </Text>
               </View>
@@ -817,9 +817,6 @@ export default function ProfileScreen() {
             />
 
             <SectionHeader title={`Favorites (${favoritePlaces.length})`} isLight={isLight} />
-            <Text style={{ color: sub, fontSize: 12, paddingHorizontal: 16, marginBottom: 6, marginTop: -6, lineHeight: 16 }}>
-              Saved favorite locations. The Favorites chip next to Map search opens this same list for quick picks.
-            </Text>
             <View style={{ paddingHorizontal: 16, marginBottom: 8 }}>
               <PlacesCard
                 cardBg={cardBg}
@@ -838,9 +835,6 @@ export default function ProfileScreen() {
               }}
             >
               <SectionHeader title={`Commute Alerts (${commutes.length}/${commuteLimit})`} isLight={isLight} />
-              <Text style={{ color: sub, fontSize: 12, paddingHorizontal: 16, marginBottom: 6, marginTop: -6, lineHeight: 16 }}>
-                Saved A-to-B scans. SnapRoad watches traffic before leave time and pushes short updates when the route gets busy.
-              </Text>
               <CommuteRoutesSection
                 cardBg={cardBg}
                 text={text}
@@ -864,14 +858,14 @@ export default function ProfileScreen() {
           <>
             <SectionHeader title="Account" isLight={isLight} />
             <TouchableOpacity
-              style={{ marginHorizontal: 16, marginBottom: 12, paddingVertical: 14, paddingHorizontal: 16, borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+              style={{ marginHorizontal: 16, marginBottom: 8, paddingVertical: 11, paddingHorizontal: 14, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: cardBg, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
               onPress={() => { setDraftName(user?.name ?? ''); setShowEditName(true); }}
               activeOpacity={0.75}
             >
               <View style={{ flex: 1, paddingRight: 8 }}>
-                <Text style={{ color: sub, fontSize: 12, marginBottom: 4 }}>Username</Text>
-                <Text style={{ color: text, fontSize: 16, fontWeight: '600' }}>{user?.name ?? 'Driver'}</Text>
-                <Text style={{ color: sub, fontSize: 11, marginTop: 4 }}>Shown instead of your email. You can change it once every 14 days.</Text>
+                <Text style={{ color: sub, fontSize: 11, marginBottom: 2 }}>Username</Text>
+                <Text style={{ color: text, fontSize: 15, fontWeight: '700' }}>{user?.name ?? 'Driver'}</Text>
+                <Text style={{ color: sub, fontSize: 10, marginTop: 3 }} numberOfLines={1}>Shown instead of your email.</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={sub} />
             </TouchableOpacity>
@@ -883,9 +877,9 @@ export default function ProfileScreen() {
               style={{
                 marginHorizontal: 16,
                 marginBottom: 12,
-                paddingVertical: 16,
-                paddingHorizontal: 16,
-                borderRadius: 14,
+                paddingVertical: 12,
+                paddingHorizontal: 14,
+                borderRadius: 12,
                 backgroundColor: isLight ? '#EFF6FF' : 'rgba(59,130,246,0.12)',
                 borderWidth: 1,
                 borderColor: colors.primary + '40',
@@ -899,8 +893,8 @@ export default function ProfileScreen() {
               accessibilityLabel="Plans and billing"
             >
               <View style={{ flex: 1 }}>
-                <Text style={{ color: text, fontSize: 16, fontWeight: '800' }}>Plans &amp; billing</Text>
-                <Text style={{ color: sub, fontSize: 12, marginTop: 4, lineHeight: 16 }}>
+                <Text style={{ color: text, fontSize: 15, fontWeight: '800' }}>Plans &amp; billing</Text>
+                <Text style={{ color: sub, fontSize: 11, marginTop: 3, lineHeight: 15 }} numberOfLines={1}>
                   {currentPlan === 'basic'
                     ? `${PLANS.premium.price} founders · reg. $${PREMIUM_PUBLIC_MONTHLY.toFixed(2)}/mo · ~${premiumSavingsPercent()}% off`
                     : 'View plans, compare features, or change subscription'}
@@ -911,7 +905,7 @@ export default function ProfileScreen() {
 
             {currentPlan !== 'basic' && (
               <TouchableOpacity
-                style={{ marginHorizontal: 16, marginBottom: 12, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: 'center', backgroundColor: cardBg }}
+                style={{ marginHorizontal: 16, marginBottom: 8, paddingVertical: 10, borderRadius: 11, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, alignItems: 'center', backgroundColor: cardBg }}
                 onPress={async () => {
                   try {
                     const res = await api.post<{ success?: boolean; data?: { url?: string } }>('/api/payments/billing-portal', {
@@ -954,9 +948,6 @@ export default function ProfileScreen() {
             <PlacesCard cardBg={cardBg} text={text} sub={sub} places={places} loading={initialLoading} onDelete={handleDeletePlace} onAdd={() => setShowAddPlace(true)} />
 
             <SectionHeader title={`Quick routes (${routes.length})`} isLight={isLight} />
-            <Text style={{ color: sub, fontSize: 12, paddingHorizontal: 16, marginBottom: 8, marginTop: -6, lineHeight: 16 }}>
-              Legacy shortcuts are read-only for launch. New recurring traffic scans live in Commute reminders so notifications stay clean and reliable.
-            </Text>
             <RoutesCard cardBg={cardBg} text={text} sub={sub} routes={routes} loading={initialLoading} onDelete={handleDeleteRoute} />
 
             <SectionHeader title={notifSyncing ? 'Notifications (syncing...)' : 'Notifications'} isLight={isLight} />
@@ -976,7 +967,7 @@ export default function ProfileScreen() {
             <DrivingModeCard cardBg={cardBg} text={text} defaultMode={defaultMode} setDefaultMode={setDefaultMode} />
 
             <SectionHeader title="Support" isLight={isLight} />
-            <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 12 }}>
+            <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 8 }}>
               <TouchableOpacity style={[styles.fuelBtn, { flexDirection: 'row', gap: 8, justifyContent: 'center' }]} onPress={() => setShowHelp(true)}>
                 <Ionicons name="help-circle-outline" size={18} color="#fff" />
                 <Text style={styles.fuelBtnText}>Help & Support</Text>
@@ -1216,17 +1207,17 @@ const styles = StyleSheet.create({
   fuelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 },
   fuelLabel: { fontSize: 13, fontWeight: '600' },
   fuelValue: { fontSize: 18, fontWeight: '800' },
-  fuelBtn: { marginTop: 12, backgroundColor: '#007AFF', borderRadius: 12, alignItems: 'center', paddingVertical: 12 },
-  fuelBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  fuelBtn: { marginTop: 0, backgroundColor: '#007AFF', borderRadius: 11, alignItems: 'center', paddingVertical: 10 },
+  fuelBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   fuelHint: { fontSize: 11, marginTop: 8, lineHeight: 15 },
   liveSyncRow: {
-    minHeight: 36,
+    minHeight: 26,
     justifyContent: 'center',
     paddingHorizontal: 16,
     marginTop: 6,
     marginBottom: 8,
   },
-  liveSyncText: { fontSize: 12, fontWeight: '600' },
+  liveSyncText: { fontSize: 11, fontWeight: '600' },
   lifetimeHint: { fontSize: 11, fontWeight: '600', textAlign: 'center', marginTop: -4, marginBottom: 6, paddingHorizontal: 16 },
   alertRow: {
     flexDirection: 'row',
@@ -1248,36 +1239,36 @@ const styles = StyleSheet.create({
   upgradeSmallText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   commuteAlertDash: {
     marginHorizontal: 16,
-    marginBottom: 12,
-    borderRadius: 14,
-    padding: 12,
+    marginBottom: 8,
+    borderRadius: 12,
+    padding: 10,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  commuteAlertIconWrap: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  commuteAlertDashTitle: { fontSize: 16, fontWeight: '800' },
-  commuteAlertDashSub: { fontSize: 12, fontWeight: '500', marginTop: 2, lineHeight: 16 },
+  commuteAlertIconWrap: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  commuteAlertDashTitle: { fontSize: 15, fontWeight: '800' },
+  commuteAlertDashSub: { fontSize: 11, fontWeight: '500', marginTop: 1, lineHeight: 15 },
   valueCard: {
     marginHorizontal: 16,
-    marginBottom: 12,
-    borderRadius: 18,
-    padding: 14,
+    marginBottom: 8,
+    borderRadius: 14,
+    padding: 11,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  valueHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
-  valueIconWrap: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  valueTitle: { fontSize: 17, fontWeight: '900' },
-  valueSub: { fontSize: 12, lineHeight: 16, marginTop: 3, fontWeight: '600' },
-  valueMetricRow: { flexDirection: 'row', gap: 8 },
+  valueHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  valueIconWrap: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  valueTitle: { fontSize: 15, fontWeight: '900' },
+  valueSub: { fontSize: 11, lineHeight: 15, marginTop: 2, fontWeight: '600' },
+  valueMetricRow: { flexDirection: 'row', gap: 6 },
   valueMetric: {
     flex: 1,
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
+    borderRadius: 11,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
     backgroundColor: 'rgba(148,163,184,0.1)',
   },
-  valueMetricNumber: { fontSize: 16, fontWeight: '900', textAlign: 'center' },
-  valueMetricLabel: { fontSize: 9, lineHeight: 12, textAlign: 'center', marginTop: 4, fontWeight: '800', textTransform: 'uppercase' },
+  valueMetricNumber: { fontSize: 15, fontWeight: '900', textAlign: 'center' },
+  valueMetricLabel: { fontSize: 8, lineHeight: 11, textAlign: 'center', marginTop: 3, fontWeight: '800', textTransform: 'uppercase' },
 });

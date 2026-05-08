@@ -17,7 +17,7 @@ export function SocialScreenHeader({ title, subtitle, onAddPress, accentColor, t
     <View style={styles.row}>
       <View style={styles.textCol}>
         <Text style={[styles.title, { color: textColor }]}>{title}</Text>
-        <Text style={[styles.subtitle, { color: subColor }]}>{subtitle}</Text>
+        <Text style={[styles.subtitle, { color: subColor }]} numberOfLines={2}>{subtitle}</Text>
       </View>
       {onAddPress ? (
         <TouchableOpacity
@@ -28,7 +28,7 @@ export function SocialScreenHeader({ title, subtitle, onAddPress, accentColor, t
           accessibilityLabel="Add or invite a friend"
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Ionicons name="person-add-outline" size={22} color={accentColor} />
+          <Ionicons name="person-add-outline" size={18} color={accentColor} />
         </TouchableOpacity>
       ) : null}
     </View>
@@ -40,17 +40,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: 10,
   },
   textCol: { flex: 1, minWidth: 0 },
-  title: { fontSize: 28, fontWeight: '700', letterSpacing: -0.6, lineHeight: 34 },
-  subtitle: { fontSize: 14, fontWeight: '500', marginTop: 5, lineHeight: 20, opacity: 0.92 },
+  title: { fontSize: 24, fontWeight: '800', letterSpacing: -0.3, lineHeight: 29 },
+  subtitle: { fontSize: 12, fontWeight: '500', marginTop: 3, lineHeight: 16, opacity: 0.86 },
   addBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 2,
+    marginTop: 1,
   },
 });

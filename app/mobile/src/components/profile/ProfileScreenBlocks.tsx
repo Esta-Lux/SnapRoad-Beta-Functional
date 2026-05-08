@@ -78,14 +78,14 @@ export const ProfileTabBar = React.memo(function ProfileTabBar({
 });
 
 const styles = StyleSheet.create({
-  tabRow: { flexDirection: 'row', marginHorizontal: 16, marginTop: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(148,163,184,0.35)' },
-  tabBtn: { flex: 1, alignItems: 'center', paddingVertical: 10, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabRow: { flexDirection: 'row', marginHorizontal: 16, marginTop: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(148,163,184,0.3)' },
+  tabBtn: { flex: 1, alignItems: 'center', paddingVertical: 8, borderBottomWidth: 2, borderBottomColor: 'transparent' },
   tabBtnActive: { borderBottomColor: '#3B82F6' },
   tabBtnText: { fontSize: 12, fontWeight: '700' },
-  statsRow: { marginHorizontal: 16, marginBottom: 2, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 8, flexDirection: 'row', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(148,163,184,0.22)' },
+  statsRow: { marginHorizontal: 16, marginBottom: 0, borderRadius: 12, paddingVertical: 9, paddingHorizontal: 8, flexDirection: 'row', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(148,163,184,0.2)' },
   statCol: { flex: 1, alignItems: 'center' },
   statIcon: { marginBottom: 2 },
-  statVal: { fontSize: 17, fontWeight: '800' },
-  statLbl: { fontSize: 10, marginTop: 2, fontWeight: '600' },
+  statVal: { fontSize: 15, fontWeight: '800' },
+  statLbl: { fontSize: 9, marginTop: 1, fontWeight: '700' },
   statSub: { fontSize: 9, marginTop: 1, fontWeight: '700', opacity: 0.82 },
 });

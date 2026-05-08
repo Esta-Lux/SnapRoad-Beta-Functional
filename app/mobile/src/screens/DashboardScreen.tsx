@@ -919,12 +919,12 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <View style={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 6 }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 2, paddingBottom: 4 }}>
         <SocialScreenHeader
           title="Social"
           subtitle={
             section === 'friends'
-              ? 'Share location with people you trust, calmly and on your terms.'
+              ? 'Share location with trusted people on your terms.'
               : 'Family is a launch-safe preview while the backend remains intentionally stubbed.'
           }
           onAddPress={section === 'friends' ? () => setShowAddFriend(true) : undefined}
@@ -1006,7 +1006,7 @@ export default function DashboardScreen() {
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={[styles.challengeHistoryTitle, { color: colors.text }]}>Friend duels</Text>
             <Text style={[styles.challengeHistorySub, { color: colors.textSecondary }]} numberOfLines={2}>
-              Wins, losses, and live scores. Challenge someone from a friend’s profile.
+              Duels, wins, losses, and live scores.
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} style={{ opacity: 0.55 }} />
@@ -1292,12 +1292,6 @@ export default function DashboardScreen() {
                       ? `Visible while active to ${friends.length} friend${friends.length !== 1 ? 's' : ''}`
                     : 'Friends cannot see where you are'}
                 </Text>
-                {shareMode === 'always_follow' && Platform.OS === 'ios' ? (
-                  <Text style={{ fontSize: 11, lineHeight: 15, color: colors.textTertiary, marginTop: 4 }}>
-                    Background sharing uses Always location. Set it in Settings if friends see an old
-                    position.
-                  </Text>
-                ) : null}
               </View>
               <Switch
                 value={isSharingLocation}
@@ -1311,7 +1305,7 @@ export default function DashboardScreen() {
             <View style={styles.shareModeRow}>
               {([
                 ['while_using', 'While using', 'App open', 'navigate-outline'],
-                ['always_follow', 'Always Follow', 'Background', 'infinite-outline'],
+                ['always_follow', 'Always', 'Background', 'infinite-outline'],
               ] as const).map(([mode, title, sub, icon]) => {
                 const active = shareMode === mode;
                 return (
@@ -1414,9 +1408,9 @@ export default function DashboardScreen() {
           </View>
 
           {friendsLoading ? (
-            <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 14 }}>
+            <View style={{ paddingHorizontal: 16, paddingTop: 6, gap: 10 }}>
               {[1, 2, 3, 4].map((i) => (
-                <Skeleton key={i} width="100%" height={84} borderRadius={12} />
+                <Skeleton key={i} width="100%" height={68} borderRadius={12} />
               ))}
             </View>
           ) : filteredFriendListData.length === 0 ? (
@@ -1721,31 +1715,31 @@ const styles = StyleSheet.create({
   challengeHistoryCue: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 14,
+    gap: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
   },
   challengeHistoryIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  challengeHistoryTitle: { fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
-  challengeHistorySub: { fontSize: 12, marginTop: 3, lineHeight: 16, fontWeight: '500' },
+  challengeHistoryTitle: { fontSize: 14, fontWeight: '800', letterSpacing: -0.1 },
+  challengeHistorySub: { fontSize: 11, marginTop: 2, lineHeight: 15, fontWeight: '500' },
   toggleRow: {
     flexDirection: 'row',
     marginHorizontal: 16,
     marginTop: 4,
-    marginBottom: 2,
-    borderRadius: 12,
-    padding: 3,
+    marginBottom: 0,
+    borderRadius: 10,
+    padding: 2,
   },
-  togglePill: { flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center' },
-  toggleText: { fontSize: 13, fontWeight: '600' },
+  togglePill: { flex: 1, paddingVertical: 7, borderRadius: 9, alignItems: 'center' },
+  toggleText: { fontSize: 12, fontWeight: '700' },
   comingSoonDot: { backgroundColor: 'rgba(29,78,216,0.22)', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1 },
   comingSoonDotText: { color: '#93C5FD', fontSize: 8, fontWeight: '800' },
 
@@ -1753,9 +1747,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
   },
   pendingSummary: {
     borderRadius: 16,
@@ -1787,9 +1781,9 @@ const styles = StyleSheet.create({
   reqBtnCompactT: { color: '#fff', fontSize: 12, fontWeight: '700' },
   bucketScrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 4,
-    paddingBottom: 14,
-    gap: 8,
+    paddingTop: 2,
+    paddingBottom: 8,
+    gap: 6,
     alignItems: 'center',
   },
   bucketChipPremium: {
@@ -1798,13 +1792,13 @@ const styles = StyleSheet.create({
     gap: 6,
     borderRadius: 22,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
   },
   bucketChipPremiumActive: {
     borderWidth: StyleSheet.hairlineWidth,
   },
-  bucketChipPremiumText: { fontSize: 13, fontWeight: '600' },
+  bucketChipPremiumText: { fontSize: 12, fontWeight: '700' },
   newBucketInline: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1812,7 +1806,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingVertical: 7,
     marginLeft: 2,
   },
   newBucketInlineText: { fontSize: 12, fontWeight: '600' },
@@ -1821,54 +1815,54 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 12,
+    paddingTop: 8,
+    paddingBottom: 9,
     gap: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  friendsSectionTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.35 },
-  friendsSectionCaption: { fontSize: 13, fontWeight: '500', marginTop: 3, opacity: 0.92 },
+  friendsSectionTitle: { fontSize: 17, fontWeight: '800', letterSpacing: -0.15 },
+  friendsSectionCaption: { fontSize: 12, fontWeight: '500', marginTop: 1, opacity: 0.86 },
   shareLocCard: {
     marginHorizontal: 16,
-    marginTop: 4,
-    borderRadius: 16,
+    marginTop: 2,
+    borderRadius: 14,
     overflow: 'hidden',
   },
   shareLocCardInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   shareModeRow: {
     flexDirection: 'row',
-    gap: 10,
-    paddingHorizontal: 14,
-    paddingBottom: 14,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingBottom: 10,
   },
   shareModeButton: {
     flex: 1,
-    minHeight: 54,
-    borderRadius: 14,
+    minHeight: 42,
+    borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 10,
-    paddingVertical: 9,
+    paddingVertical: 7,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
   shareModeTitle: { fontSize: 12, fontWeight: '800' },
-  shareModeSub: { fontSize: 10, fontWeight: '600', marginTop: 1 },
+  shareModeSub: { fontSize: 9, fontWeight: '600', marginTop: 0 },
   shareLocIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  shareLocTitle: { fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
-  shareLocCaption: { fontSize: 12, fontWeight: '500', marginTop: 2, opacity: 0.9 },
+  shareLocTitle: { fontSize: 14, fontWeight: '800', letterSpacing: -0.1 },
+  shareLocCaption: { fontSize: 11, fontWeight: '500', marginTop: 1, opacity: 0.86 },
   bucketColorDot: { width: 8, height: 8, borderRadius: 4 },
   assignRow: {
     flexDirection: 'row',

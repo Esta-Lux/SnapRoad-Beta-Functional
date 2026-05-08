@@ -120,19 +120,19 @@ export function MyCarRow({
 const myCarStyles = StyleSheet.create({
   wrap: {
     marginHorizontal: 16,
-    marginBottom: 10,
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    marginBottom: 8,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 11,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(148,163,184,0.25)',
   },
-  iconWrap: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(59,130,246,0.12)' },
+  iconWrap: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(59,130,246,0.12)' },
   titleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
-  title: { fontSize: 16, fontWeight: '800' },
+  title: { fontSize: 15, fontWeight: '800' },
   badgeSoon: {
     backgroundColor: 'rgba(245,158,11,0.22)',
     paddingHorizontal: 8,
@@ -140,8 +140,8 @@ const myCarStyles = StyleSheet.create({
     borderRadius: 8,
   },
   badgeSoonText: { fontSize: 10, fontWeight: '800', color: '#B45309' },
-  sub: { fontSize: 12, marginTop: 4, fontWeight: '500' },
-  cta: { fontSize: 13, fontWeight: '700' },
+  sub: { fontSize: 11, marginTop: 2, fontWeight: '500' },
+  cta: { fontSize: 12, fontWeight: '700' },
   ctaArrow: { fontWeight: '600' },
 });
 
@@ -233,8 +233,8 @@ export function PlanCard({
   return (
     <View style={[styles.card, { backgroundColor: cardBg }]}>
       <Text style={[styles.planName, { color: text }]}>{planName} - {planPrice}</Text>
-      {planFeatures.slice(0, 3).map((f, i) => (
-        <Text key={i} style={{ color: sub, fontSize: 12, marginTop: 2 }}>- {f}</Text>
+      {planFeatures.slice(0, 2).map((f, i) => (
+        <Text key={i} style={{ color: sub, fontSize: 11, marginTop: 2 }}>- {f}</Text>
       ))}
       {currentPlan === 'basic' && (
         <TouchableOpacity style={styles.upgradeBtn} onPress={onUpgrade}>
@@ -298,12 +298,12 @@ export function VehicleCard(props: {
   } = props;
   return (
     <View style={[styles.card, { backgroundColor: cardBg }]}>
-      <Text style={{ color: sub, fontSize: 12, marginBottom: 8 }}>Vehicle type</Text>
-      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+      <Text style={{ color: sub, fontSize: 11, marginBottom: 7 }}>Vehicle type</Text>
+      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
         {(['car', 'motorcycle'] as const).map((vt) => (
           <TouchableOpacity
             key={vt}
-            style={[styles.presetChip, vehicleType === vt && styles.presetChipActive, { flex: 1, alignItems: 'center', paddingVertical: 10 }]}
+            style={[styles.presetChip, vehicleType === vt && styles.presetChipActive, { flex: 1, alignItems: 'center', paddingVertical: 8 }]}
             onPress={() => setVehicleType(vt)}
           >
             <Ionicons name={vt === 'car' ? 'car-outline' : 'car-sport-outline'} size={18} color={vehicleType === vt ? '#fff' : text} />
@@ -318,7 +318,7 @@ export function VehicleCard(props: {
         <Switch value={tallVehicle} onValueChange={setTallVehicle} trackColor={{ false: '#ccc', true: '#3B82F6' }} />
       </View>
       ) : (
-        <Text style={{ color: sub, fontSize: 12, marginBottom: 10, lineHeight: 16 }}>
+        <Text style={{ color: sub, fontSize: 11, marginBottom: 8, lineHeight: 15 }}>
           Motorcycle mode skips truck-height routing. You can still report incidents and use all map features.
         </Text>
       )}
@@ -372,8 +372,8 @@ export function PlacesCard({
 }) {
   return (
     <View style={[styles.card, { backgroundColor: cardBg }]}>
-      {loading ? <Skeleton width="100%" height={40} /> : places.length === 0 ? (
-        <Text style={{ color: sub, fontSize: 13 }}>No saved places</Text>
+      {loading ? <Skeleton width="100%" height={36} /> : places.length === 0 ? (
+        <Text style={{ color: sub, fontSize: 12 }}>No saved places</Text>
       ) : (
         places.map((p) => (
           <View key={p.id} style={styles.listRow}>
@@ -423,7 +423,7 @@ export function CommuteRoutesSection({
   onAdd: () => void;
 }) {
   return (
-    <View style={{ paddingHorizontal: 16, gap: 10, marginBottom: 12 }}>
+    <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 8 }}>
       <TouchableOpacity
         onPress={onAdd}
         style={{
@@ -431,29 +431,29 @@ export function CommuteRoutesSection({
           alignItems: 'center',
           justifyContent: 'center',
           gap: 8,
-          paddingVertical: 12,
-          borderRadius: 14,
-          borderWidth: 1,
+          paddingVertical: 10,
+          borderRadius: 12,
+          borderWidth: StyleSheet.hairlineWidth,
           borderColor: border,
           backgroundColor: cardBg,
         }}
       >
-        <Ionicons name="add-circle-outline" size={20} color={primary} />
-        <Text style={{ color: primary, fontWeight: '800', fontSize: 15 }}>Add commute alert</Text>
+        <Ionicons name="add-circle-outline" size={18} color={primary} />
+        <Text style={{ color: primary, fontWeight: '800', fontSize: 14 }}>Add commute alert</Text>
       </TouchableOpacity>
       {loading ? (
-        <Skeleton width="100%" height={48} borderRadius={12} />
+        <Skeleton width="100%" height={42} borderRadius={12} />
       ) : routes.length === 0 ? (
         <View style={[styles.card, { backgroundColor: cardBg, borderWidth: StyleSheet.hairlineWidth, borderColor: border }]}>
-          <Text style={{ color: sub, fontSize: 13, textAlign: 'center', lineHeight: 18 }}>
-            Add a starting address, destination, days, leave time, and alert count. Push updates stay short.
+          <Text style={{ color: sub, fontSize: 12, textAlign: 'center', lineHeight: 16 }}>
+            Add a route, leave time, days, and alert count.
           </Text>
         </View>
       ) : (
         routes.map((r) => (
           <View
             key={r.id}
-            style={[styles.listRow, { backgroundColor: cardBg, borderRadius: 14, padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: border }]}
+            style={[styles.listRow, { backgroundColor: cardBg, borderRadius: 12, padding: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: border }]}
           >
             <Ionicons name="navigate-outline" size={18} color={primary} />
             <View style={{ flex: 1, marginLeft: 10 }}>
@@ -477,7 +477,7 @@ export function CommuteRoutesSection({
           </View>
         ))
       )}
-      <Text style={{ color: sub, fontSize: 11, textAlign: 'center' }}>
+      <Text style={{ color: sub, fontSize: 10, textAlign: 'center' }}>
         {routes.length}/{limit} commute routes
       </Text>
     </View>
@@ -501,8 +501,8 @@ export function RoutesCard({
 }) {
   return (
     <View style={[styles.card, { backgroundColor: cardBg }]}>
-      {loading ? <Skeleton width="100%" height={40} /> : routes.length === 0 ? (
-        <Text style={{ color: sub, fontSize: 13 }}>No saved routes</Text>
+      {loading ? <Skeleton width="100%" height={36} /> : routes.length === 0 ? (
+        <Text style={{ color: sub, fontSize: 12 }}>No saved routes</Text>
       ) : (
         routes.map((r) => (
           <View key={r.id} style={styles.listRow}>
@@ -799,7 +799,7 @@ export function DeleteAccountButton({
 
 
 const sStyles = StyleSheet.create({
-  sectionTitle: { fontSize: 16, fontWeight: '800', paddingHorizontal: 16, marginTop: 20, marginBottom: 8 },
+  sectionTitle: { fontSize: 15, fontWeight: '800', paddingHorizontal: 16, marginTop: 14, marginBottom: 6 },
 });
 
 const styles = StyleSheet.create({
@@ -812,46 +812,46 @@ const styles = StyleSheet.create({
   userEmail: { fontSize: 13, marginBottom: 8 },
   planBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4 },
   planBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  card: { marginHorizontal: 16, borderRadius: 14, padding: 14, marginBottom: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.035, shadowRadius: 8, elevation: 1 },
-  settingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  settingLabel: { flex: 1, fontSize: 14, fontWeight: '500' },
+  card: { marginHorizontal: 16, borderRadius: 12, padding: 11, marginBottom: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.015, shadowRadius: 4, elevation: 0 },
+  settingRow: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 8 },
+  settingLabel: { flex: 1, fontSize: 13, fontWeight: '500' },
   presetsRow: { flexDirection: 'row', gap: 6, marginVertical: 8 },
-  presetChip: { borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: 'rgba(128,128,128,0.12)' },
+  presetChip: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: 'rgba(128,128,128,0.12)' },
   presetChipActive: { backgroundColor: '#3B82F6' },
   presetChipText: { fontSize: 12, fontWeight: '600', color: '#888' },
   heightInput: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, marginBottom: 8 },
-  saveBtn: { backgroundColor: '#3B82F6', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
-  saveBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  listRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(128,128,128,0.15)' },
-  listTitle: { fontSize: 14, fontWeight: '600' },
-  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center', marginTop: 10 },
-  addBtnText: { color: '#3B82F6', fontSize: 14, fontWeight: '600' },
-  modeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
+  saveBtn: { backgroundColor: '#3B82F6', borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 4 },
+  saveBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  listRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(128,128,128,0.15)' },
+  listTitle: { fontSize: 13, fontWeight: '700' },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, justifyContent: 'center', marginTop: 8 },
+  addBtnText: { color: '#3B82F6', fontSize: 13, fontWeight: '700' },
+  modeRow: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 9 },
   modeDot: { width: 10, height: 10, borderRadius: 5 },
-  aboutRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(128,128,128,0.15)' },
-  signOutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 24, marginBottom: 20, marginHorizontal: 16, paddingVertical: 14, borderRadius: 12, backgroundColor: 'rgba(239,68,68,0.1)' },
-  signOutText: { color: '#EF4444', fontSize: 15, fontWeight: '700' },
-  deleteAccountBtn: { marginTop: 0, marginBottom: 32, backgroundColor: '#DC2626' },
-  deleteAccountText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  planName: { fontSize: 16, fontWeight: '700', marginBottom: 4 },
-  upgradeBtn: { backgroundColor: '#3B82F6', borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 12 },
+  aboutRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(128,128,128,0.15)' },
+  signOutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14, marginBottom: 12, marginHorizontal: 16, paddingVertical: 11, borderRadius: 11, backgroundColor: 'rgba(239,68,68,0.1)' },
+  signOutText: { color: '#EF4444', fontSize: 14, fontWeight: '700' },
+  deleteAccountBtn: { marginTop: 0, marginBottom: 24, backgroundColor: '#DC2626' },
+  deleteAccountText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  planName: { fontSize: 15, fontWeight: '700', marginBottom: 3 },
+  upgradeBtn: { backgroundColor: '#3B82F6', borderRadius: 10, paddingVertical: 9, alignItems: 'center', marginTop: 10 },
   upgradeBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  progressCard: { marginHorizontal: 16, marginBottom: 8, borderRadius: 14, overflow: 'hidden' },
-  progressGradient: { paddingHorizontal: 12, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  progressLevelIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' },
+  progressCard: { marginHorizontal: 16, marginBottom: 6, borderRadius: 12, overflow: 'hidden' },
+  progressGradient: { paddingHorizontal: 11, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  progressLevelIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' },
   progressLevelText: { color: '#fff', fontSize: 14, fontWeight: '800' },
   progressTitle: { color: '#fff', fontSize: 14, fontWeight: '800' },
   progressSub: { color: 'rgba(255,255,255,0.86)', fontSize: 11, marginTop: 1 },
   progressAction: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  actionRow: { marginHorizontal: 16, borderRadius: 14, paddingVertical: 11, paddingHorizontal: 12, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(148,163,184,0.18)' },
+  actionRow: { marginHorizontal: 16, borderRadius: 12, paddingVertical: 9, paddingHorizontal: 11, marginBottom: 6, flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(148,163,184,0.16)' },
   actionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionIconWrap: { width: 28, height: 28, borderRadius: 8, backgroundColor: 'rgba(59,130,246,0.15)', alignItems: 'center', justifyContent: 'center' },
   actionTitle: { fontSize: 14, fontWeight: '700' },
   actionBadge: { color: '#F59E0B', fontSize: 9, fontWeight: '800', backgroundColor: 'rgba(245,158,11,0.14)', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
   actionSub: { fontSize: 11, marginTop: 1 },
-  shareScoreCta: { borderRadius: 14, paddingHorizontal: 12, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  shareScoreTitle: { color: '#fff', fontSize: 14, fontWeight: '800' },
-  shareScoreSub: { color: 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 1 },
+  shareScoreCta: { borderRadius: 12, paddingHorizontal: 11, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  shareScoreTitle: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  shareScoreSub: { color: 'rgba(255,255,255,0.85)', fontSize: 10, marginTop: 1 },
   upsellTop: { paddingHorizontal: 20, paddingVertical: 22, alignItems: 'center' },
   upsellTitle: { color: '#fff', fontSize: 20, fontWeight: '900', marginTop: 6 },
   upsellSub: { color: 'rgba(255,255,255,0.92)', fontSize: 13, marginTop: 8, textAlign: 'center' },

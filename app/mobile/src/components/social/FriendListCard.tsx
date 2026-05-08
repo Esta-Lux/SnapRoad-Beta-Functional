@@ -141,7 +141,7 @@ const FriendListCard = memo(function FriendListCard({
             <Text style={[styles.pillText, { color: pillFg }]}>{pillText}</Text>
           </View>
           {secondaryLine ? (
-            <Text style={[styles.secondary, { color: theme.sub }]} numberOfLines={2}>
+            <Text style={[styles.secondary, { color: theme.sub }]} numberOfLines={1}>
               {secondaryLine}
             </Text>
           ) : null}
@@ -189,19 +189,19 @@ const styles = StyleSheet.create({
   cell: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: 10,
     paddingHorizontal: 4,
   },
-  avatarWrap: { marginRight: 14 },
-  avatarImg: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#E8E8ED' },
+  avatarWrap: { marginRight: 12 },
+  avatarImg: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#E8E8ED' },
   avatarFallback: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  avatarInitials: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  avatarInitials: { color: '#fff', fontSize: 16, fontWeight: '700' },
   rowPress: {
     flex: 1,
     flexDirection: 'row',
@@ -210,25 +210,25 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   rowPressActive: { opacity: 0.88 },
-  mid: { flex: 1, minWidth: 0, gap: 5 },
-  name: { fontSize: 17, fontWeight: '600', letterSpacing: -0.25 },
+  mid: { flex: 1, minWidth: 0, gap: 3 },
+  name: { fontSize: 15, fontWeight: '700', letterSpacing: -0.1 },
   pill: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    gap: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 7,
+    gap: 4,
   },
-  pillText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
+  pillText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.2 },
   liveDot: { width: 6, height: 6, borderRadius: 3 },
-  secondary: { fontSize: 13, fontWeight: '500', lineHeight: 18, opacity: 0.92 },
+  secondary: { fontSize: 12, fontWeight: '500', lineHeight: 16, opacity: 0.9 },
   batRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   batTxt: { fontSize: 11, fontWeight: '600' },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 2 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 1 },
   metaTimestamp: { fontSize: 11, fontWeight: '500', opacity: 0.7 },
   trailing: { flexDirection: 'row', alignItems: 'center', paddingLeft: 4 },
-  moreHit: { paddingVertical: 8, paddingHorizontal: 4 },
+  moreHit: { paddingVertical: 6, paddingHorizontal: 4 },
   chevron: { marginLeft: 2, opacity: 0.38 },
 });
