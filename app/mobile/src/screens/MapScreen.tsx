@@ -129,7 +129,6 @@ import { useNavigationSpeech } from '../hooks/useNavigationSpeech';
 import { repeatLastTurnByTurn } from '../navigation/navigationGuidanceMemory';
 import TurnInstructionCard from '../components/navigation/TurnInstructionCard';
 import NavigationStatusStrip, { MAP_NAV_BOTTOM_INSET } from '../components/navigation/NavigationStatusStrip';
-import NavigationDebugHud from '../components/navigation/NavigationDebugHud';
 import { labelAnchorLayerIdForStyleUrl } from '../map/mapLayerRegistry';
 import { getPrimaryBannerText, isActionableGuidanceStep, mergeLaneSources, pickGuidanceStep } from '../navigation/bannerInstructions';
 import { isLiveShareFresh } from '../lib/friendPresence';
@@ -155,7 +154,6 @@ import MapWeatherOverlay from '../components/map/MapWeatherOverlay';
 import GemOverlay from '../components/gamification/GemOverlay';
 import TripShare from '../components/gamification/TripShare';
 import HamburgerMenu from '../components/profile/HamburgerMenu';
-import ConvoyMode from '../components/social/ConvoyMode';
 // Crash detection hook removed (no SOS backend); friend locations handled inline via Supabase realtime
 import {
   alongRouteDistanceMeters,
@@ -2115,7 +2113,6 @@ export default function MapScreen() {
   const [orionPendingSuggestions, setOrionPendingSuggestions] = useState<OrionPlaceSuggestion[]>([]);
   const [orionQuickReply, setOrionQuickReply] = useState<string | null>(null);
   const [showMenu, setShowMenu] = useState(false);
-  const [showConvoy, setShowConvoy] = useState(false);
   const [currentAddress, setCurrentAddress] = useState<string>('');
   const [recentSearches, setRecentSearches] = useState<GeocodeResult[]>([]);
   const recentSearchesRef = useRef<GeocodeResult[]>([]);
@@ -5845,17 +5842,6 @@ export default function MapScreen() {
         </Animated.View>
       )}
 
-      {navLogicDebugEnabled() && nav.isNavigating && !nav.showRoutePreview ? (
-        <NavigationDebugHud
-          progress={nav.navigationProgress ?? null}
-          currentStepIndex={nav.currentStepIndex}
-          topInset={insets.top}
-          logicSdk={navLogicEffective}
-          sdkDiag={nav.sdkNavDiag}
-          extendedDiag={navLogicDebugEnabled()}
-        />
-      ) : null}
-
       <TrafficCongestionBanner
         visible={modeConfig.showTrafficBar && nav.isNavigating && !nav.isRerouting && !trafficBannerDismissed}
         topInset={insets.top + (nav.isNavigating ? 150 : 100)}
@@ -6749,22 +6735,6 @@ export default function MapScreen() {
               screen: 'ProfileMain',
               params: { openCommuteReminders: true },
             });
-          } else if (screen === 'Convoy') {
-            if (!user?.isPremium) {
-              Alert.alert('Premium feature', 'Convoy and friend meetups require SnapRoad Premium.', [
-                { text: 'Not now', style: 'cancel' },
-                { text: 'Upgrade', onPress: () => rnNav.navigate('Profile', { screen: 'ProfileMain' }) },
-              ]);
-              return;
-            }
-            Alert.alert(
-              'Convoy preview',
-              'Friend meetups are available now. Full family convoy is coming soon while the family backend remains locked for launch.',
-              [
-                { text: 'Open meetup', onPress: () => setShowConvoy(true) },
-                { text: 'View Social Hub', onPress: () => rnNav.navigate('Dashboards', { screen: 'DashboardMain' }) },
-              ],
-            );
           } else if (screen === 'Social') {
             if (!user?.isPremium) {
               Alert.alert('Premium feature', 'Friends and live location require SnapRoad Premium.', [
@@ -6777,15 +6747,6 @@ export default function MapScreen() {
           } else if (screen === 'FamilySoon') {
             rnNav.navigate('Dashboards', { screen: 'DashboardMain' });
           }
-        }}
-      />
-      <ConvoyMode
-        visible={showConvoy}
-        onClose={() => setShowConvoy(false)}
-        members={friendLocationsVisible.map((f) => ({ id: f.id, name: f.name, lat: f.lat, lng: f.lng }))}
-        onStartConvoy={(dest) => {
-          setShowConvoy(false);
-          void handleSelectResult({ name: dest.name, address: '', lat: dest.lat, lng: dest.lng });
         }}
       />
       {showGemOverlay && <GemOverlay visible={showGemOverlay} gemsEarned={gemOverlayAmount} onDone={() => setShowGemOverlay(false)} />}

@@ -662,7 +662,7 @@ export default function ProfileScreen() {
       key: 'friends',
       icon: 'people-circle-outline',
       label: 'Friends',
-      value: user?.isPremium ? 'Manage connections' : 'Live location & convoy — Premium',
+      value: user?.isPremium ? 'Manage connections' : 'Live location — Premium',
       badgeText: user?.isPremium ? undefined : 'LOCKED',
       onPress: () => {
         if (user?.isPremium) navigation.getParent()?.navigate('Dashboards');
@@ -670,16 +670,6 @@ export default function ProfileScreen() {
       },
     },
   ];
-  const snapValue = {
-    timeSaved: Math.max(0, Math.round((weeklyRecap.totalTrips || 0) * 4)),
-    fuelSignal:
-      fuelSummary.monthlyEstimate != null
-        ? `$${fuelSummary.monthlyEstimate}/mo`
-        : fuelSummary.avgMpg != null
-          ? `${fuelSummary.avgMpg.toFixed(1)} mpg`
-          : 'Learning',
-    commuteAlerts: commutes.length,
-  };
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: bg }} edges={['top']}>
       <KeyboardAvoidingView
@@ -718,31 +708,6 @@ export default function ProfileScreen() {
         {profileTab === 'overview' && (
           <>
             <SectionHeader title="Overview" isLight={isLight} />
-            <View style={[styles.valueCard, { backgroundColor: cardBg, borderColor: colors.border }]}>
-              <View style={styles.valueHeaderRow}>
-                <View style={[styles.valueIconWrap, { backgroundColor: isLight ? 'rgba(15,23,42,0.06)' : 'rgba(255,255,255,0.08)' }]}>
-                  <Ionicons name="speedometer-outline" size={22} color={colors.primary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.valueTitle, { color: text }]}>SnapRoad value cockpit</Text>
-                  <Text style={[styles.valueSub, { color: sub }]}>Built to save time, fuel, and road stress.</Text>
-                </View>
-              </View>
-              <View style={styles.valueMetricRow}>
-                <View style={styles.valueMetric}>
-                  <Text style={[styles.valueMetricNumber, { color: text }]}>{snapValue.timeSaved}m</Text>
-                  <Text style={[styles.valueMetricLabel, { color: sub }]}>weekly time signal</Text>
-                </View>
-                <View style={styles.valueMetric}>
-                  <Text style={[styles.valueMetricNumber, { color: text }]}>{snapValue.fuelSignal}</Text>
-                  <Text style={[styles.valueMetricLabel, { color: sub }]}>fuel tracker</Text>
-                </View>
-                <View style={styles.valueMetric}>
-                  <Text style={[styles.valueMetricNumber, { color: text }]}>{snapValue.commuteAlerts}</Text>
-                  <Text style={[styles.valueMetricLabel, { color: sub }]}>commute scans</Text>
-                </View>
-              </View>
-            </View>
             <MyCarRow cardBg={cardBg} text={text} sub={sub} accent={colors.primary} />
             <TouchableOpacity
               activeOpacity={0.92}
@@ -1251,25 +1216,4 @@ const styles = StyleSheet.create({
   commuteAlertIconWrap: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   commuteAlertDashTitle: { fontSize: 15, fontWeight: '800' },
   commuteAlertDashSub: { fontSize: 11, fontWeight: '500', marginTop: 1, lineHeight: 15 },
-  valueCard: {
-    marginHorizontal: 16,
-    marginBottom: 8,
-    borderRadius: 14,
-    padding: 11,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  valueHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  valueIconWrap: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  valueTitle: { fontSize: 15, fontWeight: '900' },
-  valueSub: { fontSize: 11, lineHeight: 15, marginTop: 2, fontWeight: '600' },
-  valueMetricRow: { flexDirection: 'row', gap: 6 },
-  valueMetric: {
-    flex: 1,
-    borderRadius: 11,
-    paddingVertical: 8,
-    paddingHorizontal: 6,
-    backgroundColor: 'rgba(148,163,184,0.1)',
-  },
-  valueMetricNumber: { fontSize: 15, fontWeight: '900', textAlign: 'center' },
-  valueMetricLabel: { fontSize: 8, lineHeight: 11, textAlign: 'center', marginTop: 3, fontWeight: '800', textTransform: 'uppercase' },
 });

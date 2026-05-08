@@ -32,7 +32,6 @@ export type HamburgerMenuTarget =
   | 'Map'
   | 'Social'
   | 'Offers'
-  | 'Convoy'
   | 'CommuteAlerts'
   | 'Wallet'
   | 'Profile'
@@ -93,15 +92,6 @@ export default function HamburgerMenu({ visible, onClose, isLight, onNavigate, o
       badge: 'Premium',
       availability: actionMeta('social_dashboard')?.availability,
       action: () => runAfterMenuClose(onClose, () => onNavigate('Social')),
-    },
-    {
-      icon: actionMeta('convoy')?.icon ?? 'car-sport-outline',
-      label: 'Convoy',
-      description: actionMeta('convoy')?.description ?? 'Meetup tools and family convoy preview.',
-      accent: '#F59E0B',
-      badge: 'Soon',
-      availability: actionMeta('convoy')?.availability,
-      action: () => runAfterMenuClose(onClose, () => onNavigate('Convoy')),
     },
     {
       icon: actionMeta('commute_alerts')?.icon ?? 'navigate-outline',

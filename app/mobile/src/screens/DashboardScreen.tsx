@@ -37,8 +37,6 @@ import { deriveFriendPresence } from '../lib/friendPresence';
 import FriendListCard, { type FriendListCardTheme } from '../components/social/FriendListCard';
 import { SocialScreenHeader } from '../components/social/SocialScreenHeader';
 import FriendDetailModalContent from '../components/social/FriendDetailModal';
-import ChallengeModal from '../components/gamification/ChallengeModal';
-import FriendChallengeHistoryModal from '../components/gamification/FriendChallengeHistoryModal';
 import {
   fetchFriendsNormalized,
   fetchPendingRequests,
@@ -244,9 +242,6 @@ export default function DashboardScreen() {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [categoryFriendTarget, setCategoryFriendTarget] = useState<Friend | null>(null);
   const [pendingExpanded, setPendingExpanded] = useState(false);
-  const [challengeFriend, setChallengeFriend] = useState<Friend | null>(null);
-  const [showChallengeModal, setShowChallengeModal] = useState(false);
-  const [showFriendChallengeHistory, setShowFriendChallengeHistory] = useState(false);
   const [searchHits, setSearchHits] = useState<{ id: string; name: string; email?: string; friend_code?: string; is_friend?: boolean }[]>([]);
   const [addTargetId, setAddTargetId] = useState<string | null>(null);
   const [shareMode, setShareMode] = useState<FriendLiveShareMode>('off');
@@ -815,8 +810,6 @@ export default function DashboardScreen() {
     const premiumFeatures: { icon: keyof typeof Ionicons.glyphMap; label: string; desc: string }[] = [
       { icon: 'people', label: 'Friend network', desc: 'Search by name, email, or friend code.' },
       { icon: 'navigate', label: 'Live location', desc: 'Share with people you trust, on your terms.' },
-      { icon: 'flag', label: 'Convoy meetups', desc: 'Rally on the map with ETA sync.' },
-      { icon: 'trophy', label: 'Friend duels', desc: 'Challenge drivers and bank bonus gems.' },
     ];
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
@@ -826,7 +819,7 @@ export default function DashboardScreen() {
         >
           <Text style={{ color: colors.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.4 }}>Social</Text>
           <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 10, lineHeight: 21 }}>
-            Friends, live location, convoy meetups, and friend search are included with SnapRoad Premium. Your trips, miles,
+            Friends and live location are included with SnapRoad Premium. Your trips, miles,
             and gems stay on the Rewards and Profile tabs on the free plan.
           </Text>
 
@@ -983,35 +976,6 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         ))}
       </Animated.View>
-
-      {section === 'friends' && (
-        <TouchableOpacity
-          activeOpacity={0.88}
-          onPress={() => setShowFriendChallengeHistory(true)}
-          style={[
-            styles.challengeHistoryCue,
-            {
-              marginHorizontal: 16,
-              marginTop: 8,
-              backgroundColor: isLight ? 'rgba(245,158,11,0.12)' : 'rgba(245,158,11,0.18)',
-              borderColor: isLight ? 'rgba(245,158,11,0.35)' : 'rgba(245,158,11,0.28)',
-            },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="Open friend challenge history"
-        >
-          <View style={[styles.challengeHistoryIcon, { backgroundColor: isLight ? 'rgba(245,158,11,0.22)' : 'rgba(245,158,11,0.28)' }]}>
-            <Ionicons name="trophy-outline" size={18} color="#D97706" />
-          </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={[styles.challengeHistoryTitle, { color: colors.text }]}>Friend duels</Text>
-            <Text style={[styles.challengeHistorySub, { color: colors.textSecondary }]} numberOfLines={2}>
-              Duels, wins, losses, and live scores.
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} style={{ opacity: 0.55 }} />
-        </TouchableOpacity>
-      )}
 
       {section === 'friends' && (
         <View style={{ flex: 1 }}>
@@ -1426,7 +1390,7 @@ export default function DashboardScreen() {
               >
                 <LinearGradient colors={[`${colors.primary}28`, `${colors.primary}06`]} style={StyleSheet.absoluteFillObject} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
                 <Ionicons name="people" size={32} color={colors.primary} style={{ opacity: 0.95 }} />
-                <Text style={[styles.emptyHeroTitle, { color: colors.text }]}>Grow your convoy</Text>
+                <Text style={[styles.emptyHeroTitle, { color: colors.text }]}>Grow your friend list</Text>
                 <Text style={[styles.emptyHeroSub, { color: colors.textSecondary }]}>
                   Invite friends to share live location and meet up on the map—without the noise.
                 </Text>
@@ -1678,58 +1642,14 @@ export default function DashboardScreen() {
               openFriendOnMap(f);
             }}
             onRemove={handleRemoveFriend}
-            onChallenge={() => {
-              if (!selectedFriend) return;
-              setChallengeFriend(selectedFriend);
-              setShowChallengeModal(true);
-            }}
           />
         ) : null}
       </Modal>
-
-      <ChallengeModal
-        visible={showChallengeModal}
-        onClose={() => {
-          setShowChallengeModal(false);
-          setChallengeFriend(null);
-        }}
-        targetFriend={challengeFriend ? { id: challengeFriend.friend_id, name: challengeFriend.name } : null}
-        gemBalance={user?.gems ?? 0}
-        onChallenged={(remaining) => {
-          if (remaining != null && Number.isFinite(remaining)) {
-            updateUser({ gems: Math.max(0, Math.floor(remaining)) });
-          }
-        }}
-      />
-
-      <FriendChallengeHistoryModal
-        visible={showFriendChallengeHistory}
-        onClose={() => setShowFriendChallengeHistory(false)}
-        onGemsUpdated={(gems) => updateUser({ gems })}
-      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  challengeHistoryCue: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  challengeHistoryIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  challengeHistoryTitle: { fontSize: 14, fontWeight: '800', letterSpacing: -0.1 },
-  challengeHistorySub: { fontSize: 11, marginTop: 2, lineHeight: 15, fontWeight: '500' },
   toggleRow: {
     flexDirection: 'row',
     marginHorizontal: 16,

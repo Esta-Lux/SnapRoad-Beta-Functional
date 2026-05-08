@@ -14,8 +14,7 @@ export type AppActionTarget =
   | 'support'
   | 'share'
   | 'about'
-  | 'family_soon'
-  | 'convoy_soon';
+  | 'family_soon';
 
 export type AppActionContract = {
   id: string;
@@ -40,7 +39,7 @@ export const APP_ACTION_AUDIT: AppActionContract[] = [
   {
     id: 'social_dashboard',
     label: 'Social Drive Hub',
-    description: 'Friends, requests, live sharing, and challenges.',
+    description: 'Friends, requests, and live sharing.',
     icon: 'people-outline',
     target: 'dashboards',
     availability: 'gated',
@@ -77,16 +76,6 @@ export const APP_ACTION_AUDIT: AppActionContract[] = [
     icon: 'diamond-outline',
     target: 'profile_billing',
     availability: 'works',
-  },
-  {
-    id: 'convoy',
-    label: 'Convoy',
-    description: 'Premium meetup flow now; full family convoy is coming soon.',
-    icon: 'car-sport-outline',
-    target: 'convoy_soon',
-    availability: 'coming_soon',
-    premiumRequired: true,
-    comingSoon: true,
   },
   {
     id: 'family',
