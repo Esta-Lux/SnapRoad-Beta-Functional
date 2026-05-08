@@ -228,7 +228,13 @@ import { routeProfileForPlatform } from '../hooks/useNativeNavBridge';
 import { normalizeNativeNavParams } from '../navigation/nativeNavGuard';
 import type { TripSummary } from '../hooks/useDriveNavigation';
 import type { RouteProp } from '@react-navigation/native';
-import { useNavigation as useRNNavigation, useRoute, useIsFocused, useFocusEffect } from '@react-navigation/native';
+import {
+  useNavigation as useRNNavigation,
+  useRoute,
+  useIsFocused,
+  useFocusEffect,
+  useNavigationState,
+} from '@react-navigation/native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { MapStackParamList, MapStackScreenNavigationProp } from '../navigation/types';
 import { extractLocationSharingState, getApiErrorMessage } from '../features/social/locationSharing';
@@ -546,6 +552,14 @@ export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const rnNav = useRNNavigation<MapStackScreenNavigationProp>();
   const mapTabFocused = useIsFocused();
+  /** Top route of this stack — used so headless Mapbox nav stays mounted when the app backgrounds (turn card + progress keep updating). Only unmount hidden `MapboxNavigationView` when full-screen native nav owns the session. */
+  const topMapStackRouteName = useNavigationState((state) => {
+    const routes = state?.routes;
+    const idx = state?.index;
+    if (!routes?.length || typeof idx !== 'number' || idx < 0 || idx >= routes.length) return undefined;
+    return routes[idx]?.name as string | undefined;
+  });
+  const suppressHeadlessNavForNativeFullscreen = topMapStackRouteName === 'NativeNavigation';
   const { isNavigating: ctxNavigating, setIsNavigating: setNavCtx } = useNavigationMode();
   const [isNavActive, setIsNavActive] = useState(false);
   const { isLight, colors } = useTheme();
@@ -1852,6 +1866,8 @@ export default function MapScreen() {
    */
   useEffect(() => {
     if (!nav.isNavigating || !cameraLocked || navFollowZoomLevel == null || navFollowPitch == null) return;
+    /** Mapbox RN can assert if we drive the camera while inactive/background (resume crashes). */
+    if (AppState.currentState !== 'active') return;
     const cam = cameraRef.current;
     if (!cam?.setCamera) return;
     const anchor = { lat: navCameraAnchorLat, lng: navCameraAnchorLng };
@@ -4694,11 +4710,11 @@ export default function MapScreen() {
         />
       )}
 
-      {navLogicEffective && nav.isNavigating && mapTabFocused && navLogicCoords.length >= 2 ? (
-        // Headless native session: this module has no separate "createSession" API — the hidden view
-        // drives logic + voice. IMPORTANT: `mapTabFocused` prevents a second nav session from spawning
-        // when the user opts into `NativeNavigationScreen` (full-screen), which would otherwise fight
-        // this hidden session for GPS / routing.
+      {navLogicEffective && nav.isNavigating && !suppressHeadlessNavForNativeFullscreen && navLogicCoords.length >= 2 ? (
+        // Headless native session: hidden view drives logic + voice for the RN map HUD.
+        // Do NOT gate on `useIsFocused`: that goes false on app background/inactive and would tear down
+        // the session (frozen turn card, bad remount on resume). Only suppress when `NativeNavigation`
+        // is on top so two native sessions do not fight for GPS / routing.
         <MapboxNavigationView
           ref={navLogicRef}
           style={{ position: 'absolute', width: 2, height: 2, opacity: 0, bottom: 0, right: 0, zIndex: -1 }}
