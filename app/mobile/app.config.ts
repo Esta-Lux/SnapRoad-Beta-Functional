@@ -110,6 +110,7 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.snaproad.app",
+      usesAppleSignIn: true,
       privacyManifests: {
         NSPrivacyTracking: false,
         NSPrivacyAccessedAPITypes: [
@@ -233,6 +234,7 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
       "expo-font",
       "expo-sensors",
       "expo-secure-store",
+      "expo-apple-authentication",
       "expo-web-browser",
     ],
     extra: {

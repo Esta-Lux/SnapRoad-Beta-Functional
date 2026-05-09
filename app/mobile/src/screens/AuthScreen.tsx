@@ -17,10 +17,12 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, supabaseConfigured } from '../lib/supabase';
 import { getSupabaseOAuthRedirectTo } from '../lib/oauthRedirect';
 import { friendlySupabaseAuthErrorMessage, parseParamsFromUrl } from '../utils/deepLinks';
+import { signInWithAppleNative } from '../services/auth/appleAuth';
 
 function getPasswordStrength(pw: string): { label: string; color: string; level: number } {
   if (pw.length < 6) return { label: 'Weak password', color: '#EF4444', level: 1 };
@@ -70,6 +72,7 @@ export default function AuthScreen({ navigation, route }: Props) {
   const [showPw, setShowPw] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
   const firstNameRef = useRef<TextInput>(null);
   const lastNameRef = useRef<TextInput>(null);
   const dobRef = useRef<TextInput>(null);
@@ -207,6 +210,55 @@ export default function AuthScreen({ navigation, route }: Props) {
     }
   };
 
+  const handleAppleSignIn = async () => {
+    setLocalError(null);
+    if (mode === 'signup') {
+      setLocalError('Use email signup to complete age verification before signing in with Apple.');
+      return;
+    }
+    setAppleLoading(true);
+    try {
+      const result = await signInWithAppleNative();
+      if (!result.ok) {
+        if (result.code === 'cancelled') return;
+        if (result.code === 'unavailable') {
+          setLocalError('Sign in with Apple is unavailable on this device.');
+          return;
+        }
+        if (result.code === 'missing_identity_token') {
+          setLocalError('Apple sign-in did not return a valid identity token. Please try again.');
+          return;
+        }
+        if (result.code === 'supabase_not_configured') {
+          setLocalError(
+            'Apple sign-in is not configured in this build yet. Please update Supabase config and rebuild.',
+          );
+          return;
+        }
+        if (result.code === 'network_error') {
+          setLocalError('Network error while signing in with Apple. Check your connection and retry.');
+          return;
+        }
+        setLocalError(
+          friendlySupabaseAuthErrorMessage(result.message || 'Apple sign-in is not available right now.'),
+        );
+        return;
+      }
+
+      const fin = await completeOAuthSignIn(result.accessToken, result.refreshToken);
+      if (!fin.ok && fin.message) setLocalError(fin.message);
+    } catch (e: unknown) {
+      const raw = String(e instanceof Error ? e.message : e || '');
+      if (/network|timed?\s*out|timeout/i.test(raw)) {
+        setLocalError('Network error while signing in with Apple. Please try again.');
+      } else {
+        setLocalError('Apple sign-in is not available right now. Please sign in with email or try again later.');
+      }
+    } finally {
+      setAppleLoading(false);
+    }
+  };
+
   return (
     <SafeAreaView style={s.container} edges={['top', 'bottom']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -240,7 +292,7 @@ export default function AuthScreen({ navigation, route }: Props) {
                 style={s.socialBtn}
                 activeOpacity={0.85}
                 onPress={handleGoogleSignIn}
-                disabled={googleLoading}
+                disabled={googleLoading || appleLoading}
               >
                 {googleLoading ? (
                   <ActivityIndicator color={PALETTE.text} size="small" />
@@ -253,6 +305,18 @@ export default function AuthScreen({ navigation, route }: Props) {
                   </>
                 )}
               </TouchableOpacity>
+              {Platform.OS === 'ios' && (
+                <AppleAuthentication.AppleAuthenticationButton
+                  buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                  buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                  cornerRadius={14}
+                  style={s.appleBtn}
+                  onPress={() => {
+                    if (appleLoading || googleLoading) return;
+                    void handleAppleSignIn();
+                  }}
+                />
+              )}
             </View>
 
             <View style={s.divider}>
@@ -492,7 +556,7 @@ const s = StyleSheet.create({
     shadowRadius: 18,
     elevation: 3,
   },
-  socialRow: { marginBottom: 20 },
+  socialRow: { marginBottom: 20, gap: 10 },
   socialBtn: {
     borderRadius: 14,
     borderWidth: 1.5,
@@ -513,6 +577,10 @@ const s = StyleSheet.create({
     color: PALETTE.text,
     fontSize: 13,
     fontWeight: '600',
+  },
+  appleBtn: {
+    width: '100%',
+    height: 52,
   },
   divider: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
   dividerLine: { flex: 1, height: 1, backgroundColor: PALETTE.inputBorder },
