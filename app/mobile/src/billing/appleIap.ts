@@ -44,6 +44,25 @@ async function deliverVerifiedPurchase(purchase: Purchase): Promise<void> {
   await finishTransaction({ purchase });
 }
 
+async function assertAppleIapServerReady(): Promise<void> {
+  const res = await api.get<{ data?: { configured?: boolean }; configured?: boolean }>('/api/payments/apple/status');
+  if (!res.success) {
+    throw new Error(res.error || 'Could not check Apple subscription setup.');
+  }
+  const body = res.data as { data?: { configured?: boolean }; configured?: boolean } | undefined;
+  const configured = Boolean(body?.data?.configured ?? body?.configured);
+  if (!configured) {
+    throw new Error('Apple In-App Purchase is not configured on the server yet.');
+  }
+}
+
+function hasStoreProduct(products: unknown, sku: string): boolean {
+  return Array.isArray(products) && products.some((p) => {
+    const row = p as { productId?: unknown };
+    return String(row?.productId || '').trim() === sku;
+  });
+}
+
 async function handlePurchaseUpdate(purchase: Purchase): Promise<void> {
   const allowed = configuredSkus();
   if (!allowed.has(purchase.productId)) {
@@ -138,7 +157,11 @@ export function startAppleSubscriptionPurchase(
 
   return (async () => {
     await bootstrapAppleIap();
-    await getSubscriptions({ skus: [sku] });
+    await assertAppleIapServerReady();
+    const products = await getSubscriptions({ skus: [sku] });
+    if (!hasStoreProduct(products, sku)) {
+      throw new Error(`Apple could not find the ${plan} subscription product (${sku}) for this app build.`);
+    }
 
     await new Promise<void>((resolve, reject) => {
       pending = { skus: new Set([sku]), resolve, reject };

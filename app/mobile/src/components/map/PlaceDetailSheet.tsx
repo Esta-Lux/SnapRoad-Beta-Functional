@@ -339,8 +339,8 @@ export default function PlaceDetailSheet({
    */
   const DETENTS = useMemo(
     () => ({
-      expanded: Math.round(SCREEN_H * 0.2),
-      half: Math.round(SCREEN_H * 0.46),
+      expanded: Math.round(SCREEN_H * 0.1),
+      half: Math.round(SCREEN_H * 0.38),
       dismiss: Math.round(SCREEN_H * 0.9),
     }),
     [],
@@ -751,7 +751,7 @@ export default function PlaceDetailSheet({
                 }}
               >
                 <View style={S.header}>
-                  <Text style={[S.placeName, { color: text1 }]} numberOfLines={2}>{place.name}</Text>
+                  <Text selectable style={[S.placeName, { color: text1 }]} numberOfLines={2}>{place.name}</Text>
 
                   <View style={S.metaRow}>
                     {place.rating != null ? (
@@ -784,9 +784,9 @@ export default function PlaceDetailSheet({
                     ) : null}
                   </View>
 
-                  {place.address ? <Text style={[S.address, { color: text2 }]}>{place.address}</Text> : null}
+                  {place.address ? <Text selectable style={[S.address, { color: text2 }]}>{place.address}</Text> : null}
                   {place.editorial_summary ? (
-                    <Text style={[S.summary, { color: text2 }]}>{place.editorial_summary}</Text>
+                    <Text selectable style={[S.summary, { color: text2 }]}>{place.editorial_summary}</Text>
                   ) : null}
                 </View>
 
@@ -952,7 +952,7 @@ export default function PlaceDetailSheet({
                         >
                           {place.open_now == null ? '—' : place.open_now ? 'Open' : 'Closed'}
                         </Text>
-                        <Text style={[S.hoursTodayTime, { color: text1 }]} numberOfLines={2}>
+                        <Text selectable style={[S.hoursTodayTime, { color: text1 }]} numberOfLines={2}>
                           {todayHours(weekdayLines) ?? '—'}
                         </Text>
                       </View>
@@ -973,7 +973,7 @@ export default function PlaceDetailSheet({
                                 ]}
                               >
                                 <Text style={[S.hourDay, { color: isToday ? accentColor : text2 }]}>{parts[0]}</Text>
-                                <Text style={[S.hourTime, { color: isToday ? text1 : text2 }]}>{parts[1] ?? '—'}</Text>
+                                <Text selectable style={[S.hourTime, { color: isToday ? text1 : text2 }]}>{parts[1] ?? '—'}</Text>
                               </View>
                             );
                           })}
@@ -989,13 +989,13 @@ export default function PlaceDetailSheet({
                     {place.phone ? (
                       <TouchableOpacity style={[S.detailRow, { borderBottomColor: border }]} onPress={handleCall}>
                         <Text style={[S.detailLabel, { color: text3 }]}>Phone</Text>
-                        <Text style={[S.detailValue, { color: accentColor }]}>{place.phone}</Text>
+                        <Text selectable style={[S.detailValue, { color: accentColor }]}>{place.phone}</Text>
                       </TouchableOpacity>
                     ) : null}
                     {place.website ? (
                       <TouchableOpacity style={[S.detailRow, { borderBottomColor: border }]} onPress={handleWeb}>
                         <Text style={[S.detailLabel, { color: text3 }]}>Website</Text>
-                        <Text style={[S.detailValue, { color: accentColor }]} numberOfLines={1}>
+                        <Text selectable style={[S.detailValue, { color: accentColor }]} numberOfLines={1}>
                           {place.website.replace(/^https?:\/\/(www\.)?/, '')}
                         </Text>
                       </TouchableOpacity>
@@ -1003,7 +1003,7 @@ export default function PlaceDetailSheet({
                     {place.address ? (
                       <View style={[S.detailRow, !place.phone && !place.website ? {} : { borderBottomWidth: 0 }]}>
                         <Text style={[S.detailLabel, { color: text3 }]}>Address</Text>
-                        <Text style={[S.detailValue, { color: text1 }]}>{place.address}</Text>
+                        <Text selectable style={[S.detailValue, { color: text1 }]}>{place.address}</Text>
                       </View>
                     ) : (!place.phone && !place.website ? (
                       <Text style={[S.detailValue, { color: text3, padding: 16 }]}>No extra details</Text>
@@ -1038,7 +1038,7 @@ export default function PlaceDetailSheet({
                             </View>
                           )}
                           <View style={{ flex: 1 }}>
-                            <Text style={[S.reviewAuthor, { color: text1 }]} numberOfLines={1}>{review.author_name}</Text>
+                            <Text selectable style={[S.reviewAuthor, { color: text1 }]} numberOfLines={1}>{review.author_name}</Text>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
                               <StarRating rating={review.rating} size={12} />
                               <Text style={[S.reviewTime, { color: text3 }]}>{review.time}</Text>
@@ -1047,6 +1047,7 @@ export default function PlaceDetailSheet({
                         </View>
                         {review.text ? (
                           <Text
+                            selectable
                             style={[S.reviewText, { color: text2 }]}
                             numberOfLines={showAllReviews ? undefined : 4}
                           >

@@ -373,7 +373,6 @@ export default function AdminOfferLinkPaster({ theme, open, onClose, onPublished
               <div className="grid grid-cols-[140px,1fr] gap-3">
                 <div className={`h-32 flex items-center justify-center ${isDark ? 'bg-white/5' : 'bg-gray-100'}`}>
                   {form.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
                     <img src={form.image_url} alt="" className="w-full h-full object-cover" />
                   ) : (
                     <ImageIcon size={32} className={isDark ? 'text-gray-500' : 'text-gray-400'} />

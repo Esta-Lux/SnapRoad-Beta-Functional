@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from appstoreserverlibrary.api_client import APIException
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -22,6 +21,13 @@ from services.runtime_config import require_enabled
 from services.supabase_service import sb_update_profile
 
 logger = logging.getLogger(__name__)
+
+try:
+    from appstoreserverlibrary.api_client import APIException
+except ModuleNotFoundError:  # Local/dev envs may not install Apple verification deps.
+    class APIException(Exception):  # type: ignore[no-redef]
+        http_status_code = None
+        error_message = "App Store Server library is not installed."
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
 

@@ -121,11 +121,11 @@ export default function HelpSupport({ visible, onClose }: Props) {
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Contact Us</Text>
         <TouchableOpacity
           style={[styles.contactRow, { backgroundColor: colors.card, borderColor: colors.border }]}
-          onPress={() => Linking.openURL('mailto:support@snaproad.app')}
+          onPress={() => Linking.openURL('mailto:teams@snaproad.co')}
           activeOpacity={0.7}
         >
           <Ionicons name="mail-outline" size={20} color="#3B82F6" />
-          <Text style={[styles.contactText, { color: colors.text }]}>Email us at support@snaproad.app</Text>
+          <Text style={[styles.contactText, { color: colors.text }]}>Email us at teams@snaproad.co</Text>
           <Ionicons name="open-outline" size={16} color={colors.textSecondary} />
         </TouchableOpacity>
 

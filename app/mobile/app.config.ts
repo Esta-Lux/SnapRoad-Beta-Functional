@@ -258,7 +258,7 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
         ["EXPO_PUBLIC_EXPO_PROJECT_URL"],
         "https://expo.dev/accounts/snaproad/projects/snaproad",
       ),
-      supportEmail: "support@snaproad.co",
+      supportEmail: "teams@snaproad.co",
       /** App Store Connect numeric Apple ID (same as eas.json submit.production.ios.ascAppId). */
       iosAppStoreId: "6761516426",
       androidPackage: "com.snaproad.app",

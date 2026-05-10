@@ -12,10 +12,26 @@ import time
 from pathlib import Path
 from typing import Any
 
-from appstoreserverlibrary.api_client import APIException, AppStoreServerAPIClient
-from appstoreserverlibrary.models.Environment import Environment
-from appstoreserverlibrary.models.JWSTransactionDecodedPayload import JWSTransactionDecodedPayload
-from appstoreserverlibrary.signed_data_verifier import SignedDataVerifier, VerificationException
+try:
+    from appstoreserverlibrary.api_client import APIException, AppStoreServerAPIClient
+    from appstoreserverlibrary.models.Environment import Environment
+    from appstoreserverlibrary.models.JWSTransactionDecodedPayload import JWSTransactionDecodedPayload
+    from appstoreserverlibrary.signed_data_verifier import SignedDataVerifier, VerificationException
+except ModuleNotFoundError:
+    class APIException(Exception):  # type: ignore[no-redef]
+        http_status_code = None
+        raw_api_error = None
+
+    AppStoreServerAPIClient = None  # type: ignore[assignment]
+    SignedDataVerifier = None  # type: ignore[assignment]
+
+    class _MissingEnvironment:
+        PRODUCTION = "PRODUCTION"
+        SANDBOX = "SANDBOX"
+
+    Environment = _MissingEnvironment  # type: ignore[assignment]
+    JWSTransactionDecodedPayload = Any  # type: ignore[assignment]
+    VerificationException = Exception  # type: ignore[assignment]
 
 from config import (
     APPLE_APP_APPLE_ID,
@@ -57,6 +73,8 @@ def _signing_key_bytes() -> bytes:
 
 
 def _verifier(environment: Environment) -> SignedDataVerifier:
+    if SignedDataVerifier is None:
+        raise AppleIapConfigError("appstoreserverlibrary is not installed.")
     roots = _load_root_certificates()
     app_id = APPLE_APP_APPLE_ID if environment == Environment.PRODUCTION else None
     if environment == Environment.PRODUCTION and app_id is None:
@@ -65,6 +83,8 @@ def _verifier(environment: Environment) -> SignedDataVerifier:
 
 
 def _client(environment: Environment) -> AppStoreServerAPIClient:
+    if AppStoreServerAPIClient is None:
+        raise AppleIapConfigError("appstoreserverlibrary is not installed.")
     return AppStoreServerAPIClient(
         _signing_key_bytes(),
         APPLE_IAP_KEY_ID,
@@ -77,6 +97,9 @@ def _client(environment: Environment) -> AppStoreServerAPIClient:
 def is_apple_iap_configured() -> bool:
     try:
         if not (
+            AppStoreServerAPIClient
+            and SignedDataVerifier
+            and
             APPLE_IAP_PRIVATE_KEY_PEM
             and APPLE_IAP_KEY_ID
             and APPLE_IAP_ISSUER_ID

@@ -180,6 +180,10 @@ class ApiService {
     if (endpoint.startsWith('/api/auth/resend-verification')) return false;
     if (endpoint.startsWith('/api/auth/oauth/supabase')) return false;
     if (endpoint.startsWith('/api/weather/')) return false;
+    if (endpoint.startsWith('/api/legal/documents')) return false;
+    if (endpoint.startsWith('/api/offers/nearby')) return false;
+    if (endpoint.startsWith('/api/offers/online')) return false;
+    if (endpoint.startsWith('/api/offers/categories')) return false;
     return true;
   }
 

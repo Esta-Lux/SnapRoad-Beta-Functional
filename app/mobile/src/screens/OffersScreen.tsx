@@ -36,6 +36,23 @@ import { offerHeroUri } from '../lib/offerHeroImage';
 
 type HubSection = 'local' | 'online';
 
+const ONLINE_CATEGORY_LABELS: Record<string, string> = {
+  fashion: 'Fashion',
+  electronics: 'Electronics',
+  travel: 'Travel',
+  beauty: 'Beauty',
+  home: 'Home',
+  food_kit: 'Food & pantry',
+  food: 'Food',
+  sports: 'Sports',
+  automotive: 'Auto',
+  grocery: 'Grocery',
+  pharmacy: 'Pharmacy',
+  retail: 'Retail',
+  services: 'Services',
+  other: 'Other',
+};
+
 function headlineTitle(o: Offer): string {
   const t = o.title?.trim();
   if (t) return t;
@@ -53,6 +70,26 @@ function formatExpiryShort(iso?: string): string | null {
   } catch {
     return null;
   }
+}
+
+function titleCaseLabel(slug: string): string {
+  const key = slug.trim().toLowerCase();
+  return ONLINE_CATEGORY_LABELS[key] ?? key.replace(/[^a-z0-9]+/g, ' ').trim().replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function inferOnlineCategory(row: OnlineOfferItem): { slug: string; label: string } {
+  const explicit = row.category_slug?.trim().toLowerCase();
+  if (explicit) return { slug: explicit, label: row.category_label?.trim() || titleCaseLabel(explicit) };
+  const hay = `${row.category_label || ''} ${row.title || ''} ${row.description || ''} ${row.merchant_name || ''} ${row.merchant_domain || ''}`.toLowerCase();
+  if (/gas|fuel|auto|car|tire|oil|parts|garage/.test(hay)) return { slug: 'automotive', label: 'Auto' };
+  if (/grocery|market|pantry|snack|coffee|restaurant|meal|food/.test(hay)) return { slug: 'food', label: 'Food' };
+  if (/hotel|flight|travel|trip|luggage|stay|resort/.test(hay)) return { slug: 'travel', label: 'Travel' };
+  if (/shoe|shirt|jean|coat|fashion|apparel|clothing|watch|jewelry/.test(hay)) return { slug: 'fashion', label: 'Fashion' };
+  if (/phone|laptop|earbud|headphone|gaming|charger|tech|camera/.test(hay)) return { slug: 'electronics', label: 'Electronics' };
+  if (/skin|beauty|makeup|serum|fragrance|hair/.test(hay)) return { slug: 'beauty', label: 'Beauty' };
+  if (/home|furniture|kitchen|mattress|decor|garden/.test(hay)) return { slug: 'home', label: 'Home' };
+  if (/sport|fitness|outdoor|running|bike|gym/.test(hay)) return { slug: 'sports', label: 'Sports' };
+  return { slug: 'other', label: 'Other' };
 }
 
 async function safeOpenAffiliate(url: string) {
@@ -119,7 +156,6 @@ export default function OffersScreen() {
   const [onlineSlug, setOnlineSlug] = useState<string | null>(null);
   const [onlineLoadingMore, setOnlineLoadingMore] = useState(false);
   const [onlineBanner, setOnlineBanner] = useState<string | null>(null);
-  const [onlineProviderLabel, setOnlineProviderLabel] = useState<string | null>(null);
 
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
   const [redeemingOfferId, setRedeemingOfferId] = useState<string | null>(null);
@@ -164,7 +200,7 @@ export default function OffersScreen() {
   );
 
   const fetchOnlinePage = useCallback(
-    async (cursor: string | null, slug: string | null, mode: 'reset' | 'more') => {
+    async (cursor: string | null, mode: 'reset' | 'more') => {
       if (mode === 'reset') {
         setOnlineBanner(null);
         setRefreshingOnline(true);
@@ -174,7 +210,9 @@ export default function OffersScreen() {
       }
       try {
         const qs = new URLSearchParams();
-        if (slug) qs.set('category_slug', slug);
+        // Keep the feed broad. The app classifies uploaded offers into chips
+        // client-side so admin-pasted rows do not disappear because a source
+        // page lacked category metadata.
         if (cursor) qs.set('cursor', cursor);
         const q = qs.toString();
         const res = await api.get(`/api/offers/online${q ? `?${q}` : ''}`);
@@ -188,14 +226,34 @@ export default function OffersScreen() {
           return;
         }
         const parsed = parseOnlineOffersCatalog(res.data);
-        setOnlineCategories(parsed.categories ?? []);
+        const parsedItems = parsed.items.map((item) => {
+          const inferred = inferOnlineCategory(item);
+          return {
+            ...item,
+            category_slug: item.category_slug?.trim() || inferred.slug,
+            category_label: item.category_label?.trim() || inferred.label,
+          };
+        });
+        const categoriesFromItems = new Map<string, string>();
+        for (const item of parsedItems) {
+          const inferred = inferOnlineCategory(item);
+          categoriesFromItems.set(inferred.slug, inferred.label);
+        }
+        const serverCategories = parsed.categories ?? [];
+        const mergedCategories = new Map<string, string>();
+        for (const cat of serverCategories) mergedCategories.set(cat.slug, cat.label);
+        for (const [slug, label] of categoriesFromItems) mergedCategories.set(slug, label);
+        setOnlineCategories(
+          [...mergedCategories.entries()]
+            .map(([slug, label]) => ({ slug, label }))
+            .sort((a, b) => a.label.localeCompare(b.label)),
+        );
         setOnlineNextCursor(parsed.next_cursor);
-        setOnlineProviderLabel(parsed.provider ?? null);
-        if (mode === 'reset') setOnlineItems(parsed.items);
+        if (mode === 'reset') setOnlineItems(parsedItems);
         else setOnlineItems((prev) => {
           const seen = new Set(prev.map((x) => x.id));
           const merged = [...prev];
-          for (const row of parsed.items) {
+          for (const row of parsedItems) {
             if (!seen.has(row.id)) merged.push(row);
           }
           return merged;
@@ -248,8 +306,8 @@ export default function OffersScreen() {
 
   useEffect(() => {
     if (section !== 'online') return;
-    void fetchOnlinePage(null, onlineSlug, 'reset');
-  }, [section, onlineSlug, fetchOnlinePage]);
+    void fetchOnlinePage(null, 'reset');
+  }, [section, fetchOnlinePage]);
 
   const localCategoryChoices = useMemo(() => [{ slug: null as string | null, label: 'All' }, ...offerCategories.map((c) => ({ slug: c.slug, label: c.label }))], [offerCategories]);
 
@@ -261,8 +319,12 @@ export default function OffersScreen() {
   const partnerLocal = useMemo(() => filteredLocal.filter((o) => !o.is_admin_offer), [filteredLocal]);
   const featuredLocal = useMemo(() => filteredLocal.filter((o) => Boolean(o.is_admin_offer)), [filteredLocal]);
 
-  const onlineFeatured = useMemo(() => onlineItems.filter((x) => x.featured), [onlineItems]);
-  const onlineRegular = useMemo(() => onlineItems.filter((x) => !x.featured), [onlineItems]);
+  const filteredOnlineItems = useMemo(
+    () => (onlineSlug ? onlineItems.filter((x) => inferOnlineCategory(x).slug === onlineSlug) : onlineItems),
+    [onlineItems, onlineSlug],
+  );
+  const onlineFeatured = useMemo(() => filteredOnlineItems.filter((x) => x.featured), [filteredOnlineItems]);
+  const onlineRegular = useMemo(() => filteredOnlineItems.filter((x) => !x.featured), [filteredOnlineItems]);
 
   const onlineChipChoices = useMemo(
     () => [{ slug: null as string | null, label: 'All' }, ...onlineCategories.map((c) => ({ slug: c.slug, label: c.label }))],
@@ -585,7 +647,7 @@ export default function OffersScreen() {
       ) : (
         <ScrollView
           style={{ flex: 1 }}
-          refreshControl={<RefreshControl refreshing={refreshingOnline} onRefresh={() => void fetchOnlinePage(null, onlineSlug, 'reset')} tintColor="#3B82F6" />}
+          refreshControl={<RefreshControl refreshing={refreshingOnline} onRefresh={() => void fetchOnlinePage(null, 'reset')} tintColor="#3B82F6" />}
           contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
         >
           {onlineBanner ? (
@@ -593,16 +655,10 @@ export default function OffersScreen() {
               <Text style={{ color: colors.warning, fontSize: 13, fontWeight: '700' }}>{onlineBanner}</Text>
             </View>
           ) : null}
-          <Text style={{ color: sub, fontSize: 11, marginHorizontal: 18, marginTop: onlineBanner ? 10 : 10, marginBottom: 4, fontWeight: '700' }}>
-            {onlineProviderLabel ? `Source · ${onlineProviderLabel}` : 'Authenticated feed • opens partner sites in Safari'}
-          </Text>
           <OfferCategoryChips
             choices={onlineChipChoices}
             selectedSlug={onlineSlug}
-            onSelect={(s) => {
-              setOnlineSlug(s);
-              setOnlineItems([]);
-            }}
+            onSelect={setOnlineSlug}
             {...rt}
           />
 
@@ -650,7 +706,7 @@ export default function OffersScreen() {
           {onlineNextCursor ? (
             <TouchableOpacity
               activeOpacity={0.88}
-              onPress={() => void fetchOnlinePage(onlineNextCursor, onlineSlug, 'more')}
+              onPress={() => void fetchOnlinePage(onlineNextCursor, 'more')}
               style={{ alignSelf: 'center', marginTop: 14, paddingHorizontal: 18, paddingVertical: 11, borderRadius: 999, backgroundColor: `${colors.primary}18`, borderWidth: 1, borderColor: `${colors.primary}45` }}
             >
               <Text style={{ color: colors.primary, fontWeight: '900' }}>Load more</Text>

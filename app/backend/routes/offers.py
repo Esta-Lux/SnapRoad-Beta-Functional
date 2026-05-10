@@ -826,7 +826,7 @@ def create_offer(offer: OfferCreate, user: CurrentUser):
 # e.g. `nearby` as an offer id (GET /offers/nearby → 404 "Offer not found").
 @router.get("/offers/nearby")
 def get_nearby_offers(
-    auth_user: CurrentUser,
+    auth_user: OptionalUser = None,
     lat: float = 39.9612,
     lng: float = -82.9988,
     # `radius` is in kilometers (rough planar distance vs. user lat/lng, not driving miles).
@@ -884,13 +884,11 @@ def get_nearby_offers(
 @limiter.limit("120/minute")
 def get_online_offers_feed(
     request: Request,
-    auth_user: CurrentUser,
     category_slug: Annotated[Optional[str], Query()] = None,
     cursor: Annotated[Optional[str], Query()] = None,
 ):
-    """E-commerce / affiliate-style offers for the Offers tab Online pane (placeholder until API keys wired)."""
+    """E-commerce / affiliate-style offers for the Offers tab Online pane."""
     _ = request
-    _ = auth_user
     from services.online_offers_provider import fetch_online_catalog
 
     catalog = fetch_online_catalog(category_slug=category_slug or None, cursor=cursor or None)

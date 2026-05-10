@@ -632,7 +632,7 @@ export function AboutCard({ cardBg, text, sub }: { cardBg: string; text: string;
     }
   };
 
-  const supportEmail = (extraConfig().supportEmail || 'support@snaproad.co').trim();
+  const supportEmail = (extraConfig().supportEmail || 'teams@snaproad.co').trim();
   const androidPkg = (extraConfig().androidPackage || 'com.snaproad.app').trim();
   const iosStoreId = (extraConfig().iosAppStoreId || '').trim();
 
@@ -662,9 +662,19 @@ export function AboutCard({ cardBg, text, sub }: { cardBg: string; text: string;
     Linking.openURL(mail).catch(() => Alert.alert('Contact support', `Email us at ${supportEmail}`));
   };
 
+  const publicLegalDocs = legalDocs.filter((d) => {
+    const name = d.name.trim().toLowerCase();
+    const type = (d.type || '').trim().toLowerCase();
+    return (
+      name === 'privacy policy' ||
+      name === 'terms of service' ||
+      type === 'privacy' ||
+      type === 'terms'
+    ) && !/cookie|api\s*terms|developer|partner/i.test(d.name);
+  });
   const legalRows =
-    legalDocs.length > 0
-      ? legalDocs.map((d) => ({ label: d.name, docId: d.id }))
+    publicLegalDocs.length > 0
+      ? publicLegalDocs.map((d) => ({ label: d.name, docId: d.id }))
       : [
           { label: 'Privacy Policy', docId: '' as const },
           { label: 'Terms of Service', docId: '' as const },
