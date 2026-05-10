@@ -571,6 +571,25 @@ class AdminApiService {
     })
   }
 
+  /**
+   * Provision (or, with `force: true`, restore) the default Terms of Service +
+   * Privacy Policy. Idempotent: existing rows matched on `slug` are left
+   * untouched unless `force` is set.
+   */
+  async seedDefaultLegalDocuments(force = false): Promise<
+    AdminApiResponse<{
+      inserted: string[]
+      updated: string[]
+      skipped: string[]
+      errors: string[]
+    }>
+  > {
+    return this.request('/api/admin/legal-documents/seed-defaults', {
+      method: 'POST',
+      body: JSON.stringify({ force }),
+    })
+  }
+
   // ==================== AUDIT LOG ====================
 
   async getAuditLog(limit: number = 50): Promise<AdminApiResponse<AuditEntry[]>> {

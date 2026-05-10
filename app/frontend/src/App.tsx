@@ -27,6 +27,7 @@ import BillingPage from './pages/PartnerPortal/BillingPage'
 import ScannerPage from './pages/PartnerPortal/ScannerPage'
 import PartnerOffersPage from './pages/PartnerOffersPage'
 import PartnerRedemptionsPage from './pages/PartnerRedemptionsPage'
+import LegalDocumentPage from './pages/LegalDocumentPage'
 import { isPartnerPortalPrimarySite } from '@/lib/siteProfile'
 
 function App() {
@@ -83,6 +84,16 @@ function App() {
 
           <Route path="/scan/:partnerId/:token" element={<TeamScanPage />} />
           <Route path="/scan/:partnerId" element={<TeamScanPage />} />
+          {/* Public legal pages — content lives in `legal_documents` and is
+              edited by admins from the Legal & Compliance tab. */}
+          <Route
+            path="/terms"
+            element={<LegalDocumentPage slug="terms-of-service" fallbackTitle="Terms of Service" />}
+          />
+          <Route
+            path="/privacy"
+            element={<LegalDocumentPage slug="privacy-policy" fallbackTitle="Privacy Policy" />}
+          />
           <Route path="/portal/partner/welcome" element={<PartnerWelcomePage />} />
           <Route path="/portal/partner/sign-in" element={<PartnerSignInPage />} />
           <Route path="/portal/partner" element={<PartnerGuard><PartnerDashboard /></PartnerGuard>} />

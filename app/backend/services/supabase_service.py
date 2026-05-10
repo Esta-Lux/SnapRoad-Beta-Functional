@@ -1230,6 +1230,7 @@ def sb_create_legal_document(data: dict) -> Optional[dict]:
     """Insert a row into legal_documents. Expects name + type at minimum."""
     allowed = (
         "name",
+        "slug",
         "type",
         "status",
         "version",
@@ -1240,6 +1241,14 @@ def sb_create_legal_document(data: dict) -> Optional[dict]:
     row = {k: v for k, v in data.items() if k in allowed}
     if not row.get("name") or not row.get("type"):
         return None
+    # Trim/empty-string the slug so the unique partial index doesn't reject it
+    # when admin leaves the field blank in the create modal.
+    if isinstance(row.get("slug"), str):
+        slug_val = row["slug"].strip()
+        if slug_val:
+            row["slug"] = slug_val
+        else:
+            row.pop("slug", None)
     if "status" not in row:
         row["status"] = "draft"
     if "version" not in row:

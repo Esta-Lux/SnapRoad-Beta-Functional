@@ -589,7 +589,7 @@ def get_legal_documents():
 
 
 _LEGAL_DOC_KEYS = frozenset(
-    {"name", "type", "status", "version", "description", "content", "is_required"}
+    {"name", "slug", "type", "status", "version", "description", "content", "is_required"}
 )
 
 
@@ -620,6 +620,36 @@ def update_legal_document(doc_id: str, doc_data: dict):
         sb_create_audit_log("LEGAL_DOC_UPDATED", "admin", doc_id, "Updated legal document")
         return {"success": True, "message": "Document updated"}
     return {"success": False, "message": "Failed to update document"}
+
+
+@admin_ops_router.post("/admin/legal-documents/seed-defaults")
+def seed_default_legal_documents_endpoint(payload: Optional[dict] = Body(default=None)):
+    """
+    One-shot seeder for the default Terms of Service + Privacy Policy.
+
+    Idempotent: existing rows (matched on `slug`) are left untouched unless
+    the request body sets `{"force": true}`, which overwrites their `content`
+    from the on-disk seed files. Safe to call after every deploy.
+    """
+    from services.legal_seed import seed_default_legal_documents
+    force = bool((payload or {}).get("force"))
+    result = seed_default_legal_documents(force=force)
+    sb_create_audit_log(
+        "LEGAL_DOC_SEEDED",
+        "admin",
+        "legal_documents",
+        f"Seed defaults (force={force}): inserted={result['inserted']}, updated={result['updated']}, skipped={result['skipped']}",
+    )
+    has_errors = bool(result.get("errors"))
+    return {
+        "success": not has_errors,
+        "message": (
+            "Default legal documents already present"
+            if not result["inserted"] and not result["updated"] and not has_errors
+            else "Default legal documents seeded"
+        ),
+        "data": result,
+    }
 
 
 # ==================== SETTINGS ====================

@@ -4,6 +4,7 @@ import type { Purchase } from 'react-native-iap';
 import {
   endConnection,
   finishTransaction,
+  getAvailablePurchases,
   getSubscriptions,
   initConnection,
   purchaseErrorListener,
@@ -13,6 +14,9 @@ import {
 } from 'react-native-iap';
 
 import { api } from '../api/client';
+import { buildConfiguredSkuSet, pickPurchasesToRestore } from './appleIapSkus';
+
+export { buildConfiguredSkuSet, pickPurchasesToRestore };
 
 let bootstrapped = false;
 let purchaseSub: { remove: () => void } | null = null;
@@ -25,12 +29,7 @@ function configuredSkus(): Set<string> {
   const extra = Constants.expoConfig?.extra as
     | { appleIapPremiumProductId?: string; appleIapFamilyProductId?: string }
     | undefined;
-  const out = new Set<string>();
-  const p = extra?.appleIapPremiumProductId?.trim();
-  const f = extra?.appleIapFamilyProductId?.trim();
-  if (p) out.add(p);
-  if (f) out.add(f);
-  return out;
+  return buildConfiguredSkuSet(extra ?? {});
 }
 
 async function deliverVerifiedPurchase(purchase: Purchase): Promise<void> {
@@ -156,4 +155,73 @@ export function startAppleSubscriptionPurchase(
       });
     });
   })();
+}
+
+/**
+ * Outcome of a "Restore Purchases" run, exposed so the UI can show a
+ * specific toast / Alert instead of a generic success message.
+ */
+export type RestoreApplePurchasesResult = {
+  /** Number of past Apple transactions discovered for our configured SKUs. */
+  matched: number;
+  /** Subset of `matched` that we successfully re-validated with `/api/payments/apple/sync`. */
+  delivered: number;
+  /** Surface-level reason when zero deliveries occurred (used for UX copy). */
+  reason?: 'unsupported' | 'none_found' | 'sync_failed' | 'unknown';
+  /** Last error message bubbled up from a per-transaction sync failure. */
+  message?: string;
+};
+
+/**
+ * "Restore Purchases" — required by Apple to be one tap away on every IAP
+ * paywall. Walks through `getAvailablePurchases` (the StoreKit-backed
+ * receipt-history call) and re-runs our server-side verification for every
+ * transaction that matches one of our configured SKUs.
+ *
+ * Idempotent: hitting `/api/payments/apple/sync` with a transaction the
+ * server has already seen is a no-op on the backend.
+ */
+export async function restoreApplePurchases(): Promise<RestoreApplePurchasesResult> {
+  if (Platform.OS !== 'ios') {
+    return { matched: 0, delivered: 0, reason: 'unsupported' };
+  }
+
+  await bootstrapAppleIap();
+
+  let purchases: Purchase[];
+  try {
+    purchases = await getAvailablePurchases();
+  } catch (e) {
+    return {
+      matched: 0,
+      delivered: 0,
+      reason: 'unknown',
+      message: e instanceof Error ? e.message : String(e),
+    };
+  }
+
+  const skus = configuredSkus();
+  const ours = pickPurchasesToRestore(purchases, skus);
+  if (ours.length === 0) {
+    return { matched: 0, delivered: 0, reason: 'none_found' };
+  }
+
+  let delivered = 0;
+  let lastError: string | undefined;
+  for (const purchase of ours) {
+    try {
+      await deliverVerifiedPurchase(purchase);
+      delivered += 1;
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : String(e);
+      console.warn('[IAP] restore: sync failed for', purchase.productId, lastError);
+    }
+  }
+
+  return {
+    matched: ours.length,
+    delivered,
+    reason: delivered === 0 ? 'sync_failed' : undefined,
+    message: delivered === 0 ? lastError : undefined,
+  };
 }

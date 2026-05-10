@@ -53,7 +53,8 @@ import {
 } from '../components/profile/ProfileSections';
 import type { ProfileOverviewActionItem } from '../components/profile/types';
 import { ProfileStatsStrip, ProfileTabBar } from '../components/profile/ProfileScreenBlocks';
-import { startAppleSubscriptionPurchase } from '../billing/appleIap';
+import { restoreApplePurchases, startAppleSubscriptionPurchase } from '../billing/appleIap';
+import { openLegalDocumentExternally } from '../utils/openLegalDocument';
 import { registerCommutePushToken } from '../utils/pushNotifications';
 import { mapProfileTripHistoryItem, recentTripsListFromPayload } from '../components/profile/tripHistoryMapping';
 import { sanitizeTripSpeedMph } from '../utils/driveMetrics';
@@ -75,6 +76,7 @@ export default function ProfileScreen() {
   const cardBg = colors.card;
   const text = colors.text;
   const sub = colors.textSecondary;
+  const isGuest = !user?.id;
 
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -103,6 +105,7 @@ export default function ProfileScreen() {
 
   const [defaultMode, setDefaultMode] = useState<DrivingMode>('adaptive');
   const [showPlanModal, setShowPlanModal] = useState(false);
+  const [restoringPurchases, setRestoringPurchases] = useState(false);
   const [showAddPlace, setShowAddPlace] = useState(false);
   const [newPlaceName, setNewPlaceName] = useState('');
   const [newPlaceAddress, setNewPlaceAddress] = useState('');
@@ -164,8 +167,7 @@ export default function ProfileScreen() {
       }
       await logout();
       Alert.alert('Account Deleted', 'Your SnapRoad account has been deleted.');
-      // Public `Welcome` is not on MainTabParamList; after logout the tree remounts — navigation call is best-effort.
-      (navigation as { navigate: (name: string) => void }).navigate('Welcome');
+      navigation.navigate('ProfileMain');
     } finally {
       setDeletingAccount(false);
     }
@@ -174,6 +176,39 @@ export default function ProfileScreen() {
   const loadData = useCallback(async (mode: 'initial' | 'refresh' | 'silent' = 'initial') => {
     if (mode === 'initial') setInitialLoading(true);
     else if (mode === 'refresh') setRefreshing(true);
+    if (!user?.id) {
+      setPlaces([]);
+      setRoutes([]);
+      setCommutes([]);
+      setCommuteLimit(5);
+      setTripHistoryRows([]);
+      setGemTxRows([]);
+      setBadgeRows([]);
+      setLastSyncedAt('');
+      setWeeklyRecap({
+        totalTrips: 0,
+        totalMiles: 0,
+        gemsEarnedWeek: 0,
+        avgSafetyScore: 0,
+        aiTip: '',
+        highlights: [],
+        orionCommentary: null,
+        behavior: { hard_braking_events_total: 0, hard_acceleration_events_total: 0, speeding_events_total: 0 },
+        fuelUsedGallons: 0,
+        fuelCostEstimate: 0,
+        mileageValueEstimate: 0,
+      });
+      setFuelSummary({
+        monthlyEstimate: null,
+        avgMpg: null,
+        costPerMile: null,
+        lastOdometerMi: null,
+        milesSinceLastFill: null,
+      });
+      if (mode === 'initial') setInitialLoading(false);
+      else if (mode === 'refresh') setRefreshing(false);
+      return;
+    }
     try {
       const safeGet = async (url: string) => {
         try { return await api.get(url); } catch { return { success: false, data: null }; }
@@ -372,7 +407,7 @@ export default function ProfileScreen() {
       if (mode === 'initial') setInitialLoading(false);
       else if (mode === 'refresh') setRefreshing(false);
     }
-  }, []);
+  }, [user?.id]);
 
   const skipProfileFocusSilentRef = useRef(true);
 
@@ -536,8 +571,8 @@ export default function ProfileScreen() {
     if (Platform.OS === 'ios') {
       const uid = user?.id?.trim();
       if (!uid) {
-        Alert.alert('Sign in required', 'Please sign in to upgrade your plan.');
         setShowPlanModal(false);
+        navigation.navigate('Auth', { mode: 'signup' });
         return;
       }
       try {
@@ -572,7 +607,61 @@ export default function ProfileScreen() {
     }
     setShowPlanModal(false);
     await loadData('silent');
-  }, [updateUser, loadData, user?.email, user?.id, user?.plan_entitlement_source]);
+  }, [updateUser, loadData, navigation, user?.email, user?.id, user?.plan_entitlement_source]);
+
+  /**
+   * "Restore Purchases" handler — required by Apple to be discoverable on the
+   * paywall. Walks our IAP service for any past Apple transactions tied to
+   * configured SnapRoad SKUs and re-syncs them with the backend so an account
+   * that lost its Premium flag (e.g. fresh install, sign-in to a new device)
+   * gets re-entitled without paying again.
+   */
+  const handleRestorePurchases = useCallback(async () => {
+    if (Platform.OS !== 'ios') {
+      Alert.alert(
+        'Restore Purchases',
+        'Restore Purchases is for iOS App Store subscriptions. On Android, your subscription is restored automatically when you sign in with the same Google account.',
+      );
+      return;
+    }
+    setRestoringPurchases(true);
+    try {
+      const result = await restoreApplePurchases();
+      if (result.delivered > 0) {
+        await loadData('silent');
+        Alert.alert(
+          'Purchases restored',
+          result.delivered === 1
+            ? 'Your previous SnapRoad subscription has been restored.'
+            : `Restored ${result.delivered} previous subscriptions.`,
+        );
+      } else if (result.reason === 'none_found') {
+        Alert.alert(
+          'Nothing to restore',
+          'We could not find any previous SnapRoad subscriptions on this Apple ID.',
+        );
+      } else if (result.reason === 'sync_failed') {
+        Alert.alert(
+          'Restore failed',
+          result.message || 'Could not verify your subscription with SnapRoad. Please try again in a moment.',
+        );
+      } else {
+        Alert.alert(
+          'Restore failed',
+          result.message || 'Could not check your past purchases. Please try again.',
+        );
+      }
+    } finally {
+      setRestoringPurchases(false);
+    }
+  }, [loadData]);
+
+  const handleOpenTerms = useCallback(() => {
+    void openLegalDocumentExternally('terms-of-service');
+  }, []);
+  const handleOpenPrivacy = useCallback(() => {
+    void openLegalDocumentExternally('privacy-policy');
+  }, []);
 
   useEffect(() => {
     const status = typeof route.params?.status === 'string' ? route.params.status : '';
@@ -725,6 +814,32 @@ export default function ProfileScreen() {
           trips={user?.totalTrips ?? 0}
           miles={Math.round(user?.totalMiles ?? 0)}
         />
+        {isGuest ? (
+          <View style={[styles.guestAccountCard, { backgroundColor: cardBg, borderColor: colors.border }]}>
+            <View style={{ flex: 1, paddingRight: 10 }}>
+              <Text style={[styles.guestAccountTitle, { color: text }]}>Save your drives</Text>
+              <Text style={[styles.guestAccountSub, { color: sub }]}>
+                Sign in when you want trip history, metrics, Orion, cameras, and premium tools.
+              </Text>
+            </View>
+            <View style={styles.guestAccountActions}>
+              <TouchableOpacity
+                activeOpacity={0.86}
+                style={[styles.guestAccountButton, { backgroundColor: colors.primary }]}
+                onPress={() => navigation.navigate('Auth', { mode: 'signup' })}
+              >
+                <Text style={styles.guestAccountButtonText}>Create</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.86}
+                style={[styles.guestAccountButtonSecondary, { borderColor: colors.border }]}
+                onPress={() => navigation.navigate('Auth', { mode: 'signin' })}
+              >
+                <Text style={[styles.guestAccountButtonSecondaryText, { color: colors.primary }]}>Sign in</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
         <View style={styles.liveSyncRow}>
           <Text style={[styles.liveSyncText, { color: sub }]}>
             {initialLoading || refreshing
@@ -1070,6 +1185,10 @@ export default function ProfileScreen() {
         currentPlan={currentPlan}
         onSelectPlan={handleSelectPlan}
         isLight={isLight}
+        onRestorePurchases={handleRestorePurchases}
+        onOpenTerms={handleOpenTerms}
+        onOpenPrivacy={handleOpenPrivacy}
+        restoreInFlight={restoringPurchases}
       />
       <AddPlaceModal
         visible={showAddPlace}
@@ -1222,6 +1341,29 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   liveSyncText: { fontSize: 11, fontWeight: '600' },
+  guestAccountCard: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 10,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  guestAccountTitle: { fontSize: 15, fontWeight: '900', marginBottom: 3 },
+  guestAccountSub: { fontSize: 12, fontWeight: '600', lineHeight: 16 },
+  guestAccountActions: { gap: 8, width: 82 },
+  guestAccountButton: { minHeight: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  guestAccountButtonText: { color: '#fff', fontSize: 12, fontWeight: '900' },
+  guestAccountButtonSecondary: {
+    minHeight: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  guestAccountButtonSecondaryText: { fontSize: 12, fontWeight: '900' },
   lifetimeHint: { fontSize: 11, fontWeight: '600', textAlign: 'center', marginTop: -4, marginBottom: 6, paddingHorizontal: 16 },
   alertRow: {
     flexDirection: 'row',

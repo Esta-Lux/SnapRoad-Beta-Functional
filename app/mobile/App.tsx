@@ -2,7 +2,7 @@
 import 'react-native-gesture-handler';
 import React from 'react';
 import * as WebBrowser from 'expo-web-browser';
-import { ActivityIndicator, View, Text, Image, ScrollView, Platform, StyleSheet, Linking, Alert, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, View, Text, ScrollView, Platform, StyleSheet, Linking, Alert, TouchableOpacity } from 'react-native';
 
 /** Lets in-app OAuth (Safari / Chrome Custom Tabs) hand off to `snaproad://auth` cleanly. */
 WebBrowser.maybeCompleteAuthSession();
@@ -13,7 +13,6 @@ import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import { getApiMisconfigurationMessage } from './src/api/client';
 import { api } from './src/api/client';
-import { LinearGradient } from 'expo-linear-gradient';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { CommonActions, NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -27,8 +26,8 @@ import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
 import { NavigatingProvider, useNavigationMode } from './src/contexts/NavigatingContext';
 
-import WelcomeScreen from './src/screens/WelcomeScreen';
 import LegalConsentGate from './src/components/legal/LegalConsentGate';
+import LocationPermissionRationaleProvider from './src/components/permissions/LocationPermissionRationale';
 import { storage } from './src/utils/storage';
 import {
   decodeOAuthErrorDescription,
@@ -69,7 +68,6 @@ const DashboardStack = createStackNavigator();
 const OffersStack = createStackNavigator();
 const RewardsStack = createStackNavigator();
 const ProfileStack = createStackNavigator();
-const PublicStack = createStackNavigator();
 const rootNavigationRef = createNavigationContainerRef();
 
 function openCommuteAlertsFromNotification() {
@@ -235,6 +233,18 @@ function ProfileStackScreen() {
     <ProfileStack.Navigator screenOptions={{ headerShown: false }}>
       <ProfileStack.Screen name="ProfileMain" component={ProfileScreenLazy} />
       <ProfileStack.Screen name="ProfileBilling" component={ProfileScreenLazy} />
+      <ProfileStack.Screen
+        name="Auth"
+        getComponent={() => require('./src/screens/AuthScreen').default}
+      />
+      <ProfileStack.Screen
+        name="ForgotPassword"
+        getComponent={() => require('./src/screens/ForgotPasswordScreen').default}
+      />
+      <ProfileStack.Screen
+        name="ResetPassword"
+        getComponent={() => require('./src/screens/ResetPasswordScreen').default}
+      />
     </ProfileStack.Navigator>
   );
 }
@@ -377,18 +387,11 @@ const styles = StyleSheet.create({
 
 function RootNavigator() {
   const { isAuthenticated, isLoading, user, completeOAuthSignIn } = useAuth();
-  const { colors } = useTheme();
-  const [splashMinElapsed, setSplashMinElapsed] = React.useState(false);
   const [showTour, setShowTour] = React.useState(false);
   const [showSpotlightTour, setShowSpotlightTour] = React.useState(false);
   const [showDriverPromoWelcome, setShowDriverPromoWelcome] = React.useState(false);
   const lastHandledUrlRef = React.useRef<string | null>(null);
   const lastPushTokenRef = React.useRef<string | null>(null);
-
-  React.useEffect(() => {
-    const t = setTimeout(() => setSplashMinElapsed(true), 500);
-    return () => clearTimeout(t);
-  }, []);
 
   React.useEffect(() => {
     if (__DEV__ || !Updates.isEnabled) return;
@@ -619,10 +622,6 @@ function RootNavigator() {
     prefixes: ['snaproad://'],
     config: {
       screens: {
-        Welcome: 'welcome',
-        Auth: 'auth',
-        ForgotPassword: 'forgot-password',
-        ResetPassword: 'reset-password',
         Map: {
           screens: {
             MapMain: 'map',
@@ -643,97 +642,72 @@ function RootNavigator() {
           screens: {
             ProfileMain: 'profile',
             ProfileBilling: 'billing/:status',
+            Auth: 'auth',
+            ForgotPassword: 'forgot-password',
+            ResetPassword: 'reset-password',
           },
         },
       },
     },
   }), []);
 
-  if (isLoading || !splashMinElapsed) {
+  if (isLoading) {
     return (
-      <LinearGradient
-        colors={[colors.gradientStart, colors.gradientEnd]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
-      >
-        <Image source={require('./assets/brand-logo.png')} style={{ width: 110, height: 110, marginBottom: 8 }} resizeMode="contain" />
-        <Text style={{ color: '#fff', fontSize: 44, fontWeight: '900', letterSpacing: 0.2 }}>SnapRoad</Text>
-        <Text style={{ color: 'rgba(255,255,255,0.84)', fontSize: 14, marginTop: 6 }}>Drive smarter every mile</Text>
-        <View style={{ marginTop: 26 }}>
-          <ActivityIndicator size="large" color="#ffffff" />
-        </View>
-      </LinearGradient>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' }}>
+        <ActivityIndicator size="large" color="#2563EB" />
+      </View>
     );
   }
 
   return (
     <NavigationContainer ref={rootNavigationRef} linking={linking}>
-      {isAuthenticated ? (
-        <SpotlightTourProvider
-          visible={showSpotlightTour}
-          onComplete={() => {
-            storage.set(SPOTLIGHT_COACH_STORAGE_KEY, '1');
-            setShowSpotlightTour(false);
-          }}
-        >
-          <MainTabs />
-          <LegalConsentGate />
-          {showTour ? (
-            (() => {
-              const AppTour = loadAppTourOnce();
-              return (
-                <AppTour
-                  visible
-                  onComplete={() => {
-                    setShowTour(false);
-                    storage.set('snaproad_tour_done', '1');
-                    if (!storage.getString(SPOTLIGHT_COACH_STORAGE_KEY)) {
-                      setShowSpotlightTour(true);
-                    }
-                  }}
-                />
-              );
-            })()
-          ) : null}
-          {showDriverPromoWelcome ? (
-            (() => {
-              const DriverPromotionWelcomeSheet = loadDriverPromoSheetOnce();
-              return (
-                <DriverPromotionWelcomeSheet
-                  visible
-                  promotionPlan={user?.promotion_plan}
-                  promotionAccessUntil={user?.promotion_access_until}
-                  onMaybeLater={acknowledgeDriverPromo}
-                  onViewPlans={() => {
-                    acknowledgeDriverPromo();
-                    requestAnimationFrame(() => {
-                      if (!rootNavigationRef.isReady()) return;
-                      rootNavigationRef.dispatch(CommonActions.navigate({ name: 'Profile' }));
-                    });
-                  }}
-                />
-              );
-            })()
-          ) : null}
-        </SpotlightTourProvider>
-      ) : (
-        <PublicStack.Navigator screenOptions={{ headerShown: false }}>
-          <PublicStack.Screen name="Welcome" component={WelcomeScreen} />
-          <PublicStack.Screen
-            name="Auth"
-            getComponent={() => require('./src/screens/AuthScreen').default}
-          />
-          <PublicStack.Screen
-            name="ForgotPassword"
-            getComponent={() => require('./src/screens/ForgotPasswordScreen').default}
-          />
-          <PublicStack.Screen
-            name="ResetPassword"
-            getComponent={() => require('./src/screens/ResetPasswordScreen').default}
-          />
-        </PublicStack.Navigator>
-      )}
+      <SpotlightTourProvider
+        visible={isAuthenticated && showSpotlightTour}
+        onComplete={() => {
+          storage.set(SPOTLIGHT_COACH_STORAGE_KEY, '1');
+          setShowSpotlightTour(false);
+        }}
+      >
+        <MainTabs />
+        {isAuthenticated ? <LegalConsentGate /> : null}
+        {isAuthenticated && showTour ? (
+          (() => {
+            const AppTour = loadAppTourOnce();
+            return (
+              <AppTour
+                visible
+                onComplete={() => {
+                  setShowTour(false);
+                  storage.set('snaproad_tour_done', '1');
+                  if (!storage.getString(SPOTLIGHT_COACH_STORAGE_KEY)) {
+                    setShowSpotlightTour(true);
+                  }
+                }}
+              />
+            );
+          })()
+        ) : null}
+        {isAuthenticated && showDriverPromoWelcome ? (
+          (() => {
+            const DriverPromotionWelcomeSheet = loadDriverPromoSheetOnce();
+            return (
+              <DriverPromotionWelcomeSheet
+                visible
+                promotionPlan={user?.promotion_plan}
+                promotionAccessUntil={user?.promotion_access_until}
+                onMaybeLater={acknowledgeDriverPromo}
+                onViewPlans={() => {
+                  acknowledgeDriverPromo();
+                  requestAnimationFrame(() => {
+                    if (!rootNavigationRef.isReady()) return;
+                    rootNavigationRef.dispatch(CommonActions.navigate({ name: 'Profile' }));
+                  });
+                }}
+              />
+            );
+          })()
+        ) : null}
+      </SpotlightTourProvider>
     </NavigationContainer>
   );
 }
@@ -837,7 +811,12 @@ export default function App() {
           <ThemeProvider>
             <AuthProvider>
               <NavigatingProvider>
-                <RootNavigator />
+                {/* Pre-prompt rationale modal for the system location dialog
+                    (Apple/Google compliance). Mounted near the root so any
+                    screen or background hook can present it imperatively. */}
+                <LocationPermissionRationaleProvider>
+                  <RootNavigator />
+                </LocationPermissionRationaleProvider>
               </NavigatingProvider>
             </AuthProvider>
           </ThemeProvider>

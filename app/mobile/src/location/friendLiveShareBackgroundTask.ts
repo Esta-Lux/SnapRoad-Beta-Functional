@@ -12,6 +12,10 @@ import * as SecureStore from 'expo-secure-store';
 import * as Battery from 'expo-battery';
 import { API_BASE_URL } from '../api/client';
 import {
+  requestBackgroundLocationWithRationale,
+  requestForegroundLocationWithRationale,
+} from '../components/permissions/LocationPermissionRationale';
+import {
   FRIEND_LIVE_LAST_NAV_KEY,
   FRIEND_LIVE_SHARE_MODE_KEY,
   FRIEND_LIVE_SHARE_STORAGE_KEY,
@@ -118,14 +122,11 @@ export async function isFriendLiveShareBackgroundRunning(): Promise<boolean> {
  */
 export async function startFriendLiveShareBackgroundUpdates(): Promise<void> {
   if (Platform.OS === 'web') return;
-  const fg = await Location.requestForegroundPermissionsAsync();
+  // Same pre-prompt rationale → system sheet pattern as the main map flow.
+  const fg = await requestForegroundLocationWithRationale();
   if (!fg.granted) return;
 
-  try {
-    await Location.requestBackgroundPermissionsAsync();
-  } catch {
-    /* older SDK / simulator */
-  }
+  await requestBackgroundLocationWithRationale().catch(() => null);
 
   const running = await isFriendLiveShareBackgroundRunning();
   if (running) {

@@ -36,6 +36,26 @@ function getPasswordStrength(pw: string): { label: string; color: string; level:
   return { label: 'Weak password', color: '#EF4444', level: 1 };
 }
 
+function formatDobInput(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function normalizeDobForApi(value: string): string | null {
+  const match = value.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!match) return null;
+  const month = Number(match[1]);
+  const day = Number(match[2]);
+  const year = Number(match[3]);
+  const today = new Date();
+  if (month < 1 || month > 12 || day < 1 || year < 1900 || year > today.getFullYear()) return null;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
 type Props = {
   navigation: { navigate: (name: string, params?: object) => void; goBack: () => void };
   route?: { params?: { mode?: 'signin' | 'signup'; referral_code?: string } };
@@ -118,6 +138,8 @@ export default function AuthScreen({ navigation, route }: Props) {
       if (!firstName.trim()) { setLocalError('First name is required'); return; }
       if (!lastName.trim()) { setLocalError('Last name is required'); return; }
       if (!dateOfBirth.trim()) { setLocalError('Date of birth is required'); return; }
+      const normalizedDob = normalizeDobForApi(dateOfBirth);
+      if (!normalizedDob) { setLocalError('Enter date of birth as MM/DD/YYYY'); return; }
       if (!email.trim()) { setLocalError('Email is required'); return; }
       if (password.length < 6) { setLocalError('Password must be at least 6 characters'); return; }
       if (password !== confirmPw) { setLocalError('Passwords do not match'); return; }
@@ -125,7 +147,7 @@ export default function AuthScreen({ navigation, route }: Props) {
         `${firstName.trim()} ${lastName.trim()}`,
         email,
         password,
-        dateOfBirth,
+        normalizedDob,
         route?.params?.referral_code,
       );
     } else {
@@ -265,7 +287,7 @@ export default function AuthScreen({ navigation, route }: Props) {
         <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
           <TouchableOpacity
             style={s.backButton}
-            onPress={() => navigation.navigate('Welcome')}
+            onPress={() => navigation.navigate('ProfileMain')}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             activeOpacity={0.85}
           >
@@ -381,12 +403,13 @@ export default function AuthScreen({ navigation, route }: Props) {
                 <TextInput
                   ref={dobRef}
                   style={s.input}
-                  placeholder="YYYY-MM-DD"
+                  placeholder="MM/DD/YYYY"
                   placeholderTextColor={PALETTE.placeholder}
                   value={dateOfBirth}
-                  onChangeText={setDateOfBirth}
+                  onChangeText={(value) => setDateOfBirth(formatDobInput(value))}
                   autoCapitalize="none"
                   keyboardType="numbers-and-punctuation"
+                  maxLength={10}
                   returnKeyType="next"
                   onSubmitEditing={() => pwRef.current?.focus()}
                 />

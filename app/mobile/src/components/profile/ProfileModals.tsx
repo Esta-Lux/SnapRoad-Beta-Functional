@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import SheetModal from '../common/Modal';
@@ -95,8 +95,37 @@ export function IncidentReportModal({ visible, onClose, onTakePhoto, onPickGalle
   );
 }
 
-export function PlanModal(props: { visible: boolean; onClose: () => void; cardBg: string; text: string; sub: string; currentPlan: PlanTier; onSelectPlan: (tier: PlanTier) => void; isLight?: boolean }) {
-  const { visible, onClose, cardBg, text, sub, currentPlan, onSelectPlan, isLight } = props;
+export function PlanModal(props: {
+  visible: boolean;
+  onClose: () => void;
+  cardBg: string;
+  text: string;
+  sub: string;
+  currentPlan: PlanTier;
+  onSelectPlan: (tier: PlanTier) => void;
+  isLight?: boolean;
+  /** Required by Apple; wired by ProfileScreen to call `restoreApplePurchases`. */
+  onRestorePurchases?: () => void;
+  /** Tapping these opens the public legal pages (web URL or in-app sheet). */
+  onOpenTerms?: () => void;
+  onOpenPrivacy?: () => void;
+  /** True while a restore is in flight so the link can show a spinner state. */
+  restoreInFlight?: boolean;
+}) {
+  const {
+    visible,
+    onClose,
+    cardBg,
+    text,
+    sub,
+    currentPlan,
+    onSelectPlan,
+    isLight,
+    onRestorePurchases,
+    onOpenTerms,
+    onOpenPrivacy,
+    restoreInFlight,
+  } = props;
   const [selected, setSelected] = useState<PlanTier | null>(null);
 
   const handleContinue = () => {
@@ -105,6 +134,8 @@ export function PlanModal(props: { visible: boolean; onClose: () => void; cardBg
 
   const PLAN_ICONS: Record<PlanTier, string> = { basic: 'shield-outline', premium: 'flash-outline', family: 'people-outline' };
   const PLAN_COLORS: Record<PlanTier, string> = { basic: '#007AFF', premium: '#FF9500', family: '#7C3AED' };
+  const isIosPaidSelected =
+    Platform.OS === 'ios' && (selected === 'premium' || selected === 'family');
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -199,6 +230,8 @@ export function PlanModal(props: { visible: boolean; onClose: () => void; cardBg
               onPress={handleContinue}
               disabled={!selected}
               style={{ opacity: selected ? 1 : 0.4 }}
+              accessibilityRole="button"
+              accessibilityLabel={selected === 'premium' ? 'Continue with Premium' : 'Continue with selected plan'}
             >
               <LinearGradient
                 colors={selected === 'premium' ? ['#FF9500', '#FF6B00'] : ['#007AFF', '#0055CC']}
@@ -212,7 +245,65 @@ export function PlanModal(props: { visible: boolean; onClose: () => void; cardBg
                 </Text>
               </LinearGradient>
             </TouchableOpacity>
-            <Text style={{ color: sub, fontSize: 11, textAlign: 'center', marginTop: 8 }}>No contracts · Cancel anytime</Text>
+
+            {/* Apple-mandated auto-renewal disclosure within ~50px of the
+                purchase CTA. Shown for paid iOS tiers only (Basic = no
+                purchase, web/Android use Stripe + Play Store boilerplate). */}
+            {isIosPaidSelected ? (
+              <Text style={[styles.iapDisclosure, { color: sub }]}
+                accessibilityLabel="Auto-renewal disclosure"
+              >
+                Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless auto-renew is turned off at least 24 hours before the end of the current period. You can manage subscriptions in Settings.
+              </Text>
+            ) : (
+              <Text style={{ color: sub, fontSize: 11, textAlign: 'center', marginTop: 8 }}>No contracts · Cancel anytime</Text>
+            )}
+
+            {/* Required Apple links: Restore Purchases + Terms + Privacy.
+                Always visible on iOS so reviewers find them on the paywall;
+                shown on Android/web too because pointing users at the
+                published policies is universally good practice. */}
+            <View style={styles.iapLinkRow}>
+              {Platform.OS === 'ios' && onRestorePurchases ? (
+                <TouchableOpacity
+                  onPress={onRestorePurchases}
+                  disabled={!!restoreInFlight}
+                  accessibilityRole="button"
+                  accessibilityLabel="Restore purchases"
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={[styles.iapLinkText, { color: sub, opacity: restoreInFlight ? 0.5 : 1 }]}>
+                    {restoreInFlight ? 'Restoring…' : 'Restore Purchases'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+              {Platform.OS === 'ios' && onRestorePurchases && (onOpenTerms || onOpenPrivacy) ? (
+                <Text style={[styles.iapLinkSep, { color: sub }]}>·</Text>
+              ) : null}
+              {onOpenTerms ? (
+                <TouchableOpacity
+                  onPress={onOpenTerms}
+                  accessibilityRole="link"
+                  accessibilityLabel="Terms of Service"
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={[styles.iapLinkText, { color: sub }]}>Terms</Text>
+                </TouchableOpacity>
+              ) : null}
+              {onOpenTerms && onOpenPrivacy ? (
+                <Text style={[styles.iapLinkSep, { color: sub }]}>·</Text>
+              ) : null}
+              {onOpenPrivacy ? (
+                <TouchableOpacity
+                  onPress={onOpenPrivacy}
+                  accessibilityRole="link"
+                  accessibilityLabel="Privacy Policy"
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={[styles.iapLinkText, { color: sub }]}>Privacy</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
           </View>
         </View>
       </TouchableOpacity>
@@ -246,6 +337,11 @@ const styles = StyleSheet.create({
   radioCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: 'rgba(128,128,128,0.3)', alignItems: 'center' as const, justifyContent: 'center' as const },
   planContinueBtn: { borderRadius: 16, paddingVertical: 16, flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'center' as const, gap: 6 },
   planContinueBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  /** Apple-mandated auto-renewal disclosure copy. Sits within 50px of the CTA. */
+  iapDisclosure: { fontSize: 11, lineHeight: 15, textAlign: 'center', marginTop: 10, paddingHorizontal: 4 },
+  iapLinkRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' },
+  iapLinkText: { fontSize: 12, fontWeight: '700', textDecorationLine: 'underline' },
+  iapLinkSep: { fontSize: 12 },
   upgradeBtn: { backgroundColor: '#3B82F6', borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 12 },
   upgradeBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   modalInput: { borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, marginBottom: 12 },

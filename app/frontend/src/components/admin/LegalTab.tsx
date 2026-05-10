@@ -14,10 +14,14 @@ import {
   Plus,
   Pencil,
   X,
+  Eye,
+  Code as CodeIcon,
+  RefreshCw,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { adminApi } from '@/services/adminApi'
 import type { LegalDocument } from '@/types/admin'
+import { sanitizeHtml } from '@/lib/sanitizeHtml'
 
 interface LegalTabProps {
   theme: 'dark' | 'light'
@@ -25,6 +29,7 @@ interface LegalTabProps {
 
 type LegalDraft = {
   id: string
+  slug: string
   name: string
   type: string
   status: string
@@ -37,6 +42,7 @@ type LegalDraft = {
 function emptyDraft(): LegalDraft {
   return {
     id: '',
+    slug: '',
     name: '',
     type: 'privacy',
     status: 'draft',
@@ -50,6 +56,7 @@ function emptyDraft(): LegalDraft {
 function docToDraft(doc: LegalDocument): LegalDraft {
   return {
     id: doc.id,
+    slug: doc.slug || '',
     name: doc.name || '',
     type: doc.type || 'privacy',
     status: doc.status || 'draft',
@@ -58,6 +65,16 @@ function docToDraft(doc: LegalDocument): LegalDraft {
     content: doc.content || '',
     is_required: Boolean(doc.is_required),
   }
+}
+
+/** Auto-generate a URL-safe slug from a doc name (admin can override). */
+function suggestSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
 }
 
 export default function LegalTab({ theme }: LegalTabProps) {
@@ -71,9 +88,12 @@ export default function LegalTab({ theme }: LegalTabProps) {
   const [editorMode, setEditorMode] = useState<'create' | 'edit'>('create')
   const [draft, setDraft] = useState<LegalDraft>(emptyDraft)
   const [saving, setSaving] = useState(false)
+  const [editorPane, setEditorPane] = useState<'html' | 'preview'>('html')
+  const [seedingDefaults, setSeedingDefaults] = useState(false)
 
   const [viewOpen, setViewOpen] = useState(false)
   const [viewing, setViewing] = useState<LegalDocument | null>(null)
+  const [viewMode, setViewMode] = useState<'rendered' | 'source'>('rendered')
 
   const uploadInputRef = useRef<HTMLInputElement>(null)
 
@@ -166,6 +186,7 @@ export default function LegalTab({ theme }: LegalTabProps) {
 
     const payload = {
       name,
+      slug: draft.slug.trim() || undefined,
       type: draft.type,
       status: draft.status,
       version: String(draft.version || '1.0'),
@@ -200,6 +221,36 @@ export default function LegalTab({ theme }: LegalTabProps) {
       toast.error(err instanceof Error ? err.message : 'Save failed')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleSeedDefaults = async (force: boolean) => {
+    const confirmMsg = force
+      ? 'Restore the default Terms of Service and Privacy Policy from disk? This will OVERWRITE any admin edits to those two documents.'
+      : 'Provision default Terms + Privacy from disk? Existing rows are kept; only missing slugs are inserted.'
+    if (!confirm(confirmMsg)) return
+    setSeedingDefaults(true)
+    try {
+      const res = await adminApi.seedDefaultLegalDocuments(force)
+      if (res.success) {
+        const summary = res.data
+        const inserted = summary?.inserted || []
+        const updated = summary?.updated || []
+        const skipped = summary?.skipped || []
+        const parts = [
+          inserted.length ? `${inserted.length} created` : null,
+          updated.length ? `${updated.length} restored` : null,
+          skipped.length ? `${skipped.length} unchanged` : null,
+        ].filter(Boolean)
+        toast.success(parts.length ? `Defaults: ${parts.join(', ')}` : 'Defaults already in place')
+        await loadDocuments()
+      } else {
+        toast.error(res.message || 'Could not seed defaults')
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not seed defaults')
+    } finally {
+      setSeedingDefaults(false)
     }
   }
 
@@ -310,6 +361,30 @@ export default function LegalTab({ theme }: LegalTabProps) {
           >
             <Upload size={18} />
             Upload document
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSeedDefaults(false)}
+            disabled={seedingDefaults}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium ${
+              isDark ? 'bg-white/5 hover:bg-white/10 text-slate-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-800'
+            } disabled:opacity-50`}
+            title="Insert the default Terms + Privacy if they are missing. Existing rows are kept."
+          >
+            <FileText size={18} />
+            Provision defaults
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSeedDefaults(true)}
+            disabled={seedingDefaults}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium ${
+              isDark ? 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-300' : 'bg-amber-100 hover:bg-amber-200 text-amber-900'
+            } disabled:opacity-50`}
+            title="Overwrite the official Terms + Privacy with the bundled defaults. Use to revert mistakes."
+          >
+            <RefreshCw size={18} className={seedingDefaults ? 'animate-spin' : ''} />
+            Restore defaults
           </button>
         </div>
       </div>
@@ -583,14 +658,47 @@ export default function LegalTab({ theme }: LegalTabProps) {
                   />
                 </div>
               </div>
-              <div>
-                <label className={`block text-xs font-medium mb-1 ${textSecondary}`}>Short description</label>
-                <input
-                  value={draft.description}
-                  onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
-                  className={`w-full px-3 py-2 rounded-lg border text-sm ${inputClass}`}
-                  placeholder="Shown in admin cards and listings"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={`block text-xs font-medium mb-1 ${textSecondary}`}>
+                    Slug <span className="opacity-60">(stable URL identifier)</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      value={draft.slug}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+                        }))
+                      }
+                      className={`flex-1 px-3 py-2 rounded-lg border text-sm ${inputClass}`}
+                      placeholder="terms-of-service"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setDraft((d) => ({ ...d, slug: suggestSlug(d.name) }))}
+                      className={`px-3 py-2 rounded-lg text-xs font-medium ${
+                        isDark ? 'bg-white/5 hover:bg-white/10 text-slate-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-800'
+                      }`}
+                      title="Auto-generate from name"
+                    >
+                      Auto
+                    </button>
+                  </div>
+                  <p className={`text-[11px] mt-1 ${textSecondary}`}>
+                    Used by /terms and /privacy on the public website. Leave blank for non-canonical drafts.
+                  </p>
+                </div>
+                <div>
+                  <label className={`block text-xs font-medium mb-1 ${textSecondary}`}>Short description</label>
+                  <input
+                    value={draft.description}
+                    onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+                    className={`w-full px-3 py-2 rounded-lg border text-sm ${inputClass}`}
+                    placeholder="Shown in admin cards and listings"
+                  />
+                </div>
               </div>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -602,14 +710,57 @@ export default function LegalTab({ theme }: LegalTabProps) {
                 <span className={`text-sm ${textPrimary}`}>Required for users / compliance</span>
               </label>
               <div>
-                <label className={`block text-xs font-medium mb-1 ${textSecondary}`}>Full text (markdown or plain text)</label>
-                <textarea
-                  value={draft.content}
-                  onChange={(e) => setDraft((d) => ({ ...d, content: e.target.value }))}
-                  rows={14}
-                  className={`w-full px-3 py-2 rounded-lg border text-sm font-mono ${inputClass}`}
-                  placeholder="Paste or write the full legal text here…"
-                />
+                <div className="flex items-center justify-between mb-2">
+                  <label className={`block text-xs font-medium ${textSecondary}`}>Full text (HTML, markdown, or plain text)</label>
+                  <div className={`inline-flex rounded-lg border ${isDark ? 'border-white/10 bg-white/5' : 'border-gray-200 bg-gray-50'} text-xs overflow-hidden`}>
+                    <button
+                      type="button"
+                      onClick={() => setEditorPane('html')}
+                      className={`px-3 py-1 flex items-center gap-1 ${
+                        editorPane === 'html'
+                          ? isDark ? 'bg-purple-500/20 text-purple-200' : 'bg-purple-100 text-purple-900'
+                          : textSecondary
+                      }`}
+                    >
+                      <CodeIcon size={12} /> HTML
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditorPane('preview')}
+                      className={`px-3 py-1 flex items-center gap-1 ${
+                        editorPane === 'preview'
+                          ? isDark ? 'bg-purple-500/20 text-purple-200' : 'bg-purple-100 text-purple-900'
+                          : textSecondary
+                      }`}
+                    >
+                      <Eye size={12} /> Preview
+                    </button>
+                  </div>
+                </div>
+                {editorPane === 'html' ? (
+                  <textarea
+                    value={draft.content}
+                    onChange={(e) => setDraft((d) => ({ ...d, content: e.target.value }))}
+                    rows={14}
+                    className={`w-full px-3 py-2 rounded-lg border text-sm font-mono ${inputClass}`}
+                    placeholder="Paste the HTML body here. The mobile app will display a stripped plain-text version automatically."
+                  />
+                ) : (
+                  <div
+                    className={`px-4 py-3 rounded-lg border max-h-[420px] overflow-y-auto bg-white text-gray-900 ${
+                      isDark ? 'border-white/10' : 'border-gray-200'
+                    }`}
+                  >
+                    {draft.content.trim() ? (
+                      <div
+                        className="snaproad-legal-preview"
+                        dangerouslySetInnerHTML={{ __html: sanitizeHtml(draft.content) }}
+                      />
+                    ) : (
+                      <p className="text-sm text-gray-400 italic">Nothing to preview yet — paste content into the HTML tab.</p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             <div
@@ -667,14 +818,59 @@ export default function LegalTab({ theme }: LegalTabProps) {
                 <X size={20} className={textSecondary} />
               </button>
             </div>
+            <div className="px-5 pt-3">
+              <div className={`inline-flex rounded-lg border ${isDark ? 'border-white/10 bg-white/5' : 'border-gray-200 bg-gray-50'} text-xs overflow-hidden`}>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('rendered')}
+                  className={`px-3 py-1 flex items-center gap-1 ${
+                    viewMode === 'rendered'
+                      ? isDark ? 'bg-emerald-500/20 text-emerald-200' : 'bg-emerald-100 text-emerald-900'
+                      : textSecondary
+                  }`}
+                >
+                  <Eye size={12} /> Rendered
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('source')}
+                  className={`px-3 py-1 flex items-center gap-1 ${
+                    viewMode === 'source'
+                      ? isDark ? 'bg-emerald-500/20 text-emerald-200' : 'bg-emerald-100 text-emerald-900'
+                      : textSecondary
+                  }`}
+                >
+                  <CodeIcon size={12} /> HTML source
+                </button>
+              </div>
+            </div>
             <div className="p-5 overflow-y-auto flex-1">
-              <pre
-                className={`whitespace-pre-wrap text-sm font-mono rounded-lg p-4 ${
-                  isDark ? 'bg-black/30 text-slate-200' : 'bg-gray-50 text-gray-800'
-                }`}
-              >
-                {viewing.content?.trim() ? viewing.content : '(No body text stored for this document.)'}
-              </pre>
+              {viewing.content?.trim() ? (
+                viewMode === 'rendered' ? (
+                  <div
+                    className={`px-4 py-3 rounded-lg border bg-white text-gray-900 ${
+                      isDark ? 'border-white/10' : 'border-gray-200'
+                    }`}
+                  >
+                    <div
+                      className="snaproad-legal-preview"
+                      dangerouslySetInnerHTML={{ __html: sanitizeHtml(viewing.content) }}
+                    />
+                  </div>
+                ) : (
+                  <pre
+                    className={`whitespace-pre-wrap text-sm font-mono rounded-lg p-4 ${
+                      isDark ? 'bg-black/30 text-slate-200' : 'bg-gray-50 text-gray-800'
+                    }`}
+                  >
+                    {viewing.content}
+                  </pre>
+                )
+              ) : (
+                <p className={`text-sm italic ${textSecondary}`}>
+                  (No body text stored for this document.)
+                </p>
+              )}
             </div>
             <div
               className={`flex justify-end gap-2 px-5 py-4 border-t ${

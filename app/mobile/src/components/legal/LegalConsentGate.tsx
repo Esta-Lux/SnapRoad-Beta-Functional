@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { api } from '../../api/client';
+import { selectLegalBody, type LegalDocDetailRow } from '../../api/dto/legal';
 import { storage } from '../../utils/storage';
 
 const STORAGE_KEY = 'snaproad_legal_accept_v1';
@@ -65,15 +66,8 @@ export default function LegalConsentGate() {
 
   const openDoc = async (d: DocSummary) => {
     const res = await api.get(`/api/legal/documents/${d.id}`);
-    const row = (res.data as { data?: Record<string, string> })?.data;
-    if (!row) {
-      setDocModal({ title: d.name, body: 'This document is not available yet. Check again after your team publishes it in the admin portal.' });
-      return;
-    }
-    const body =
-      String(row.content ?? row.body ?? row.text ?? row.description ?? '').trim() ||
-      'No text has been published for this document yet.';
-    setDocModal({ title: d.name, body });
+    const row = (res.data as { data?: LegalDocDetailRow })?.data;
+    setDocModal({ title: d.name, body: selectLegalBody(row) });
   };
 
   const onAccept = () => {

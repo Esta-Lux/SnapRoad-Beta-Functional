@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import Constants from 'expo-constants';
 import { api } from '../../api/client';
+import { selectLegalBody, type LegalDocDetailRow } from '../../api/dto/legal';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Skeleton from '../common/Skeleton';
@@ -622,11 +623,8 @@ export function AboutCard({ cardBg, text, sub }: { cardBg: string; text: string;
     setLegalLoading(true);
     try {
       const res = await api.get(`/api/legal/documents/${doc.id}`);
-      const row = (res.data as { data?: Record<string, string> })?.data;
-      const body =
-        String(row?.content ?? row?.body ?? row?.text ?? row?.description ?? '').trim() ||
-        'No text has been published for this document yet. Ask your admin to publish content in Legal Compliance.';
-      setLegalModal({ title: doc.name, body });
+      const row = (res.data as { data?: LegalDocDetailRow })?.data;
+      setLegalModal({ title: doc.name, body: selectLegalBody(row) });
     } catch {
       Alert.alert(doc.name, 'Could not load this document. Check your connection and try again.');
     } finally {
