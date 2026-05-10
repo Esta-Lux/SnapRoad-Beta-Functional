@@ -29,6 +29,81 @@ import { getApiBaseUrl } from '@/services/api'
 import { messageFromHttpJson } from '@/lib/httpErrorMessage'
 import { useAuthStore } from '@/store/authStore'
 
+// ==================== PASTE-LINK OFFER TYPES ====================
+
+/** Server response from POST /api/admin/offers/unfurl. */
+export interface UnfurlPreview {
+  source_url: string
+  final_url: string
+  title: string | null
+  description: string | null
+  image_url: string | null
+  merchant_name: string | null
+  merchant_domain: string | null
+  regular_price: number | null
+  sale_price: number | null
+  currency: string | null
+  asin: string | null
+  extractor: 'jsonld_product' | 'open_graph' | 'html_fallback' | 'amazon_paapi' | 'none'
+  notes: string[]
+  amazon_paapi_configured: boolean
+  raw_metadata: Record<string, unknown>
+}
+
+export interface OnlineOfferUpsertPayload {
+  source_url: string
+  affiliate_url?: string | null
+  asin?: string | null
+  title: string
+  description?: string | null
+  merchant_name?: string | null
+  merchant_domain?: string | null
+  image_url?: string | null
+  regular_price?: number | null
+  sale_price?: number | null
+  currency?: string | null
+  discount_label?: string | null
+  category_slug?: string | null
+  category_label?: string | null
+  featured?: boolean
+  status?: 'active' | 'inactive' | 'draft'
+  expires_at?: string | null
+}
+
+export interface OnlineOfferRow extends OnlineOfferUpsertPayload {
+  id: string
+  created_by?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+/** Body of POST /api/admin/offers/from-link — destination picks the table. */
+export type OfferFromLinkPayload =
+  | { destination: 'online'; online: OnlineOfferUpsertPayload }
+  | {
+      destination: 'local'
+      local: {
+        business_name: string
+        business_type: string
+        description: string
+        title?: string | null
+        discount_percent?: number
+        is_free_item?: boolean
+        base_gems?: number | null
+        lat?: number
+        lng?: number
+        expires_hours?: number
+        image_url?: string | null
+        offer_url?: string | null
+        affiliate_tracking_url?: string | null
+        external_id?: string | null
+        original_price?: number | null
+        sale_price?: number | null
+        source_url?: string | null
+        offer_source?: string
+      }
+    }
+
 class AdminApiService {
   private token: string | null = null
 
@@ -339,6 +414,49 @@ class AdminApiService {
 
   async exportOffers(format: string = 'json'): Promise<AdminApiResponse<any>> {
     return this.request(`/api/admin/export/offers?format=${format}`)
+  }
+
+  // ==================== PASTE-LINK OFFERS (URL unfurler) ====================
+
+  /**
+   * Server-side fetches the URL and returns a metadata preview
+   * (title, image, regular_price, sale_price, currency, merchant). No DB write.
+   */
+  async unfurlOfferLink(url: string): Promise<AdminApiResponse<UnfurlPreview>> {
+    return this.request('/api/admin/offers/unfurl', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    })
+  }
+
+  /** Publish an admin-edited preview as either an online or local offer. */
+  async createOfferFromLink(payload: OfferFromLinkPayload): Promise<AdminApiResponse<any>> {
+    return this.request('/api/admin/offers/from-link', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async getOnlineOffers(status: string = 'all', limit = 200): Promise<AdminApiResponse<OnlineOfferRow[]>> {
+    return this.request(`/api/admin/online-offers?status=${encodeURIComponent(status)}&limit=${limit}`)
+  }
+
+  async createOnlineOffer(data: OnlineOfferUpsertPayload): Promise<AdminApiResponse<OnlineOfferRow>> {
+    return this.request('/api/admin/online-offers', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateOnlineOffer(id: string, patch: Partial<OnlineOfferUpsertPayload>): Promise<AdminApiResponse<OnlineOfferRow>> {
+    return this.request(`/api/admin/online-offers/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    })
+  }
+
+  async deleteOnlineOffer(id: string): Promise<AdminApiResponse<void>> {
+    return this.request(`/api/admin/online-offers/${encodeURIComponent(id)}`, { method: 'DELETE' })
   }
 
   async importGrouponDeals(area: string = 'Columbus, OH', category?: string, limit: number = 20): Promise<AdminApiResponse<any>> {

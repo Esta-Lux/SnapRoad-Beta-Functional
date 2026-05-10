@@ -239,6 +239,50 @@ def _http_json_catalog(*, category_slug: Optional[str], cursor: Optional[str]) -
     return _placeholder_catalog(category_slug=category_slug, cursor=cursor)
 
 
+def _db_catalog(*, category_slug: Optional[str], cursor: Optional[str]) -> Optional[dict[str, Any]]:
+    """
+    Read admin-published offers from `online_offers`. Returns None if there are
+    no rows (so the caller can fall back to the placeholder catalog), or a
+    fully-formed page payload otherwise.
+    """
+    try:
+        from services.online_offers_db import list_online_offers, count_online_offers, _row_to_item
+    except Exception as exc:  # import-time guard for environments without supabase
+        logger.debug("online_offers_db import failed: %s", exc)
+        return None
+
+    try:
+        total = count_online_offers(status="active", category_slug=category_slug)
+    except Exception:
+        total = 0
+    if not total:
+        return None
+
+    offset = _decode_cursor(cursor)
+    rows = list_online_offers(status="active", category_slug=category_slug, limit=PAGE_SIZE, offset=offset)
+    if not rows and offset > 0:
+        # Stale cursor — restart from the beginning rather than returning empty.
+        offset = 0
+        rows = list_online_offers(status="active", category_slug=category_slug, limit=PAGE_SIZE, offset=offset)
+    items = [_row_to_item(r) for r in rows]
+    end = offset + len(items)
+    next_cursor = _encode_cursor(end) if end < total else None
+
+    # Category summary (active only) — derived from a wide read so the chips
+    # match what the admin can see in the panel.
+    try:
+        all_active = list_online_offers(status="active", limit=500, offset=0)
+        cats = _category_summary([_row_to_item(r) for r in all_active])
+    except Exception:
+        cats = []
+    return {
+        "items": items,
+        "categories": cats,
+        "next_cursor": next_cursor,
+        "provider": "supabase_online_offers",
+    }
+
+
 def fetch_online_catalog(*, category_slug: Optional[str] = None, cursor: Optional[str] = None) -> dict[str, Any]:
     """
     Returns a dict:
@@ -246,11 +290,19 @@ def fetch_online_catalog(*, category_slug: Optional[str] = None, cursor: Optiona
       categories: [{slug, label, count}]
       next_cursor: str | None
       provider: str
+
+    Resolution order:
+      1. `online_offers` Supabase table (admin paste-link publishes go here).
+      2. `ONLINE_OFFERS_PROVIDER=http_json` partner JSON proxy.
+      3. Built-in placeholder catalog (development / empty production).
     """
+    db = _db_catalog(category_slug=category_slug, cursor=cursor)
+    if db is not None:
+        return db
+
     prov = ONLINE_OFFERS_PROVIDER
     if prov in ("placeholder", "mock", "static", ""):
-        out = _placeholder_catalog(category_slug=category_slug, cursor=cursor)
-        return out
+        return _placeholder_catalog(category_slug=category_slug, cursor=cursor)
     if prov == "http_json":
         return _http_json_catalog(category_slug=category_slug, cursor=cursor)
     logger.warning("unknown ONLINE_OFFERS_PROVIDER=%r; using placeholder", prov)

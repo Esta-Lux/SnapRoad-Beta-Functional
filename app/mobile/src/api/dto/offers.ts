@@ -17,6 +17,19 @@ export type OnlineOfferItem = {
   image_url?: string;
   expires_at?: string;
   affiliate_url?: string;
+  /**
+   * Original product page the admin pasted into the unfurler. Used for "view on
+   * <merchant>" affordances and audit; mobile clients fall back to it if
+   * `affiliate_url` is missing.
+   */
+  source_url?: string;
+  /** List / pre-discount price as parsed from JSON-LD / Open Graph / PA-API. */
+  regular_price?: number;
+  /** Discounted price the buyer pays. When both are set, the card shows a strike-through. */
+  sale_price?: number;
+  /** ISO 4217 currency code; defaults to 'USD' when the source page omits it. */
+  currency?: string;
+  asin?: string;
   featured?: boolean;
 };
 
@@ -92,6 +105,10 @@ export function parseOnlineOffersCatalog(payload: unknown): OnlineOffersCatalog 
       const o = row as UnknownRecord;
       const id = o.id != null ? String(o.id) : '';
       if (!id) continue;
+      const regularRaw = o.regular_price;
+      const saleRaw = o.sale_price;
+      const regular = typeof regularRaw === 'number' ? regularRaw : Number(regularRaw);
+      const sale = typeof saleRaw === 'number' ? saleRaw : Number(saleRaw);
       items.push({
         id,
         title: o.title != null ? String(o.title) : 'Offer',
@@ -104,6 +121,11 @@ export function parseOnlineOffersCatalog(payload: unknown): OnlineOffersCatalog 
         image_url: o.image_url != null ? String(o.image_url) : undefined,
         expires_at: o.expires_at != null ? String(o.expires_at) : undefined,
         affiliate_url: o.affiliate_url != null ? String(o.affiliate_url) : undefined,
+        source_url: o.source_url != null ? String(o.source_url) : undefined,
+        regular_price: Number.isFinite(regular) && regular >= 0 ? regular : undefined,
+        sale_price: Number.isFinite(sale) && sale >= 0 ? sale : undefined,
+        currency: o.currency != null ? String(o.currency).toUpperCase() : undefined,
+        asin: o.asin != null ? String(o.asin) : undefined,
         featured: Boolean(o.featured),
       });
     }

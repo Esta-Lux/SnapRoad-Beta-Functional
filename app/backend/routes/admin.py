@@ -1911,12 +1911,14 @@ def admin_photo_report_reject(
 
 
 from routes.admin_metrics import admin_metrics_router  # noqa: E402
+from routes.admin_link_offers import admin_link_offers_router  # noqa: E402
 
 router.include_router(admin_platform_router)
 router.include_router(admin_concerns_router)
 router.include_router(admin_config_router)
 router.include_router(admin_incidents_router)
 router.include_router(admin_offers_router)
+router.include_router(admin_link_offers_router)
 router.include_router(admin_partners_router)
 router.include_router(admin_campaigns_router)
 router.include_router(admin_rewards_router)

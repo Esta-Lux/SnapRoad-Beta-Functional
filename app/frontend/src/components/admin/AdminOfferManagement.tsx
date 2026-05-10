@@ -1,11 +1,12 @@
 // Offer Management tab — admin offers (replaces figma-ui AdminOfferManagement)
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Gift, Search, Trash2, Upload, FileSpreadsheet, CheckCircle, XCircle, MapPin, Gem, ImageOff } from 'lucide-react'
+import { Gift, Search, Trash2, Upload, FileSpreadsheet, CheckCircle, XCircle, MapPin, Gem, ImageOff, Link2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { adminApi } from '@/services/adminApi'
 import { useSupabaseRealtimeRefresh } from '@/hooks/useSupabaseRealtimeRefresh'
 import OfferLocationPicker from '@/components/admin/OfferLocationPicker'
+import AdminOfferLinkPaster from '@/components/admin/AdminOfferLinkPaster'
 import type { Partner } from '@/types/admin'
 
 interface AdminOfferManagementProps {
@@ -55,6 +56,7 @@ export function AdminOfferManagement({ theme, onNavigate, initialBulkOpen = fals
   const [search, setSearch] = useState('')
   const [bulkOpen, setBulkOpen] = useState(initialBulkOpen)
   const [bulkUploading, setBulkUploading] = useState(false)
+  const [linkPasterOpen, setLinkPasterOpen] = useState(false)
   const [editingAllocation, setEditingAllocation] = useState<AllocationEditor | null>(null)
   const [savingAllocation, setSavingAllocation] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -242,6 +244,16 @@ export function AdminOfferManagement({ theme, onNavigate, initialBulkOpen = fals
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
         </select>
+        <button
+          type="button"
+          onClick={() => setLinkPasterOpen(true)}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium ${
+            isDark ? 'bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200' : 'bg-indigo-100 hover:bg-indigo-200 text-indigo-900'
+          }`}
+        >
+          <Link2 size={18} />
+          Add from link
+        </button>
         <button
           type="button"
           onClick={() => setBulkOpen(true)}
@@ -567,6 +579,15 @@ export function AdminOfferManagement({ theme, onNavigate, initialBulkOpen = fals
           ))}
         </div>
       )}
+
+      <AdminOfferLinkPaster
+        theme={theme}
+        open={linkPasterOpen}
+        onClose={() => setLinkPasterOpen(false)}
+        onPublished={() => {
+          loadOffers()
+        }}
+      />
     </div>
   )
 }

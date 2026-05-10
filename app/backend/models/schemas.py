@@ -346,9 +346,78 @@ class AdminOfferCreate(BaseModel):
     title: Optional[str] = Field(default=None, description="Promo headline; defaults to a short description slice.")
     offer_source: str = "direct"
     original_price: Optional[float] = None
+    sale_price: Optional[float] = Field(default=None, description="Discounted price the buyer pays (absolute, not percent).")
+    source_url: Optional[str] = Field(default=None, description="Original product URL admin pasted into the link unfurler.")
     offer_url: Optional[str] = None
     affiliate_tracking_url: Optional[str] = None
     external_id: Optional[str] = None
+
+
+# ==================== UNFURL / LINK-PASTED OFFERS ====================
+class UnfurlRequest(BaseModel):
+    """POST /api/admin/offers/unfurl — admin pastes a product URL, server returns a preview."""
+
+    url: str = Field(..., min_length=4, description="Product URL the admin wants to mirror as an offer.")
+
+
+class OnlineOfferUpsert(BaseModel):
+    """
+    Body for creating or updating an online offer. Required fields are the
+    minimum the mobile online card can render meaningfully: a title and a link.
+    Everything else is optional and pre-filled by the unfurler.
+    """
+
+    source_url: str = Field(..., min_length=4)
+    affiliate_url: Optional[str] = None
+    asin: Optional[str] = None
+    title: str = Field(..., min_length=1, max_length=240)
+    description: Optional[str] = Field(default=None, max_length=2000)
+    merchant_name: Optional[str] = Field(default=None, max_length=120)
+    merchant_domain: Optional[str] = Field(default=None, max_length=180)
+    image_url: Optional[str] = None
+    regular_price: Optional[float] = Field(default=None, ge=0)
+    sale_price: Optional[float] = Field(default=None, ge=0)
+    currency: Optional[str] = Field(default="USD", max_length=8)
+    discount_label: Optional[str] = Field(default=None, max_length=60)
+    category_slug: Optional[str] = Field(default=None, max_length=60)
+    category_label: Optional[str] = Field(default=None, max_length=120)
+    featured: bool = False
+    status: str = Field(default="active", description="'active' | 'inactive' | 'draft'")
+    expires_at: Optional[str] = Field(default=None, description="ISO 8601; offer is hidden after this point.")
+    raw_metadata: Optional[Dict[str, Any]] = None
+
+
+class OnlineOfferPatch(BaseModel):
+    """PATCH /api/admin/online-offers/{id} — every field optional."""
+
+    affiliate_url: Optional[str] = None
+    title: Optional[str] = Field(default=None, min_length=1, max_length=240)
+    description: Optional[str] = Field(default=None, max_length=2000)
+    merchant_name: Optional[str] = Field(default=None, max_length=120)
+    merchant_domain: Optional[str] = Field(default=None, max_length=180)
+    image_url: Optional[str] = None
+    regular_price: Optional[float] = Field(default=None, ge=0)
+    sale_price: Optional[float] = Field(default=None, ge=0)
+    currency: Optional[str] = Field(default=None, max_length=8)
+    discount_label: Optional[str] = Field(default=None, max_length=60)
+    category_slug: Optional[str] = Field(default=None, max_length=60)
+    category_label: Optional[str] = Field(default=None, max_length=120)
+    featured: Optional[bool] = None
+    status: Optional[str] = None
+    expires_at: Optional[str] = None
+
+
+class OfferFromLinkCreate(BaseModel):
+    """
+    POST /api/admin/offers/from-link — single endpoint that publishes a pasted
+    link as either a local (geo) offer or an online (e-commerce) offer.
+    `destination` picks the table; `payload` carries the (possibly admin-edited)
+    fields the unfurler returned.
+    """
+
+    destination: str = Field(..., description="'online' or 'local'")
+    online: Optional[OnlineOfferUpsert] = None
+    local: Optional[AdminOfferCreate] = None
 
 
 # ==================== AI ====================

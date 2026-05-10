@@ -407,11 +407,26 @@ export default function OffersScreen() {
 
   const renderOnlineCard = (row: OnlineOfferItem) => {
     const expiry = formatExpiryShort(row.expires_at);
+    const currency = (row.currency || 'USD').toUpperCase();
+    const fmtPrice = (n: number) => {
+      try {
+        return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 2 }).format(n);
+      } catch {
+        return `${currency} ${n.toFixed(2)}`;
+      }
+    };
+    const hasSale =
+      typeof row.sale_price === 'number' &&
+      row.sale_price > 0 &&
+      typeof row.regular_price === 'number' &&
+      row.regular_price > row.sale_price;
+    const showSinglePrice = !hasSale && typeof row.sale_price === 'number' && row.sale_price > 0;
+    const outboundUrl = row.affiliate_url || row.source_url || '';
     return (
       <TouchableOpacity
         key={row.id}
         activeOpacity={0.86}
-        onPress={() => void safeOpenAffiliate(row.affiliate_url || '')}
+        onPress={() => void safeOpenAffiliate(outboundUrl)}
         style={{
           flex: 1,
           marginHorizontal: 6,
@@ -448,6 +463,20 @@ export default function OffersScreen() {
           <Text style={{ color: text, fontSize: 14, fontWeight: '900', marginTop: 6 }} numberOfLines={3}>
             {row.title}
           </Text>
+          {hasSale ? (
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: 8, gap: 6 }}>
+              <Text style={{ color: text, fontSize: 14, fontWeight: '900' }}>{fmtPrice(row.sale_price as number)}</Text>
+              <Text
+                style={{ color: sub, fontSize: 11, fontWeight: '700', textDecorationLine: 'line-through' }}
+              >
+                {fmtPrice(row.regular_price as number)}
+              </Text>
+            </View>
+          ) : showSinglePrice ? (
+            <Text style={{ color: text, fontSize: 14, fontWeight: '900', marginTop: 8 }}>
+              {fmtPrice(row.sale_price as number)}
+            </Text>
+          ) : null}
           {expiry ? <Text style={{ color: sub, fontSize: 10, marginTop: 8, fontWeight: '700' }}>Ends {expiry}</Text> : null}
         </View>
       </TouchableOpacity>

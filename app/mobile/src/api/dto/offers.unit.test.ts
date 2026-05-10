@@ -53,6 +53,63 @@ test('parseOnlineOffersCatalog extracts online feed envelope', () => {
   assert.equal(cat.provider, 'placeholder');
 });
 
+test('parseOnlineOffersCatalog hydrates regular_price/sale_price/currency for paste-link offers', () => {
+  const payload = {
+    success: true,
+    data: {
+      items: [
+        {
+          id: 'oo-1',
+          title: 'Acme Wireless Earbuds',
+          merchant_name: 'Acme',
+          merchant_domain: 'acme.example',
+          source_url: 'https://acme.example/p/earbuds',
+          affiliate_url: 'https://acme.example/p/earbuds?aff=snaproad',
+          image_url: 'https://cdn.acme.example/hero.jpg',
+          regular_price: 129.99,
+          sale_price: 79.99,
+          currency: 'usd',
+          asin: 'B0CHX1W1XY',
+          discount_label: '38% off',
+          featured: true,
+        },
+      ],
+      categories: [],
+      next_cursor: null,
+    },
+  };
+  const cat = parseOnlineOffersCatalog(payload);
+  assert.equal(cat.items.length, 1);
+  const item = cat.items[0];
+  assert.equal(item.regular_price, 129.99);
+  assert.equal(item.sale_price, 79.99);
+  // Currency is normalised to upper-case so the mobile Intl formatter accepts it.
+  assert.equal(item.currency, 'USD');
+  assert.equal(item.source_url, 'https://acme.example/p/earbuds');
+  assert.equal(item.asin, 'B0CHX1W1XY');
+  assert.equal(item.featured, true);
+});
+
+test('parseOnlineOffersCatalog drops negative or non-finite prices safely', () => {
+  const payload = {
+    success: true,
+    data: {
+      items: [
+        { id: 'a', title: 'A', regular_price: -5, sale_price: 'not-a-number' },
+        { id: 'b', title: 'B', regular_price: 0, sale_price: 0 },
+      ],
+      categories: [],
+      next_cursor: null,
+    },
+  };
+  const cat = parseOnlineOffersCatalog(payload);
+  assert.equal(cat.items[0].regular_price, undefined);
+  assert.equal(cat.items[0].sale_price, undefined);
+  // Zero is a legitimate "free" price; it must round-trip rather than vanish.
+  assert.equal(cat.items[1].regular_price, 0);
+  assert.equal(cat.items[1].sale_price, 0);
+});
+
 test('parseRedeemOfferPayload parses important fields', () => {
   const parsed = parseRedeemOfferPayload({
     data: {
