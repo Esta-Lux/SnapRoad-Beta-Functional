@@ -395,7 +395,6 @@ def get_navigation_nearby_offers(
 ):
     from routes.offers import _active_offers_source
 
-    guest_id = str(request.headers.get("x-snaproad-guest-id") or "").strip()
     if auth_user:
         user_id, user_locations, user_routes = _resolve_user_scoped_data(auth_user)
         profile = get_user_snapshot(user_id)
