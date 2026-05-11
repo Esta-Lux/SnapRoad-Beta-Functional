@@ -12,6 +12,7 @@ stays readable for the mobile app's React Native `<Text>` renderer:
 from __future__ import annotations
 
 from services.legal_text import html_to_plain_text
+from routes.legal import _is_public, _matches_public_slug
 
 
 def test_plain_text_passthrough_when_no_html() -> None:
@@ -121,3 +122,11 @@ def test_seed_privacy_renders_readably() -> None:
     assert "Columbus, OH" in out
     assert "California Privacy Rights" in out
     assert "<table>" not in out
+
+
+def test_public_legal_slug_matching_accepts_admin_aliases() -> None:
+    assert _is_public({"status": "active"})
+    assert _is_public({"status": "published"})
+    assert _matches_public_slug({"slug": "", "type": "privacy", "name": "Privacy"}, "privacy-policy")
+    assert _matches_public_slug({"slug": "", "type": "terms", "name": "Terms"}, "terms-of-service")
+    assert not _matches_public_slug({"slug": "cookie-policy", "type": "privacy", "name": "Cookie Policy"}, "privacy-policy")

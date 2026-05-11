@@ -16,6 +16,29 @@ router = APIRouter(prefix="/api/legal", tags=["Legal"])
 PUBLIC_STATUSES = ("published", "active")
 
 
+def _normalized(value: object) -> str:
+    return str(value or "").strip().lower().replace("_", "-").replace(" ", "-")
+
+
+def _is_public(row: dict) -> bool:
+    return _normalized(row.get("status")) in PUBLIC_STATUSES
+
+
+def _matches_public_slug(row: dict, slug: str) -> bool:
+    wanted = _normalized(slug)
+    slug_value = _normalized(row.get("slug"))
+    type_value = _normalized(row.get("type"))
+    name_value = _normalized(row.get("name"))
+    hay = f"{slug_value} {type_value} {name_value}"
+    if "cookie" in hay or "api-terms" in hay or "developer" in hay or "partner" in hay:
+        return False
+    if wanted == "privacy-policy":
+        return slug_value == wanted or type_value == "privacy" or name_value in {"privacy", "privacy-policy"}
+    if wanted == "terms-of-service":
+        return slug_value in {wanted, "terms"} or type_value == "terms" or name_value in {"terms", wanted}
+    return slug_value == wanted
+
+
 def _augment_with_plain_text(row: dict) -> dict:
     """
     Mobile clients render the doc body in a React Native `<Text>` block, so
@@ -33,15 +56,16 @@ def list_legal_documents(required_only: bool = Query(default=False)):
     """Return all published legal documents (summary, no full content)."""
     try:
         sb = get_supabase()
-        q = (
+        result = (
             sb.table("legal_documents")
             .select("id,slug,name,type,version,description,status,is_required,created_at,last_updated")
-            .in_("status", PUBLIC_STATUSES)
+            .order("name")
+            .execute()
         )
+        rows = [row for row in (result.data or []) if _is_public(row)]
         if required_only:
-            q = q.eq("is_required", True)
-        result = q.order("name").execute()
-        return {"success": True, "data": result.data or []}
+            rows = [row for row in rows if row.get("is_required") is True]
+        return {"success": True, "data": rows}
     except Exception as e:
         logger.warning("list_legal_documents: %s", e)
         return {"success": True, "data": []}
@@ -62,14 +86,22 @@ def get_legal_document_by_slug(slug: str):
             sb.table("legal_documents")
             .select("*")
             .eq("slug", slug)
-            .in_("status", PUBLIC_STATUSES)
             .order("last_updated", desc=True)
             .limit(1)
             .execute()
         )
-        if not result.data:
+        rows = [row for row in (result.data or []) if _is_public(row)]
+        if not rows:
+            all_result = (
+                sb.table("legal_documents")
+                .select("*")
+                .order("last_updated", desc=True)
+                .execute()
+            )
+            rows = [row for row in (all_result.data or []) if _is_public(row) and _matches_public_slug(row, slug)]
+        if not rows:
             raise HTTPException(status_code=404, detail="Document not found")
-        return {"success": True, "data": _augment_with_plain_text(result.data[0])}
+        return {"success": True, "data": _augment_with_plain_text(rows[0])}
     except HTTPException:
         raise
     except Exception as e:
@@ -86,13 +118,13 @@ def get_legal_document(doc_id: str):
             sb.table("legal_documents")
             .select("*")
             .eq("id", doc_id)
-            .in_("status", PUBLIC_STATUSES)
             .limit(1)
             .execute()
         )
-        if not result.data:
+        rows = [row for row in (result.data or []) if _is_public(row)]
+        if not rows:
             raise HTTPException(status_code=404, detail="Document not found")
-        return {"success": True, "data": _augment_with_plain_text(result.data[0])}
+        return {"success": True, "data": _augment_with_plain_text(rows[0])}
     except HTTPException:
         raise
     except Exception as e:

@@ -5,6 +5,7 @@ import * as Device from 'expo-device';
 import type { ApiResponse, AuthResponse, LoginRequest, SignupRequest } from '../types';
 import { supabase } from '../lib/supabase';
 import { isMapboxPublicTokenConfigured } from '../config/mapbox';
+import { getOrCreateGuestId } from '../utils/guestIdentity';
 
 const TOKEN_KEY = 'snaproad_token';
 const IS_PRODUCTION = String(process.env.APP_ENV || process.env.ENVIRONMENT || process.env.NODE_ENV || '').toLowerCase() === 'production';
@@ -265,11 +266,13 @@ class ApiService {
     retryCount = 0,
   ): Promise<ApiResponse<T>> {
     const token = await this.getToken();
+    const guestId = await getOrCreateGuestId();
     const url = `${apiBaseUrl}${endpoint}`;
     const attachAuth = this.shouldAttachAuth(endpoint);
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
       'Bypass-Tunnel-Reminder': 'true',
+      'X-SnapRoad-Guest-Id': guestId,
       ...(attachAuth && token && { Authorization: `Bearer ${token}` }),
       ...(options.headers as Record<string, string>),
     };

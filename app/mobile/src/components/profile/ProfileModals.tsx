@@ -4,6 +4,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import SheetModal from '../common/Modal';
 import { PLANS } from '../../constants/plans';
+import { fetchPublicLegalDocument } from '../../api/legalDocuments';
+import type { PublicLegalSlug } from '../../api/dto/legal';
 import type { PlanTier } from '../../types';
 export function LevelProgressModal({
   visible,
@@ -127,9 +129,23 @@ export function PlanModal(props: {
     restoreInFlight,
   } = props;
   const [selected, setSelected] = useState<PlanTier | null>(null);
+  const [legalModal, setLegalModal] = useState<{ title: string; body: string } | null>(null);
+  const [legalLoading, setLegalLoading] = useState<PublicLegalSlug | null>(null);
 
   const handleContinue = () => {
     if (selected) { onSelectPlan(selected); }
+  };
+
+  const openLegal = async (slug: PublicLegalSlug, fallback?: () => void) => {
+    setLegalLoading(slug);
+    try {
+      const doc = await fetchPublicLegalDocument(slug);
+      setLegalModal({ title: doc.title, body: doc.body });
+    } catch {
+      fallback?.();
+    } finally {
+      setLegalLoading(null);
+    }
   };
 
   const PLAN_ICONS: Record<PlanTier, string> = { basic: 'shield-outline', premium: 'flash-outline', family: 'people-outline' };
@@ -142,6 +158,15 @@ export function PlanModal(props: {
       <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
         <View style={[styles.planModalSheet, { backgroundColor: cardBg }]} onStartShouldSetResponder={() => true}>
           <View style={styles.modalHandle} />
+          <TouchableOpacity
+            style={[styles.planCloseButton, { backgroundColor: isLight ? 'rgba(15,23,42,0.06)' : 'rgba(255,255,255,0.08)' }]}
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close plan selection"
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="close" size={18} color={sub} />
+          </TouchableOpacity>
           <View style={{ alignItems: 'center', marginBottom: 16 }}>
             <Ionicons name="sparkles" size={18} color="#FF9500" />
             <Text style={{ color: '#FF9500', fontSize: 11, fontWeight: '700', letterSpacing: 1, marginTop: 4, textTransform: 'uppercase' }}>Choose your plan</Text>
@@ -282,7 +307,7 @@ export function PlanModal(props: {
               ) : null}
               {onOpenTerms ? (
                 <TouchableOpacity
-                  onPress={onOpenTerms}
+                  onPress={() => void openLegal('terms-of-service', onOpenTerms)}
                   accessibilityRole="link"
                   accessibilityLabel="Terms of Service"
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -295,7 +320,7 @@ export function PlanModal(props: {
               ) : null}
               {onOpenPrivacy ? (
                 <TouchableOpacity
-                  onPress={onOpenPrivacy}
+                  onPress={() => void openLegal('privacy-policy', onOpenPrivacy)}
                   accessibilityRole="link"
                   accessibilityLabel="Privacy Policy"
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -305,6 +330,25 @@ export function PlanModal(props: {
               ) : null}
             </View>
           </View>
+          <Modal visible={!!legalModal || !!legalLoading} transparent animationType="fade" onRequestClose={() => setLegalModal(null)}>
+            <View style={styles.legalOverlay}>
+              <View style={[styles.legalCard, { backgroundColor: cardBg }]}>
+                <View style={styles.legalHeader}>
+                  <Text style={[styles.legalTitle, { color: text }]}>
+                    {legalModal?.title || (legalLoading === 'privacy-policy' ? 'Privacy Policy' : 'Terms of Service')}
+                  </Text>
+                  <TouchableOpacity onPress={() => setLegalModal(null)} accessibilityRole="button" accessibilityLabel="Close legal document">
+                    <Ionicons name="close" size={20} color={sub} />
+                  </TouchableOpacity>
+                </View>
+                <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator>
+                  <Text style={[styles.legalBody, { color: sub }]}>
+                    {legalModal?.body || 'Loading...'}
+                  </Text>
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
         </View>
       </TouchableOpacity>
     </Modal>
@@ -331,6 +375,7 @@ const styles = StyleSheet.create({
   modalHandle: { width: 36, height: 4, backgroundColor: '#444', borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
   modalTitle: { fontSize: 20, fontWeight: '800', textAlign: 'center', marginBottom: 16 },
   planModalSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: 24, maxHeight: '92%' },
+  planCloseButton: { position: 'absolute', top: 14, right: 14, width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', zIndex: 2 },
   planCardNew: { borderRadius: 18, borderWidth: 1.5, padding: 16, marginBottom: 12, overflow: 'hidden', position: 'relative' as const },
   popularBadge: { position: 'absolute' as const, top: 0, right: 0, borderBottomLeftRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
   popularBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
@@ -342,6 +387,11 @@ const styles = StyleSheet.create({
   iapLinkRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' },
   iapLinkText: { fontSize: 12, fontWeight: '700', textDecorationLine: 'underline' },
   iapLinkSep: { fontSize: 12 },
+  legalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  legalCard: { width: '100%', maxHeight: '72%', borderRadius: 20, padding: 16 },
+  legalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 },
+  legalTitle: { flex: 1, fontSize: 18, fontWeight: '900' },
+  legalBody: { fontSize: 13, lineHeight: 20 },
   upgradeBtn: { backgroundColor: '#3B82F6', borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 12 },
   upgradeBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   modalInput: { borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, marginBottom: 12 },

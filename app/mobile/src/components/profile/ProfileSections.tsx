@@ -15,7 +15,8 @@ import {
 } from 'react-native';
 import Constants from 'expo-constants';
 import { api } from '../../api/client';
-import { publicLegalSlugForDoc, selectLegalBody, type LegalDocDetailRow, type LegalDocSummary, type PublicLegalSlug } from '../../api/dto/legal';
+import { publicLegalSlugForDoc, type LegalDocSummary, type PublicLegalSlug } from '../../api/dto/legal';
+import { fetchPublicLegalDocument } from '../../api/legalDocuments';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Skeleton from '../common/Skeleton';
@@ -622,13 +623,8 @@ export function AboutCard({ cardBg, text, sub }: { cardBg: string; text: string;
   const openLegalDoc = async (doc: { id?: string; name: string; slug: PublicLegalSlug }) => {
     setLegalLoading(true);
     try {
-      const path = doc.id ? `/api/legal/documents/${doc.id}` : `/api/legal/documents/by-slug/${doc.slug}`;
-      let res = await api.get(path);
-      if (!res.success && doc.id) {
-        res = await api.get(`/api/legal/documents/by-slug/${doc.slug}`);
-      }
-      const row = (res.data as { data?: LegalDocDetailRow })?.data;
-      setLegalModal({ title: doc.name, body: selectLegalBody(row) });
+      const detail = await fetchPublicLegalDocument(doc.slug, doc.id);
+      setLegalModal({ title: detail.title || doc.name, body: detail.body });
     } catch {
       Alert.alert(doc.name, 'Could not load this document. Check your connection and try again.');
     } finally {

@@ -762,6 +762,26 @@ export default function MapScreen() {
     setNavLogicCoords([]);
   }, []);
 
+  useEffect(() => {
+    if (!nav.isNavigating) {
+      setNavLogicRuntimeDisabled(false);
+      return;
+    }
+    if (!navLogicEffective) return;
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') return;
+      try {
+        navLogicRef.current?.stopNavigation?.();
+      } catch (error) {
+        console.warn('[NavLogicSDK] background stop failed', error);
+      }
+      resetNavSdkState();
+      setNavLogicRuntimeDisabled(true);
+      setNavLogicCoords([]);
+    });
+    return () => sub.remove();
+  }, [nav.isNavigating, navLogicEffective]);
+
   /**
    * `navLogicCoords` is the `coordinates` prop on the hidden
    * `MapboxNavigationView`. A new `coordinates` value is an instruction to

@@ -826,6 +826,7 @@ def create_offer(offer: OfferCreate, user: CurrentUser):
 # e.g. `nearby` as an offer id (GET /offers/nearby → 404 "Offer not found").
 @router.get("/offers/nearby")
 def get_nearby_offers(
+    request: Request,
     auth_user: OptionalUser = None,
     lat: float = 39.9612,
     lng: float = -82.9988,
@@ -833,51 +834,57 @@ def get_nearby_offers(
     radius: Annotated[float, Query(ge=0.1, le=200)] = 10.0,
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
-    cache_lat = round(lat, 2)
-    cache_lng = round(lng, 2)
-    key = f"offers_nearby:{cache_lat}:{cache_lng}:{radius}"
-    user_id = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
-    cached = cache_get(key)
-    if cached:
-        return _finalize_nearby_cached_response(cached, user_id)
-    nearby = []
-    aff_user = user_id or "anonymous"
-    source = _active_offers_source(limit=500)
-    _hydrate_offer_coordinates_from_locations(source)
-    for offer in source:
-        if not _coord_ok(offer.get("lat"), offer.get("lng")):
-            continue
-        o_lat = float(offer["lat"])
-        o_lng = float(offer["lng"])
-        dlat = abs(o_lat - lat)
-        dlng = abs(o_lng - lng)
-        dist_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
-        if dist_km <= radius:
-            affinity_score, boosted = _user_offer_affinity(aff_user, offer)
-            row = {
-                **offer,
-                "gem_cost": offer.get("base_gems", 0),
-                "distance_km": round(dist_km, 2),
-                "offer_type": _offer_type(offer),
-                "boost_multiplier": offer.get("boost_multiplier", 1.0),
-                "boost_expiry": offer.get("boost_expiry"),
-                "allocated_locations": offer.get("allocated_locations", []),
-                "relevance_score": round(affinity_score - dist_km * 2.5, 2),
-                "is_boosted_active": boosted,
-            }
-            attach_offer_category_fields(row)
-            nearby.append(row)
-    nearby.sort(key=lambda x: (x.get("relevance_score", 0), -(x["distance_km"])), reverse=True)
-    trimmed = nearby[:limit]
     try:
-        from services.place_offer_enrichment import enrich_offers_with_place_photo_references
+        cache_lat = round(lat, 2)
+        cache_lng = round(lng, 2)
+        key = f"offers_nearby:{cache_lat}:{cache_lng}:{radius}"
+        auth_user = auth_user or {}
+        guest_id = str(request.headers.get("x-snaproad-guest-id") or "").strip()
+        user_id = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
+        affinity_user = user_id or guest_id or "anonymous"
+        cached = cache_get(key)
+        if cached:
+            return _finalize_nearby_cached_response(cached, user_id)
+        nearby = []
+        source = _active_offers_source(limit=500)
+        _hydrate_offer_coordinates_from_locations(source)
+        for offer in source:
+            if not _coord_ok(offer.get("lat"), offer.get("lng")):
+                continue
+            o_lat = float(offer["lat"])
+            o_lng = float(offer["lng"])
+            dlat = abs(o_lat - lat)
+            dlng = abs(o_lng - lng)
+            dist_km = ((dlat * 111) ** 2 + (dlng * 111) ** 2) ** 0.5
+            if dist_km <= radius:
+                affinity_score, boosted = _user_offer_affinity(affinity_user, offer)
+                row = {
+                    **offer,
+                    "gem_cost": offer.get("base_gems", 0),
+                    "distance_km": round(dist_km, 2),
+                    "offer_type": _offer_type(offer),
+                    "boost_multiplier": offer.get("boost_multiplier", 1.0),
+                    "boost_expiry": offer.get("boost_expiry"),
+                    "allocated_locations": offer.get("allocated_locations", []),
+                    "relevance_score": round(affinity_score - dist_km * 2.5, 2),
+                    "is_boosted_active": boosted,
+                }
+                attach_offer_category_fields(row)
+                nearby.append(row)
+        nearby.sort(key=lambda x: (x.get("relevance_score", 0), -(x["distance_km"])), reverse=True)
+        trimmed = nearby[:limit]
+        try:
+            from services.place_offer_enrichment import enrich_offers_with_place_photo_references
 
-        enrich_offers_with_place_photo_references(trimmed)
+            enrich_offers_with_place_photo_references(trimmed)
+        except Exception:
+            logger.debug("offer place photo enrichment skipped", exc_info=True)
+        result = {"success": True, "data": trimmed, "count": len(trimmed)}
+        cache_set(key, result, ttl=300)
+        return _finalize_nearby_cached_response(result, user_id)
     except Exception:
-        logger.debug("offer place photo enrichment skipped", exc_info=True)
-    result = {"success": True, "data": trimmed, "count": len(trimmed)}
-    cache_set(key, result, ttl=300)
-    return _finalize_nearby_cached_response(result, user_id)
+        logger.warning("offers_nearby failed; returning empty public feed", exc_info=True)
+        return {"success": True, "data": [], "count": 0}
 
 
 @router.get("/offers/online")
@@ -1244,11 +1251,14 @@ def validate_offer_qr(body: dict):
 
 
 @router.post("/offers/{offer_id}/view")
-def track_offer_view(offer_id: str, body: dict, auth_user: CurrentUser):
+def track_offer_view(request: Request, offer_id: str, body: dict, auth_user: OptionalUser = None):
     offer = _resolve_offer_by_id(offer_id)
     if not offer:
         raise HTTPException(status_code=404, detail="Offer not found")
+    auth_user = auth_user or {}
     user_id = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
+    if not user_id:
+        user_id = str(request.headers.get("x-snaproad-guest-id") or "").strip()
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
     event = record_offer_event(
