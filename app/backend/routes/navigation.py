@@ -395,13 +395,13 @@ def get_navigation_nearby_offers(
 ):
     from routes.offers import _active_offers_source
 
+    guest_id = str(request.headers.get("x-snaproad-guest-id") or "").strip()
     if auth_user:
         user_id, user_locations, user_routes = _resolve_user_scoped_data(auth_user)
         profile = get_user_snapshot(user_id)
         prior_visits = profile.get("saved_locations", user_locations) or user_locations
         history = profile.get("saved_routes", user_routes) or user_routes
     else:
-        guest_id = str(request.headers.get("x-snaproad-guest-id") or "").strip()
         user_id = guest_id or f"guest-trip-{trip_id}"
         prior_visits = []
         history = []
