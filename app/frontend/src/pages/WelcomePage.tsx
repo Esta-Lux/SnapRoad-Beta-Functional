@@ -450,6 +450,13 @@ export default function WelcomePage() {
                 >
                   Terms of Service
                 </Link>
+                <span className="text-slate-700">|</span>
+                <Link
+                  to="/community-guidelines"
+                  className="text-slate-400 hover:text-white transition-colors bg-transparent border-0 p-0 text-sm font-inherit"
+                >
+                  Community Guidelines
+                </Link>
               </div>
             </div>
           </div>

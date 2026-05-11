@@ -16,6 +16,7 @@ import PartnerDashboard from './pages/PartnerDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 import DriverApp from './pages/DriverApp'
 import DriverWebRetiredPage from './pages/DriverWebRetiredPage'
+import PublicLegalPage from './pages/PublicLegalPage'
 import { NavigationCoreProvider } from './contexts/NavigationCoreContext'
 import { MapboxProvider } from './contexts/MapboxContext'
 import { ThemeProvider } from './contexts/ThemeContext'
@@ -27,7 +28,6 @@ import BillingPage from './pages/PartnerPortal/BillingPage'
 import ScannerPage from './pages/PartnerPortal/ScannerPage'
 import PartnerOffersPage from './pages/PartnerOffersPage'
 import PartnerRedemptionsPage from './pages/PartnerRedemptionsPage'
-import LegalDocumentPage from './pages/LegalDocumentPage'
 import { isPartnerPortalPrimarySite } from '@/lib/siteProfile'
 
 function App() {
@@ -69,6 +69,9 @@ function App() {
               )
             }
           />
+          <Route path="/privacy" element={<PublicLegalPage docKey="privacy" />} />
+          <Route path="/terms" element={<PublicLegalPage docKey="terms" />} />
+          <Route path="/community-guidelines" element={<PublicLegalPage docKey="community" />} />
 
           {partnerPrimary ? (
             <>
@@ -84,16 +87,6 @@ function App() {
 
           <Route path="/scan/:partnerId/:token" element={<TeamScanPage />} />
           <Route path="/scan/:partnerId" element={<TeamScanPage />} />
-          {/* Public legal pages — content lives in `legal_documents` and is
-              edited by admins from the Legal & Compliance tab. */}
-          <Route
-            path="/terms"
-            element={<LegalDocumentPage slug="terms-of-service" fallbackTitle="Terms of Service" />}
-          />
-          <Route
-            path="/privacy"
-            element={<LegalDocumentPage slug="privacy-policy" fallbackTitle="Privacy Policy" />}
-          />
           <Route path="/portal/partner/welcome" element={<PartnerWelcomePage />} />
           <Route path="/portal/partner/sign-in" element={<PartnerSignInPage />} />
           <Route path="/portal/partner" element={<PartnerGuard><PartnerDashboard /></PartnerGuard>} />

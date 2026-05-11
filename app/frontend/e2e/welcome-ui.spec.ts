@@ -15,4 +15,11 @@ test.describe('driver welcome landing', () => {
     await page.getByTestId('get-started-btn').click()
     await expect(page.getByRole('button', { name: /create account/i })).toBeVisible()
   })
+
+  test('footer legal links navigate to public pages', async ({ page }) => {
+    await goWelcome(page)
+    await page.getByRole('link', { name: /privacy policy/i }).click()
+    await expect(page).toHaveURL(/\/privacy$/)
+    await expect(page.getByTestId('legal-page-privacy')).toBeVisible()
+  })
 })

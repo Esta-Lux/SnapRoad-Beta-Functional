@@ -52,6 +52,15 @@ test.describe('routing and auth guards', () => {
     await expect(page).toHaveURL(/\/auth\/partner-signup/)
   })
 
+  test('public legal routes render', async ({ page }) => {
+    await gotoReady(page, '/privacy')
+    await expect(page.getByTestId('legal-page-privacy')).toBeVisible()
+    await gotoReady(page, '/terms')
+    await expect(page.getByTestId('legal-page-terms')).toBeVisible()
+    await gotoReady(page, '/community-guidelines')
+    await expect(page.getByTestId('legal-page-community')).toBeVisible()
+  })
+
   test('team scan without token shows invalid link', async ({ page }) => {
     await gotoReady(page, '/scan/demo-partner')
     await expect(page.getByRole('heading', { name: 'Invalid Link' })).toBeVisible()

@@ -112,10 +112,17 @@ jobs:
     defaults:
       run:
         working-directory: app/mobile
+    env:
+      EXPO_PUBLIC_API_URL: https://api.snaproad.app
+      APP_ENV: production
+      EAS_BUILD_PROFILE: production
+      EXPO_PUBLIC_NAV_LOGIC_DEBUG: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
       - run: npm ci
+      - run: npm test
       - run: npx tsc --noEmit
+      - run: npx expo export --platform ios --platform android --output-dir dist-export --clear
