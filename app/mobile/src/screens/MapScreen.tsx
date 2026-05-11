@@ -149,6 +149,7 @@ import {
 } from '../navigation/turnCardModel';
 import { sdkGuidanceStabilityKey } from '../navigation/sdkGuidanceUiKeys';
 import { sdkManeuverDisplayDistanceFromProgress } from '../navigation/sdkNavBridgePayload';
+import { destinationCrowMeters, shouldAcceptFinalDestinationArrival } from '../navigation/navArrivalGuard';
 import { useTurnConfirmationUntil } from '../hooks/useTurnConfirmationWindow';
 import { useMapWeather, weatherOverlayFactor } from '../hooks/useMapWeather';
 import MapWeatherOverlay from '../components/map/MapWeatherOverlay';
@@ -847,6 +848,11 @@ export default function MapScreen() {
     ingestSdkVoiceSubtitle(t);
   }, []);
 
+  const sdkArrivalCallbackStreakRef = useRef(0);
+  useEffect(() => {
+    if (!nav.isNavigating) sdkArrivalCallbackStreakRef.current = 0;
+  }, [nav.isNavigating]);
+
   const handleSdkFinalDestinationArrival = useCallback(() => {
     const dest = nav.navigationData?.destination;
     const progress = nav.navigationProgress;
@@ -868,20 +874,17 @@ export default function MapScreen() {
       matched && Number.isFinite(matched.longitude)
         ? matched.longitude
         : nav.navigationProgressCoord.lng;
-    const crow =
-      dest && Number.isFinite(dest.lat) && Number.isFinite(dest.lng) && Number.isFinite(lat) && Number.isFinite(lng)
-        ? haversineMeters(lat, lng, dest.lat, dest.lng)
-        : Number.POSITIVE_INFINITY;
-    const timeNear =
-      typeof remainingSec === 'number' &&
-      Number.isFinite(remainingSec) &&
-      remainingSec <= 180;
-    const distanceNear =
-      typeof remainingMeters === 'number' &&
-      Number.isFinite(remainingMeters) &&
-      remainingMeters <= 260;
-    const physicallyAtDestination = crow <= 55;
-    if (!physicallyAtDestination && (!timeNear || !distanceNear)) {
+    const matchedCoord = Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+    const crow = destinationCrowMeters(dest ?? null, matchedCoord, null);
+    const accepted = shouldAcceptFinalDestinationArrival({
+      destination: dest ?? null,
+      matched: matchedCoord,
+      fallback: null,
+      remainingMeters,
+      remainingSeconds: remainingSec,
+    });
+    if (!accepted) {
+      sdkArrivalCallbackStreakRef.current = 0;
       if (__DEV__) {
         console.warn('[MapScreen] Ignored early SDK arrival callback', {
           remainingSec,
@@ -891,7 +894,9 @@ export default function MapScreen() {
       }
       return;
     }
-    nav.completeNavigationAtDestination();
+    sdkArrivalCallbackStreakRef.current += 1;
+    if (sdkArrivalCallbackStreakRef.current < 2) return;
+    requestAnimationFrame(() => nav.completeNavigationAtDestination());
   }, [
     nav.navigationData?.destination?.lat,
     nav.navigationData?.destination?.lng,

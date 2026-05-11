@@ -13,6 +13,8 @@ from services.legal_text import html_to_plain_text
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/legal", tags=["Legal"])
 
+PUBLIC_STATUSES = ("published", "active")
+
 
 def _augment_with_plain_text(row: dict) -> dict:
     """
@@ -34,7 +36,7 @@ def list_legal_documents(required_only: bool = Query(default=False)):
         q = (
             sb.table("legal_documents")
             .select("id,slug,name,type,version,description,status,is_required,created_at,last_updated")
-            .eq("status", "published")
+            .in_("status", PUBLIC_STATUSES)
         )
         if required_only:
             q = q.eq("is_required", True)
@@ -60,7 +62,7 @@ def get_legal_document_by_slug(slug: str):
             sb.table("legal_documents")
             .select("*")
             .eq("slug", slug)
-            .eq("status", "published")
+            .in_("status", PUBLIC_STATUSES)
             .order("last_updated", desc=True)
             .limit(1)
             .execute()
@@ -84,7 +86,7 @@ def get_legal_document(doc_id: str):
             sb.table("legal_documents")
             .select("*")
             .eq("id", doc_id)
-            .eq("status", "published")
+            .in_("status", PUBLIC_STATUSES)
             .limit(1)
             .execute()
         )

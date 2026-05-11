@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import Constants from 'expo-constants';
 import { api } from '../../api/client';
-import { selectLegalBody, type LegalDocDetailRow } from '../../api/dto/legal';
+import { publicLegalSlugForDoc, selectLegalBody, type LegalDocDetailRow, type LegalDocSummary, type PublicLegalSlug } from '../../api/dto/legal';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Skeleton from '../common/Skeleton';
@@ -603,7 +603,7 @@ function extraConfig(): { supportEmail?: string; iosAppStoreId?: string; android
 }
 
 export function AboutCard({ cardBg, text, sub }: { cardBg: string; text: string; sub: string }) {
-  const [legalDocs, setLegalDocs] = React.useState<{ id: string; name: string; type?: string }[]>([]);
+  const [legalDocs, setLegalDocs] = React.useState<LegalDocSummary[]>([]);
   const [legalModal, setLegalModal] = React.useState<{ title: string; body: string } | null>(null);
   const [legalLoading, setLegalLoading] = React.useState(false);
 
@@ -611,7 +611,7 @@ export function AboutCard({ cardBg, text, sub }: { cardBg: string; text: string;
     (async () => {
       try {
         const res = await api.get('/api/legal/documents');
-        const payload = res.data as { data?: { id: string; name: string; type?: string }[] };
+        const payload = res.data as { data?: LegalDocSummary[] };
         if (res.success && Array.isArray(payload?.data)) setLegalDocs(payload.data);
       } catch {
         /* ignore */
@@ -619,10 +619,14 @@ export function AboutCard({ cardBg, text, sub }: { cardBg: string; text: string;
     })();
   }, []);
 
-  const openLegalDoc = async (doc: { id: string; name: string }) => {
+  const openLegalDoc = async (doc: { id?: string; name: string; slug: PublicLegalSlug }) => {
     setLegalLoading(true);
     try {
-      const res = await api.get(`/api/legal/documents/${doc.id}`);
+      const path = doc.id ? `/api/legal/documents/${doc.id}` : `/api/legal/documents/by-slug/${doc.slug}`;
+      let res = await api.get(path);
+      if (!res.success && doc.id) {
+        res = await api.get(`/api/legal/documents/by-slug/${doc.slug}`);
+      }
       const row = (res.data as { data?: LegalDocDetailRow })?.data;
       setLegalModal({ title: doc.name, body: selectLegalBody(row) });
     } catch {
@@ -662,23 +666,15 @@ export function AboutCard({ cardBg, text, sub }: { cardBg: string; text: string;
     Linking.openURL(mail).catch(() => Alert.alert('Contact support', `Email us at ${supportEmail}`));
   };
 
-  const publicLegalDocs = legalDocs.filter((d) => {
-    const name = d.name.trim().toLowerCase();
-    const type = (d.type || '').trim().toLowerCase();
-    return (
-      name === 'privacy policy' ||
-      name === 'terms of service' ||
-      type === 'privacy' ||
-      type === 'terms'
-    ) && !/cookie|api\s*terms|developer|partner/i.test(d.name);
-  });
-  const legalRows =
-    publicLegalDocs.length > 0
-      ? publicLegalDocs.map((d) => ({ label: d.name, docId: d.id }))
-      : [
-          { label: 'Privacy Policy', docId: '' as const },
-          { label: 'Terms of Service', docId: '' as const },
-        ];
+  const docsBySlug = new Map<PublicLegalSlug, LegalDocSummary>();
+  for (const doc of legalDocs) {
+    const slug = publicLegalSlugForDoc(doc);
+    if (slug && !docsBySlug.has(slug)) docsBySlug.set(slug, doc);
+  }
+  const legalRows: { label: string; docId?: string; slug: PublicLegalSlug }[] = [
+    { label: docsBySlug.get('privacy-policy')?.name || 'Privacy Policy', docId: docsBySlug.get('privacy-policy')?.id, slug: 'privacy-policy' },
+    { label: docsBySlug.get('terms-of-service')?.name || 'Terms of Service', docId: docsBySlug.get('terms-of-service')?.id, slug: 'terms-of-service' },
+  ];
 
   return (
     <View style={[styles.card, { backgroundColor: cardBg }]}>
@@ -699,8 +695,7 @@ export function AboutCard({ cardBg, text, sub }: { cardBg: string; text: string;
           key={`legal-${i}`}
           style={styles.aboutRow}
           onPress={() => {
-            if (item.docId) openLegalDoc({ id: item.docId, name: item.label });
-            else Alert.alert(item.label, 'Your team has not published this document yet. It will appear here once it is set to Published in the admin portal.');
+            openLegalDoc({ id: item.docId, name: item.label, slug: item.slug });
           }}
           activeOpacity={0.7}
           disabled={legalLoading}

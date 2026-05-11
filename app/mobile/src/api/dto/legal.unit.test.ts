@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { LEGAL_BODY_FALLBACK, selectLegalBody } from './legal';
+import { LEGAL_BODY_FALLBACK, publicLegalSlugForDoc, selectLegalBody } from './legal';
 
 test('selectLegalBody returns the fallback when the row is missing or empty', () => {
   assert.equal(selectLegalBody(null), LEGAL_BODY_FALLBACK);
@@ -46,4 +46,16 @@ test('selectLegalBody returns the fallback when every candidate is empty whitesp
     description: '',
   });
   assert.equal(out, LEGAL_BODY_FALLBACK);
+});
+
+test('publicLegalSlugForDoc maps admin docs by slug, type, and name aliases', () => {
+  assert.equal(publicLegalSlugForDoc({ slug: 'privacy-policy', name: 'Privacy', type: 'custom' }), 'privacy-policy');
+  assert.equal(publicLegalSlugForDoc({ slug: '', name: 'Terms of Service', type: 'legal' }), 'terms-of-service');
+  assert.equal(publicLegalSlugForDoc({ slug: null, name: 'Some Doc', type: 'privacy' }), 'privacy-policy');
+  assert.equal(publicLegalSlugForDoc({ slug: 'terms', name: 'Terms', type: 'terms' }), 'terms-of-service');
+});
+
+test('publicLegalSlugForDoc excludes cookie and API terms docs from profile settings', () => {
+  assert.equal(publicLegalSlugForDoc({ slug: 'cookie-policy', name: 'Cookie Policy', type: 'privacy' }), null);
+  assert.equal(publicLegalSlugForDoc({ slug: 'api-terms', name: 'API Terms', type: 'terms' }), null);
 });

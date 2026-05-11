@@ -17,6 +17,29 @@ export type LegalDocSummary = {
   description?: string;
 };
 
+export type PublicLegalSlug = 'privacy-policy' | 'terms-of-service';
+
+export function normalizeLegalSlug(value: unknown): string {
+  return typeof value === 'string'
+    ? value.trim().toLowerCase().replace(/_/g, '-').replace(/\s+/g, '-')
+    : '';
+}
+
+export function publicLegalSlugForDoc(row: Pick<LegalDocSummary, 'slug' | 'name' | 'type'>): PublicLegalSlug | null {
+  const slug = normalizeLegalSlug(row.slug);
+  const type = normalizeLegalSlug(row.type);
+  const name = normalizeLegalSlug(row.name);
+  const hay = `${slug} ${type} ${name}`;
+  if (hay.includes('cookie') || hay.includes('api-terms') || hay.includes('developer') || hay.includes('partner')) {
+    return null;
+  }
+  if (slug === 'privacy-policy' || name === 'privacy-policy' || type === 'privacy') return 'privacy-policy';
+  if (slug === 'terms-of-service' || slug === 'terms' || name === 'terms-of-service' || name === 'terms' || type === 'terms') {
+    return 'terms-of-service';
+  }
+  return null;
+}
+
 export type LegalDocDetailRow = Partial<{
   /** Server-derived plain-text mirror of `content` — preferred on mobile. */
   content_text: string;
