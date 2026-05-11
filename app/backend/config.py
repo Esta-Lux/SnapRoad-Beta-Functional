@@ -102,6 +102,35 @@ def _pick_collectapi_key() -> str:
 
 COLLECTAPI_KEY = _pick_collectapi_key()
 
+# TomTom — nearby fuel stations + Fuel Prices API (GET /api/fuel/prices when configured).
+# Use the API key from TomTom Developer → dashboard (not the Map Tiles URL alone).
+# Optional TOMTOM_CLIENT_ID: product / app UUID from the dashboard (for support only; not sent on standard REST calls).
+TOMTOM_API_KEY = (os.environ.get("TOMTOM_API_KEY") or "").strip().strip("\"'")
+TOMTOM_CLIENT_ID = (os.environ.get("TOMTOM_CLIENT_ID") or "").strip()
+
+# Apple In-App Purchase — consumer subscriptions on iOS (App Store Connect → Users and Access → Integrations → In-App Purchase).
+# APPLE_IAP_PRIVATE_KEY_PEM: full contents of the .p8 key (use \\n for newlines in one-line env values).
+APPLE_IAP_PRIVATE_KEY_PEM = (os.environ.get("APPLE_IAP_PRIVATE_KEY_PEM") or "").strip()
+APPLE_IAP_KEY_ID = (os.environ.get("APPLE_IAP_KEY_ID") or "").strip()
+APPLE_IAP_ISSUER_ID = (os.environ.get("APPLE_IAP_ISSUER_ID") or "").strip()
+APPLE_IAP_BUNDLE_ID = (os.environ.get("APPLE_IAP_BUNDLE_ID") or "com.snaproad.app").strip()
+APPLE_APP_APPLE_ID_RAW = (os.environ.get("APPLE_APP_APPLE_ID") or "").strip()
+
+
+def _parse_app_apple_id() -> int | None:
+    raw = (APPLE_APP_APPLE_ID_RAW or "").strip()
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+APPLE_APP_APPLE_ID = _parse_app_apple_id()
+APPLE_IAP_PREMIUM_PRODUCT_ID = (os.environ.get("APPLE_IAP_PREMIUM_PRODUCT_ID") or "").strip()
+APPLE_IAP_FAMILY_PRODUCT_ID = (os.environ.get("APPLE_IAP_FAMILY_PRODUCT_ID") or "").strip()
+
 
 def get_collectapi_key() -> str:
     """Latest CollectAPI token from env (aliases in `_pick_collectapi_key`).

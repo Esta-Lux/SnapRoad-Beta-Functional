@@ -103,6 +103,8 @@ import {
 } from '../navigation/routeRefreshPolicy';
 import { resolveEdgeDurationSec } from '../navigation/navigationEtaEdges';
 import { effectiveMaxSnapMeters } from '../navigation/offRouteTuning';
+import { shouldAcceptFinalDestinationArrival } from '../navigation/navArrivalGuard';
+import { shouldCountRerouteCandidate } from '../navigation/rerouteGuards';
 import * as Haptics from 'expo-haptics';
 
 /**
@@ -125,6 +127,8 @@ const ARRIVAL_NEAR_ROUTE_MI = 0.08;
 const ARRIVAL_MAX_REMAINING_SECONDS = 90;
 const ARRIVAL_TIGHT_CROW_METERS = 25;
 const ARRIVAL_TIGHT_ROUTE_MI = 0.03;
+const ARRIVAL_TERMINAL_ROUTE_METERS = 45;
+const ARRIVAL_TERMINAL_SECONDS = 30;
 function applyTripCompleteProfileToUser(updateUser: (u: Partial<User>) => void, profile: unknown) {
   if (!profile || typeof profile !== 'object') return;
   const p = profile as Record<string, unknown>;
@@ -1642,6 +1646,13 @@ export function useDriveNavigation(params: {
       typeof remainMeters === 'number' &&
       Number.isFinite(remainMeters) &&
       remainMeters <= 95;
+    const terminalProgress =
+      typeof remainMeters === 'number' &&
+      Number.isFinite(remainMeters) &&
+      typeof remainingSec === 'number' &&
+      Number.isFinite(remainingSec) &&
+      remainMeters <= ARRIVAL_TERMINAL_ROUTE_METERS &&
+      remainingSec <= ARRIVAL_TERMINAL_SECONDS;
     if (speedMps >= 3.6 && !physicallyAtDestination) {
       arrivalNearStreakRef.current = 0;
       return;
@@ -1652,6 +1663,7 @@ export function useDriveNavigation(params: {
         timeNear &&
         (withinRoute || withinCrow || routeNearlyDone) &&
         (finalStepVisible || withinCrow || routeNearlyDone)
+        || terminalProgress
       )
     ) {
       arrivalNearStreakRef.current = 0;
@@ -1735,12 +1747,6 @@ export function useDriveNavigation(params: {
         ? remainMeters / 1609.34
         : null;
     const remainSec = navSdkSnapshot.progress?.durationRemaining;
-    const withinCrow = crow <= 35;
-    const withinRoute = remainMi != null && remainMi <= ARRIVAL_NEAR_ROUTE_MI;
-    const timeNear =
-      typeof remainSec === 'number' &&
-      Number.isFinite(remainSec) &&
-      remainSec <= ARRIVAL_MAX_REMAINING_SECONDS;
     const physicallyAtDestination =
       crow <= ARRIVAL_TIGHT_CROW_METERS &&
       (remainMi == null || remainMi <= ARRIVAL_TIGHT_ROUTE_MI);
@@ -1748,7 +1754,14 @@ export function useDriveNavigation(params: {
       arrivalNearStreakRef.current = 0;
       return;
     }
-    if ((!timeNear || (!withinCrow && !withinRoute)) && !physicallyAtDestination) {
+    const arrivalAccepted = shouldAcceptFinalDestinationArrival({
+      destination: dest,
+      matched: { lat, lng },
+      fallback: null,
+      remainingMeters: remainMeters ?? null,
+      remainingSeconds: remainSec ?? null,
+    });
+    if (!arrivalAccepted && !physicallyAtDestination) {
       arrivalNearStreakRef.current = 0;
       return;
     }
@@ -1852,7 +1865,19 @@ export function useDriveNavigation(params: {
     }
 
     /* --- Standard streak-based off-route detection ------------------------------ */
-    if (navigationProgress.isOffRoute) {
+    const shouldCountOffRoute =
+      navigationProgress.isOffRoute &&
+      shouldCountRerouteCandidate({
+        current: { lat: userLocation.lat, lng: userLocation.lng },
+        previous: prevLocationRef.current,
+        route: navigationData.polyline,
+        lateralMeters: snapDist,
+        thresholdMeters: offRouteThreshold,
+        speedMps,
+        courseDeg: null,
+      });
+
+    if (shouldCountOffRoute) {
       offRouteStreakRef.current += 1;
     } else {
       offRouteStreakRef.current = 0;
@@ -1995,7 +2020,17 @@ export function useDriveNavigation(params: {
     const offThresholdM = 80 + Math.min(80, accuracyM * 0.5);
     const lateralM = proj.distanceToRouteMeters;
 
-    if (lateralM >= offThresholdM) {
+    const shouldCountBackstop = shouldCountRerouteCandidate({
+      current: truth,
+      previous: prevLocationRef.current,
+      route: navigationData.polyline,
+      lateralMeters: lateralM,
+      thresholdMeters: offThresholdM,
+      speedMps,
+      courseDeg: null,
+    });
+
+    if (shouldCountBackstop) {
       sdkBackstopOffStreakRef.current += 1;
     } else {
       sdkBackstopOffStreakRef.current = 0;

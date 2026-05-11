@@ -439,21 +439,21 @@ export default function WelcomePage() {
                 <span className="text-slate-700">|</span>
                 <Link
                   to="/privacy"
-                  className="text-slate-400 hover:text-white transition-colors"
+                  className="text-slate-400 hover:text-white transition-colors bg-transparent border-0 p-0 text-sm font-inherit"
                 >
                   Privacy Policy
                 </Link>
                 <span className="text-slate-700">|</span>
                 <Link
                   to="/terms"
-                  className="text-slate-400 hover:text-white transition-colors"
+                  className="text-slate-400 hover:text-white transition-colors bg-transparent border-0 p-0 text-sm font-inherit"
                 >
                   Terms of Service
                 </Link>
                 <span className="text-slate-700">|</span>
                 <Link
                   to="/community-guidelines"
-                  className="text-slate-400 hover:text-white transition-colors"
+                  className="text-slate-400 hover:text-white transition-colors bg-transparent border-0 p-0 text-sm font-inherit"
                 >
                   Community Guidelines
                 </Link>

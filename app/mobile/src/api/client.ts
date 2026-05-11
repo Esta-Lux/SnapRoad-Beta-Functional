@@ -5,6 +5,7 @@ import * as Device from 'expo-device';
 import type { ApiResponse, AuthResponse, LoginRequest, SignupRequest } from '../types';
 import { supabase } from '../lib/supabase';
 import { isMapboxPublicTokenConfigured } from '../config/mapbox';
+import { getOrCreateGuestId } from '../utils/guestIdentity';
 
 const TOKEN_KEY = 'snaproad_token';
 const IS_PRODUCTION = String(process.env.APP_ENV || process.env.ENVIRONMENT || process.env.NODE_ENV || '').toLowerCase() === 'production';
@@ -115,7 +116,6 @@ if (IS_PRODUCTION) {
   }
   if (!process.env.EXPO_PUBLIC_SUPABASE_URL) missing.push('EXPO_PUBLIC_SUPABASE_URL');
   if (!process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY) missing.push('EXPO_PUBLIC_SUPABASE_ANON_KEY');
-  if (!process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY) missing.push('EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY');
   if (missing.length > 0) {
     console.error(`[SnapRoad] Production build missing critical env vars: ${missing.join(', ')}`);
   }
@@ -181,6 +181,10 @@ class ApiService {
     if (endpoint.startsWith('/api/auth/resend-verification')) return false;
     if (endpoint.startsWith('/api/auth/oauth/supabase')) return false;
     if (endpoint.startsWith('/api/weather/')) return false;
+    if (endpoint.startsWith('/api/legal/documents')) return false;
+    if (endpoint.startsWith('/api/offers/nearby')) return false;
+    if (endpoint.startsWith('/api/offers/online')) return false;
+    if (endpoint.startsWith('/api/offers/categories')) return false;
     return true;
   }
 
@@ -262,11 +266,13 @@ class ApiService {
     retryCount = 0,
   ): Promise<ApiResponse<T>> {
     const token = await this.getToken();
+    const guestId = await getOrCreateGuestId();
     const url = `${apiBaseUrl}${endpoint}`;
     const attachAuth = this.shouldAttachAuth(endpoint);
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
       'Bypass-Tunnel-Reminder': 'true',
+      'X-SnapRoad-Guest-Id': guestId,
       ...(attachAuth && token && { Authorization: `Bearer ${token}` }),
       ...(options.headers as Record<string, string>),
     };

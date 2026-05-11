@@ -39,14 +39,14 @@ export function useNavigationRuntimeProtection(
   useEffect(() => {
     if (!isNavigating) {
       lastNotificationKeyRef.current = null;
-      void deactivateKeepAwake(KEEP_AWAKE_TAG);
+      void deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => undefined);
       void Notifications.dismissNotificationAsync(NAV_NOTIFICATION_IDENTIFIER).catch(() => undefined);
       return;
     }
 
-    void activateKeepAwakeAsync(KEEP_AWAKE_TAG);
+    void activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => undefined);
     return () => {
-      void deactivateKeepAwake(KEEP_AWAKE_TAG);
+      void deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => undefined);
     };
   }, [isNavigating]);
 

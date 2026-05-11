@@ -14,6 +14,7 @@ from services.mock_data import (
 from middleware.auth import get_current_user
 from services.supabase_service import (
     sb_get_profile,
+    sb_get_profile_raw,
     sb_update_profile,
     sb_soft_delete_profile,
     sb_delete_auth_user,
@@ -69,6 +70,7 @@ def _profile_row_to_store(user_id: str, email_fallback: str, row: dict) -> dict:
         "is_premium": bool(row.get("is_premium")),
         "gem_multiplier": int(row.get("gem_multiplier") or 1),
         "vehicle_height_meters": row.get("vehicle_height_meters"),
+        "plan_entitlement_source": str(row.get("plan_entitlement_source") or "").strip().lower() or None,
     }
 
 
@@ -96,6 +98,7 @@ def _get_user_store(user: Optional[Dict[str, Any]]) -> dict:
                 "is_premium": False,
                 "gem_multiplier": 1,
                 "vehicle_height_meters": None,
+                "plan_entitlement_source": None,
             }
             try:
                 sb_update_profile(user_id, initial)
@@ -197,6 +200,13 @@ def update_user_plan(request: Request, plan: PlanUpdate, auth_user: CurrentUser)
     user_id = str(user.get("id"))
     requested = str(plan.plan or "").strip().lower()
     if requested in ("basic", "free", ""):
+        row = sb_get_profile_raw(user_id)
+        ent = str((row or {}).get("plan_entitlement_source") or "").strip().lower()
+        if ent == "apple":
+            raise HTTPException(
+                status_code=403,
+                detail="Your subscription is billed through Apple. To cancel or change your plan, use iPhone Settings → Apple ID → Subscriptions.",
+            )
         user["is_premium"] = False
         user["plan"] = "basic"
         user["gem_multiplier"] = 1

@@ -15,6 +15,8 @@ import {
 } from 'react-native';
 import Constants from 'expo-constants';
 import { api } from '../../api/client';
+import { publicLegalSlugForDoc, type LegalDocSummary, type PublicLegalSlug } from '../../api/dto/legal';
+import { fetchPublicLegalDocument } from '../../api/legalDocuments';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Skeleton from '../common/Skeleton';
@@ -602,7 +604,7 @@ function extraConfig(): { supportEmail?: string; iosAppStoreId?: string; android
 }
 
 export function AboutCard({ cardBg, text, sub }: { cardBg: string; text: string; sub: string }) {
-  const [legalDocs, setLegalDocs] = React.useState<{ id: string; name: string; type?: string }[]>([]);
+  const [legalDocs, setLegalDocs] = React.useState<LegalDocSummary[]>([]);
   const [legalModal, setLegalModal] = React.useState<{ title: string; body: string } | null>(null);
   const [legalLoading, setLegalLoading] = React.useState(false);
 
@@ -610,7 +612,7 @@ export function AboutCard({ cardBg, text, sub }: { cardBg: string; text: string;
     (async () => {
       try {
         const res = await api.get('/api/legal/documents');
-        const payload = res.data as { data?: { id: string; name: string; type?: string }[] };
+        const payload = res.data as { data?: LegalDocSummary[] };
         if (res.success && Array.isArray(payload?.data)) setLegalDocs(payload.data);
       } catch {
         /* ignore */
@@ -618,15 +620,11 @@ export function AboutCard({ cardBg, text, sub }: { cardBg: string; text: string;
     })();
   }, []);
 
-  const openLegalDoc = async (doc: { id: string; name: string }) => {
+  const openLegalDoc = async (doc: { id?: string; name: string; slug: PublicLegalSlug }) => {
     setLegalLoading(true);
     try {
-      const res = await api.get(`/api/legal/documents/${doc.id}`);
-      const row = (res.data as { data?: Record<string, string> })?.data;
-      const body =
-        String(row?.content ?? row?.body ?? row?.text ?? row?.description ?? '').trim() ||
-        'No text has been published for this document yet. Ask your admin to publish content in Legal Compliance.';
-      setLegalModal({ title: doc.name, body });
+      const detail = await fetchPublicLegalDocument(doc.slug, doc.id);
+      setLegalModal({ title: detail.title || doc.name, body: detail.body });
     } catch {
       Alert.alert(doc.name, 'Could not load this document. Check your connection and try again.');
     } finally {
@@ -634,7 +632,7 @@ export function AboutCard({ cardBg, text, sub }: { cardBg: string; text: string;
     }
   };
 
-  const supportEmail = (extraConfig().supportEmail || 'support@snaproad.co').trim();
+  const supportEmail = (extraConfig().supportEmail || 'teams@snaproad.co').trim();
   const androidPkg = (extraConfig().androidPackage || 'com.snaproad.app').trim();
   const iosStoreId = (extraConfig().iosAppStoreId || '').trim();
 
@@ -664,13 +662,15 @@ export function AboutCard({ cardBg, text, sub }: { cardBg: string; text: string;
     Linking.openURL(mail).catch(() => Alert.alert('Contact support', `Email us at ${supportEmail}`));
   };
 
-  const legalRows =
-    legalDocs.length > 0
-      ? legalDocs.map((d) => ({ label: d.name, docId: d.id }))
-      : [
-          { label: 'Privacy Policy', docId: '' as const },
-          { label: 'Terms of Service', docId: '' as const },
-        ];
+  const docsBySlug = new Map<PublicLegalSlug, LegalDocSummary>();
+  for (const doc of legalDocs) {
+    const slug = publicLegalSlugForDoc(doc);
+    if (slug && !docsBySlug.has(slug)) docsBySlug.set(slug, doc);
+  }
+  const legalRows: { label: string; docId?: string; slug: PublicLegalSlug }[] = [
+    { label: docsBySlug.get('privacy-policy')?.name || 'Privacy Policy', docId: docsBySlug.get('privacy-policy')?.id, slug: 'privacy-policy' },
+    { label: docsBySlug.get('terms-of-service')?.name || 'Terms of Service', docId: docsBySlug.get('terms-of-service')?.id, slug: 'terms-of-service' },
+  ];
 
   return (
     <View style={[styles.card, { backgroundColor: cardBg }]}>
@@ -691,8 +691,7 @@ export function AboutCard({ cardBg, text, sub }: { cardBg: string; text: string;
           key={`legal-${i}`}
           style={styles.aboutRow}
           onPress={() => {
-            if (item.docId) openLegalDoc({ id: item.docId, name: item.label });
-            else Alert.alert(item.label, 'Your team has not published this document yet. It will appear here once it is set to Published in the admin portal.');
+            openLegalDoc({ id: item.docId, name: item.label, slug: item.slug });
           }}
           activeOpacity={0.7}
           disabled={legalLoading}

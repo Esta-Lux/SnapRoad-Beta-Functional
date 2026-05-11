@@ -40,10 +40,10 @@ const MALE_NAME_HINTS = [
 ];
 
 const CLEAR_DEFAULT_NAME_PRIORITY = [
-  'aaron',
-  'evan',
-  'nathan',
   'alex',
+  'nathan',
+  'evan',
+  'aaron',
   'josh',
   'justin',
   'tyler',
@@ -54,10 +54,10 @@ const CLEAR_DEFAULT_NAME_PRIORITY = [
 ] as const;
 
 const YOUNG_ADULT_NAME_HINTS = [
-  'aaron',
   'alex',
-  'evan',
   'nathan',
+  'evan',
+  'aaron',
   'josh',
   'justin',
   'tyler',

@@ -110,6 +110,7 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.snaproad.app",
+      usesAppleSignIn: true,
       privacyManifests: {
         NSPrivacyTracking: false,
         NSPrivacyAccessedAPITypes: [
@@ -202,13 +203,8 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
           mapboxMapsVersion: MAPBOX_MAPS_SDK_VERSION,
         },
       ],
-      [
-        "@stripe/stripe-react-native",
-        {
-          merchantIdentifier: "merchant.com.snaproad",
-          enableGooglePay: true,
-        },
-      ],
+      // Android Gradle flavor only; iOS needs no plugin props. Valid values: Play Store | Amazon AppStore | both
+      ["react-native-iap", { paymentProvider: "Play Store" }],
       [
         "expo-notifications",
         {
@@ -238,6 +234,7 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
       "expo-font",
       "expo-sensors",
       "expo-secure-store",
+      "expo-apple-authentication",
       "expo-web-browser",
     ],
     extra: {
@@ -252,17 +249,16 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
       ),
       supabaseUrl: envAny(["EXPO_PUBLIC_SUPABASE_URL", "SUPABASE_URL"]),
       supabaseAnonKey: envAny(["EXPO_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_ANON_KEY"]),
-      stripePublishableKey: envAny([
-        "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY",
-        "STRIPE_PUBLISHABLE_KEY",
-      ]),
+      /** App Store subscription product IDs (Premium / Family). Must match App Store Connect. */
+      appleIapPremiumProductId: envAny(["EXPO_PUBLIC_APPLE_IAP_PREMIUM", "APPLE_IAP_PREMIUM_PRODUCT_ID"], ""),
+      appleIapFamilyProductId: envAny(["EXPO_PUBLIC_APPLE_IAP_FAMILY", "APPLE_IAP_FAMILY_PRODUCT_ID"], ""),
       sentryDsn: envAny(["EXPO_PUBLIC_SENTRY_DSN", "SENTRY_DSN"]),
       /** Expo dashboard / project page (overridable via EXPO_PUBLIC_EXPO_PROJECT_URL in eas.json). */
       expoProjectUrl: envAny(
         ["EXPO_PUBLIC_EXPO_PROJECT_URL"],
         "https://expo.dev/accounts/snaproad/projects/snaproad",
       ),
-      supportEmail: "support@snaproad.co",
+      supportEmail: "teams@snaproad.co",
       /** App Store Connect numeric Apple ID (same as eas.json submit.production.ios.ascAppId). */
       iosAppStoreId: "6761516426",
       androidPackage: "com.snaproad.app",

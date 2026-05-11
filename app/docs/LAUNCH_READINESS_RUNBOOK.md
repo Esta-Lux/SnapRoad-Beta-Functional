@@ -2,7 +2,7 @@
 
 ## What this pass hardens
 
-- iOS app no longer opens external subscription checkout from the native app by default.
+- iOS app no longer opens external Stripe checkout; App Store-safe iPhone purchases now go through the native Apple subscription path.
 - Public legal URLs exist for Privacy Policy, Terms of Service, and Community Guidelines.
 - Family launch surfaces are hidden by default until the backend is production-ready.
 - Release builds force `EXPO_PUBLIC_NAV_LOGIC_DEBUG=0`.

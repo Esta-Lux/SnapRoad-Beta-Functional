@@ -22,6 +22,10 @@ import {
 } from '../../utils/voice';
 import type { OrionContext, OrionPlaceSuggestion } from './OrionChat';
 import type { DrivingMode } from '../../types';
+import {
+  shouldKeepHandsFreeConversationOpen,
+  shouldRestartHandsFreeListening,
+} from './orionHandsFree';
 
 type VoiceType = {
   destroy: () => Promise<void>;
@@ -58,7 +62,7 @@ const ORION_NAV_VOICE_GREETING =
 
 /** If dictation stops with no usable text after the user waited a moment. */
 const ORION_NAV_EMPTY_REPLY =
-  "I didn't quite catch that. Tap the Orion mic again — then ask away; I'm here to help.";
+  "I didn't quite catch that, but I'm still here. Go ahead whenever you're ready.";
 
 function normalizeDrivingMode(mode?: string): DrivingMode {
   return mode === 'calm' || mode === 'sport' || mode === 'adaptive' ? mode : 'adaptive';
@@ -102,14 +106,20 @@ export default function OrionQuickMic({
   const transcriptRef = useRef('');
   const orionSpeakingRef = useRef(false);
   const speechFinalizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const listeningRestartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listeningStartedAtRef = useRef(0);
   const heardAnythingRef = useRef(false);
   const listenedManuallyEndedRef = useRef(false);
+  const handsFreeSessionRef = useRef(false);
   /** Sync latest props/callback refs for asynchronous TTS + mic hand-offs. */
   const visibleRef = useRef(visible);
   const isWelcomingRef = useRef(false);
   const navModeRef = useRef(interactionMode === 'navigation');
+  const isThinkingRef = useRef(false);
+  const respondingAudibleRef = useRef(false);
   navModeRef.current = interactionMode === 'navigation';
+  isThinkingRef.current = isThinking;
+  respondingAudibleRef.current = respondingAudible;
 
   useEffect(() => {
     visibleRef.current = visible;
@@ -132,6 +142,21 @@ export default function OrionQuickMic({
     }
   }, []);
 
+  const clearListeningRestartTimer = useCallback(() => {
+    if (listeningRestartTimerRef.current != null) {
+      clearTimeout(listeningRestartTimerRef.current);
+      listeningRestartTimerRef.current = null;
+    }
+  }, []);
+
+  const shouldKeepHandsFreeOpen = useCallback(() => (
+    shouldKeepHandsFreeConversationOpen({
+      interactionMode: navModeRef.current ? 'navigation' : 'explore',
+      sessionActive: handsFreeSessionRef.current,
+      visible: visibleRef.current,
+    })
+  ), []);
+
   const startListeningCore = useCallback(async () => {
     if (!Voice || Platform.OS === 'web' || !visibleRef.current || isThinking) return;
     try {
@@ -148,6 +173,7 @@ export default function OrionQuickMic({
     transcriptRef.current = '';
     setPartialTranscript('');
     clearSpeechFinalizeTimer();
+    clearListeningRestartTimer();
     listenedManuallyEndedRef.current = false;
     heardAnythingRef.current = false;
     listeningStartedAtRef.current = Date.now();
@@ -164,7 +190,26 @@ export default function OrionQuickMic({
       }
     }
     setIsListening(false);
-  }, [clearSpeechFinalizeTimer, isThinking]);
+  }, [clearListeningRestartTimer, clearSpeechFinalizeTimer, isThinking]);
+
+  const scheduleListeningRestart = useCallback((delayMs: number, errorMessage?: string | null) => {
+    clearListeningRestartTimer();
+    if (!shouldRestartHandsFreeListening({
+      interactionMode: navModeRef.current ? 'navigation' : 'explore',
+      sessionActive: handsFreeSessionRef.current,
+      visible: visibleRef.current,
+      isThinking: isThinkingRef.current,
+      isSpeaking: isWelcomingRef.current || orionSpeakingRef.current || respondingAudibleRef.current,
+      errorMessage,
+    })) {
+      return;
+    }
+    listeningRestartTimerRef.current = setTimeout(() => {
+      listeningRestartTimerRef.current = null;
+      if (!shouldKeepHandsFreeOpen()) return;
+      void startListeningCore();
+    }, delayMs);
+  }, [clearListeningRestartTimer, shouldKeepHandsFreeOpen, startListeningCore]);
 
   const speakReplyAndMaybeContinue = useCallback(
     (reply: string, continueConversation?: boolean) => {
@@ -175,14 +220,11 @@ export default function OrionQuickMic({
         void restoreDefaultAudioSession().then(() => {
           if (
             continueConversation &&
-            visibleRef.current &&
-            navModeRef.current &&
+            shouldKeepHandsFreeOpen() &&
             Voice &&
             Platform.OS !== 'web'
           ) {
-            setTimeout(() => {
-              void startListeningCore();
-            }, 580);
+            scheduleListeningRestart(580);
           }
         });
       };
@@ -198,7 +240,7 @@ export default function OrionQuickMic({
         finish();
       }
     },
-    [clearSpeechFinalizeTimer, context?.drivingMode, startListeningCore],
+    [clearSpeechFinalizeTimer, context?.drivingMode, scheduleListeningRestart, shouldKeepHandsFreeOpen],
   );
 
   const sendPrompt = useCallback(
@@ -206,7 +248,7 @@ export default function OrionQuickMic({
       const trimmed = prompt.trim();
       if (!trimmed) return;
       setIsThinking(true);
-      const continuing = navModeRef.current;
+      const continuing = shouldKeepHandsFreeOpen();
       try {
         const res = await api.post<{
           content?: string;
@@ -243,9 +285,13 @@ export default function OrionQuickMic({
               )
               .slice(0, 6)
           : [];
+        /** In nav mode, suppress late replies once the user has toggled the hands-free session off. */
+        const shouldSpeakReply = !navModeRef.current || handsFreeSessionRef.current;
         onSuggestions?.(suggestions);
         onReply?.(reply);
-        speakReplyAndMaybeContinue(reply, continuing);
+        if (shouldSpeakReply) {
+          speakReplyAndMaybeContinue(reply, continuing);
+        }
         if (Array.isArray(actions) && actions.length && onAction) {
           const navFirst = actions.find((a) => a?.type === 'navigate');
           if (navFirst) onAction(navFirst);
@@ -253,13 +299,16 @@ export default function OrionQuickMic({
         }
       } catch {
         const fallback = "Sorry — I'm having trouble reaching the assistant. Try asking again in a moment.";
+        const shouldSpeakReply = !navModeRef.current || handsFreeSessionRef.current;
         onReply?.(fallback);
-        speakReplyAndMaybeContinue(fallback, continuing);
+        if (shouldSpeakReply) {
+          speakReplyAndMaybeContinue(fallback, continuing);
+        }
       } finally {
         setIsThinking(false);
       }
     },
-    [context, onAction, onReply, onSuggestions, speakReplyAndMaybeContinue],
+    [context, onAction, onReply, onSuggestions, shouldKeepHandsFreeOpen, speakReplyAndMaybeContinue],
   );
 
   const finalizeTranscript = useCallback(
@@ -278,10 +327,10 @@ export default function OrionQuickMic({
         !heardAnythingRef.current &&
         !listenedManuallyEndedRef.current
       ) {
-        speakReplyAndMaybeContinue(ORION_NAV_EMPTY_REPLY, false);
+        speakReplyAndMaybeContinue(ORION_NAV_EMPTY_REPLY, shouldKeepHandsFreeOpen());
       }
     },
-    [partialTranscript, sendPrompt, speakReplyAndMaybeContinue],
+    [partialTranscript, sendPrompt, shouldKeepHandsFreeOpen, speakReplyAndMaybeContinue],
   );
 
   const scheduleFinalizeAfterSpeechEnd = useCallback(() => {
@@ -295,6 +344,8 @@ export default function OrionQuickMic({
 
   const stopListening = useCallback(async () => {
     listenedManuallyEndedRef.current = true;
+    handsFreeSessionRef.current = false;
+    clearListeningRestartTimer();
     clearSpeechFinalizeTimer();
     if (!Voice) return;
     try {
@@ -303,15 +354,23 @@ export default function OrionQuickMic({
       /* ignore */
     }
     setIsListening(false);
+    if (navModeRef.current) {
+      transcriptRef.current = '';
+      setPartialTranscript('');
+      listenedManuallyEndedRef.current = false;
+      return;
+    }
     finalizeTranscript('user-cancel');
     listenedManuallyEndedRef.current = false;
-  }, [clearSpeechFinalizeTimer, finalizeTranscript]);
+  }, [clearListeningRestartTimer, clearSpeechFinalizeTimer, finalizeTranscript]);
 
   const beginNavigationHandsFreeSession = useCallback(async () => {
     if (!Voice || Platform.OS === 'web' || !navModeRef.current) return;
 
+    handsFreeSessionRef.current = true;
     Speech.stop();
     clearSpeechFinalizeTimer();
+    clearListeningRestartTimer();
     transcriptRef.current = '';
     setPartialTranscript('');
     setIsWelcoming(true);
@@ -336,25 +395,33 @@ export default function OrionQuickMic({
         setRespondingAudible(false);
         setIsWelcoming(false);
         void restoreDefaultAudioSession().then(async () => {
-          if (!visibleRef.current || !navModeRef.current) return;
+          if (!shouldKeepHandsFreeOpen()) return;
           listenedManuallyEndedRef.current = false;
           heardAnythingRef.current = false;
 
           const ok = await requestMicPermission();
           if (!ok) {
+            handsFreeSessionRef.current = false;
             Alert.alert('Microphone', 'Enable microphone access in Settings so Orion can hear your question.');
             return;
           }
 
           await new Promise((r) => setTimeout(r, 420));
 
-          if (!visibleRef.current || !navModeRef.current) return;
+          if (!shouldKeepHandsFreeOpen()) return;
           await startListeningCore();
         });
       },
       normalizeDrivingMode(context?.drivingMode),
     );
-  }, [clearSpeechFinalizeTimer, context?.drivingMode, requestMicPermission, startListeningCore]);
+  }, [
+    clearListeningRestartTimer,
+    clearSpeechFinalizeTimer,
+    context?.drivingMode,
+    requestMicPermission,
+    shouldKeepHandsFreeOpen,
+    startListeningCore,
+  ]);
 
   const startListeningOnly = useCallback(async () => {
     if (!Voice || Platform.OS === 'web') return;
@@ -401,7 +468,11 @@ export default function OrionQuickMic({
       setIsListening(false);
       transcriptRef.current = '';
       setPartialTranscript('');
-      /** `no-speech` on Android fires quickly when the mic opens under load — ignore silently. */
+      if (shouldKeepHandsFreeOpen()) {
+        void restoreDefaultAudioSession();
+        scheduleListeningRestart(420, code);
+      }
+      /** `no-speech` on Android fires quickly when the mic opens under load — keep listening silently. */
       if (Platform.OS === 'android' && /no.?match|no.?speech/i.test(code)) return;
       if (__DEV__) {
         // eslint-disable-next-line no-console
@@ -410,6 +481,7 @@ export default function OrionQuickMic({
     };
     return () => {
       clearSpeechFinalizeTimer();
+      clearListeningRestartTimer();
       Voice.onSpeechStart = null;
       Voice.onSpeechPartialResults = null;
       Voice.onSpeechResults = null;
@@ -417,10 +489,18 @@ export default function OrionQuickMic({
       Voice.onSpeechError = null;
       void Voice.cancel().catch(() => {});
     };
-  }, [clearSpeechFinalizeTimer, scheduleFinalizeAfterSpeechEnd, visible]);
+  }, [
+    clearListeningRestartTimer,
+    clearSpeechFinalizeTimer,
+    scheduleFinalizeAfterSpeechEnd,
+    scheduleListeningRestart,
+    shouldKeepHandsFreeOpen,
+    visible,
+  ]);
 
   useEffect(() => {
     if (visible) return;
+    handsFreeSessionRef.current = false;
     transcriptRef.current = '';
     setPartialTranscript('');
     setIsListening(false);
@@ -431,7 +511,8 @@ export default function OrionQuickMic({
     void Voice?.cancel().catch(() => {});
     Speech.stop();
     clearSpeechFinalizeTimer();
-  }, [visible, clearSpeechFinalizeTimer]);
+    clearListeningRestartTimer();
+  }, [visible, clearListeningRestartTimer, clearSpeechFinalizeTimer]);
 
   const glowColor = useMemo(() => {
     if (isListening) return 'rgba(239,68,68,0.28)';
@@ -446,12 +527,15 @@ export default function OrionQuickMic({
   const iconSize = compactHudFab ? 20 : 22;
 
   const cancelPlayback = () => {
+    handsFreeSessionRef.current = false;
     Speech.stop();
     orionSpeakingRef.current = false;
     void Voice?.cancel().catch(() => {});
     clearSpeechFinalizeTimer();
+    clearListeningRestartTimer();
     listenedManuallyEndedRef.current = true;
     heardAnythingRef.current = false;
+    setIsThinking(false);
     setIsWelcoming(false);
     setRespondingAudible(false);
     setPartialTranscript('');
@@ -484,7 +568,8 @@ export default function OrionQuickMic({
     if (isListening) {
       void stopListening();
     } else if (isThinking) {
-      return;
+      /** A second tap while Orion is thinking is treated as an explicit "stop this hands-free session" intent. */
+      cancelPlayback();
     } else {
       void beginNavigationHandsFreeSession();
     }

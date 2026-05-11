@@ -1,7 +1,7 @@
 /**
  * React Navigation param lists (Layer 1 — app routing).
- * Conditional auth tree in App.tsx: logged-out uses PublicStackParamList only;
- * logged-in uses MainTabParamList (no single RootParamList union at the container).
+ * App.tsx boots to MainTabParamList for guest and signed-in users. Auth screens
+ * live under Profile so free users can opt in when they need saved tracking.
  */
 import type { CompositeNavigationProp, NavigatorScreenParams } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
@@ -46,6 +46,9 @@ export type ProfileStackParamList = {
         session_id?: string;
       }
     | undefined;
+  Auth: { mode?: 'signup' | 'signin'; referral_code?: string } | undefined;
+  ForgotPassword: undefined;
+  ResetPassword: undefined;
 };
 
 /** Params MapScreen reads on both MapMain and MapRedeem (same component). */

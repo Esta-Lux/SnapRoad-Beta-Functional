@@ -198,12 +198,16 @@ export interface AuditEntry {
 
 export interface LegalDocument {
   id: string
+  /** Stable identifier used by /api/legal/documents/by-slug/* and the public /terms, /privacy URLs. */
+  slug?: string | null
   name: string
   type: string
   status: string
   version: string
   description: string
   content: string
+  /** Server-derived plain-text mirror of `content` (HTML stripped). Used by the mobile app. */
+  content_text?: string
   is_required: boolean
   last_updated: string
   created_at: string

@@ -114,7 +114,7 @@ export default function PricingTab({
           <button
             type="button"
             className="text-[#0084FF] hover:underline font-medium py-1 min-h-[44px] sm:min-h-0 inline-flex items-center justify-center sm:inline"
-            onClick={() => window.open('mailto:billing@snaproad.co?subject=Billing%20Inquiry', '_blank')}
+            onClick={() => window.open('mailto:teams@snaproad.co?subject=Billing%20Inquiry', '_blank')}
           >
             Manage billing
           </button>
@@ -250,7 +250,7 @@ export default function PricingTab({
             <button
               type="button"
               className="text-[#0084FF] hover:underline font-medium py-3 px-2 rounded-lg sm:py-0 sm:px-0 min-h-[48px] sm:min-h-0 inline-flex items-center justify-center text-sm touch-manipulation active:bg-white/5 sm:active:bg-transparent"
-              onClick={() => window.open('mailto:sales@snaproad.co?subject=Custom%20Solution%20Inquiry', '_blank')}
+              onClick={() => window.open('mailto:teams@snaproad.co?subject=Custom%20Solution%20Inquiry', '_blank')}
             >
               Contact our sales team
             </button>

@@ -59,18 +59,18 @@
         "buildType": "apk"
       }
     },
-      "production": {
-        "environment": "production",
-        "autoIncrement": true,
-        "channel": "production",
-        "env": {
-          "APP_ENV": "production",
-          "EXPO_PUBLIC_API_URL": "https://api.snaproad.app",
-          "API_URL": "https://api.snaproad.app",
-          "EXPO_PUBLIC_NAV_NATIVE_SDK": "0",
-          "EXPO_PUBLIC_NAV_LOGIC_SDK": "0",
-          "EXPO_PUBLIC_NAV_LOGIC_DEBUG": "0"
-        }
+    "production": {
+      "environment": "production",
+      "autoIncrement": true,
+      "channel": "production",
+      "env": {
+        "APP_ENV": "production",
+        "EXPO_PUBLIC_API_URL": "https://api.snaproad.app",
+        "API_URL": "https://api.snaproad.app",
+        "EXPO_PUBLIC_NAV_NATIVE_SDK": "0",
+        "EXPO_PUBLIC_NAV_LOGIC_SDK": "0",
+        "EXPO_PUBLIC_NAV_LOGIC_DEBUG": "0"
       }
+    }
   }
 }

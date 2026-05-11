@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import SheetModal from '../common/Modal';
 import { PLANS } from '../../constants/plans';
+import { fetchPublicLegalDocument } from '../../api/legalDocuments';
+import type { PublicLegalSlug } from '../../api/dto/legal';
 import type { PlanTier } from '../../types';
 import { FAMILY_MODE_LAUNCH_ENABLED } from '../../config/launchFlags';
 export function LevelProgressModal({
@@ -96,22 +98,76 @@ export function IncidentReportModal({ visible, onClose, onTakePhoto, onPickGalle
   );
 }
 
-export function PlanModal(props: { visible: boolean; onClose: () => void; cardBg: string; text: string; sub: string; currentPlan: PlanTier; onSelectPlan: (tier: PlanTier) => void; isLight?: boolean }) {
-  const { visible, onClose, cardBg, text, sub, currentPlan, onSelectPlan, isLight } = props;
+export function PlanModal(props: {
+  visible: boolean;
+  onClose: () => void;
+  cardBg: string;
+  text: string;
+  sub: string;
+  currentPlan: PlanTier;
+  onSelectPlan: (tier: PlanTier) => void;
+  isLight?: boolean;
+  /** Required by Apple; wired by ProfileScreen to call `restoreApplePurchases`. */
+  onRestorePurchases?: () => void;
+  /** Tapping these opens the public legal pages (web URL or in-app sheet). */
+  onOpenTerms?: () => void;
+  onOpenPrivacy?: () => void;
+  /** True while a restore is in flight so the link can show a spinner state. */
+  restoreInFlight?: boolean;
+}) {
+  const {
+    visible,
+    onClose,
+    cardBg,
+    text,
+    sub,
+    currentPlan,
+    onSelectPlan,
+    isLight,
+    onRestorePurchases,
+    onOpenTerms,
+    onOpenPrivacy,
+    restoreInFlight,
+  } = props;
   const [selected, setSelected] = useState<PlanTier | null>(null);
+  const [legalModal, setLegalModal] = useState<{ title: string; body: string } | null>(null);
+  const [legalLoading, setLegalLoading] = useState<PublicLegalSlug | null>(null);
 
   const handleContinue = () => {
     if (selected) { onSelectPlan(selected); }
   };
 
+  const openLegal = async (slug: PublicLegalSlug, fallback?: () => void) => {
+    setLegalLoading(slug);
+    try {
+      const doc = await fetchPublicLegalDocument(slug);
+      setLegalModal({ title: doc.title, body: doc.body });
+    } catch {
+      fallback?.();
+    } finally {
+      setLegalLoading(null);
+    }
+  };
+
   const PLAN_ICONS: Record<PlanTier, string> = { basic: 'shield-outline', premium: 'flash-outline', family: 'people-outline' };
   const PLAN_COLORS: Record<PlanTier, string> = { basic: '#007AFF', premium: '#FF9500', family: '#7C3AED' };
+  const isIosPaidSelected =
+    Platform.OS === 'ios' && (selected === 'premium' || selected === 'family');
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
         <View style={[styles.planModalSheet, { backgroundColor: cardBg }]} onStartShouldSetResponder={() => true}>
           <View style={styles.modalHandle} />
+          <TouchableOpacity
+            style={[styles.planCloseButton, { backgroundColor: isLight ? 'rgba(15,23,42,0.06)' : 'rgba(255,255,255,0.08)' }]}
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close plan selection"
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="close" size={18} color={sub} />
+          </TouchableOpacity>
           <View style={{ alignItems: 'center', marginBottom: 16 }}>
             <Ionicons name="sparkles" size={18} color="#FF9500" />
             <Text style={{ color: '#FF9500', fontSize: 11, fontWeight: '700', letterSpacing: 1, marginTop: 4, textTransform: 'uppercase' }}>Choose your plan</Text>
@@ -202,6 +258,8 @@ export function PlanModal(props: { visible: boolean; onClose: () => void; cardBg
               onPress={handleContinue}
               disabled={!selected}
               style={{ opacity: selected ? 1 : 0.4 }}
+              accessibilityRole="button"
+              accessibilityLabel={selected === 'premium' ? 'Continue with Premium' : 'Continue with selected plan'}
             >
               <LinearGradient
                 colors={selected === 'premium' ? ['#FF9500', '#FF6B00'] : ['#007AFF', '#0055CC']}
@@ -215,8 +273,85 @@ export function PlanModal(props: { visible: boolean; onClose: () => void; cardBg
                 </Text>
               </LinearGradient>
             </TouchableOpacity>
-            <Text style={{ color: sub, fontSize: 11, textAlign: 'center', marginTop: 8 }}>No contracts · Cancel anytime</Text>
+
+            {/* Apple-mandated auto-renewal disclosure within ~50px of the
+                purchase CTA. Shown for paid iOS tiers only (Basic = no
+                purchase, web/Android use Stripe + Play Store boilerplate). */}
+            {isIosPaidSelected ? (
+              <Text style={[styles.iapDisclosure, { color: sub }]}
+                accessibilityLabel="Auto-renewal disclosure"
+              >
+                Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless auto-renew is turned off at least 24 hours before the end of the current period. You can manage subscriptions in Settings.
+              </Text>
+            ) : (
+              <Text style={{ color: sub, fontSize: 11, textAlign: 'center', marginTop: 8 }}>No contracts · Cancel anytime</Text>
+            )}
+
+            {/* Required Apple links: Restore Purchases + Terms + Privacy.
+                Always visible on iOS so reviewers find them on the paywall;
+                shown on Android/web too because pointing users at the
+                published policies is universally good practice. */}
+            <View style={styles.iapLinkRow}>
+              {Platform.OS === 'ios' && onRestorePurchases ? (
+                <TouchableOpacity
+                  onPress={onRestorePurchases}
+                  disabled={!!restoreInFlight}
+                  accessibilityRole="button"
+                  accessibilityLabel="Restore purchases"
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={[styles.iapLinkText, { color: sub, opacity: restoreInFlight ? 0.5 : 1 }]}>
+                    {restoreInFlight ? 'Restoring…' : 'Restore Purchases'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+              {Platform.OS === 'ios' && onRestorePurchases && (onOpenTerms || onOpenPrivacy) ? (
+                <Text style={[styles.iapLinkSep, { color: sub }]}>·</Text>
+              ) : null}
+              {onOpenTerms ? (
+                <TouchableOpacity
+                  onPress={() => void openLegal('terms-of-service', onOpenTerms)}
+                  accessibilityRole="link"
+                  accessibilityLabel="Terms of Service"
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={[styles.iapLinkText, { color: sub }]}>Terms</Text>
+                </TouchableOpacity>
+              ) : null}
+              {onOpenTerms && onOpenPrivacy ? (
+                <Text style={[styles.iapLinkSep, { color: sub }]}>·</Text>
+              ) : null}
+              {onOpenPrivacy ? (
+                <TouchableOpacity
+                  onPress={() => void openLegal('privacy-policy', onOpenPrivacy)}
+                  accessibilityRole="link"
+                  accessibilityLabel="Privacy Policy"
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={[styles.iapLinkText, { color: sub }]}>Privacy</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
           </View>
+          <Modal visible={!!legalModal || !!legalLoading} transparent animationType="fade" onRequestClose={() => setLegalModal(null)}>
+            <View style={styles.legalOverlay}>
+              <View style={[styles.legalCard, { backgroundColor: cardBg }]}>
+                <View style={styles.legalHeader}>
+                  <Text style={[styles.legalTitle, { color: text }]}>
+                    {legalModal?.title || (legalLoading === 'privacy-policy' ? 'Privacy Policy' : 'Terms of Service')}
+                  </Text>
+                  <TouchableOpacity onPress={() => setLegalModal(null)} accessibilityRole="button" accessibilityLabel="Close legal document">
+                    <Ionicons name="close" size={20} color={sub} />
+                  </TouchableOpacity>
+                </View>
+                <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator>
+                  <Text style={[styles.legalBody, { color: sub }]}>
+                    {legalModal?.body || 'Loading...'}
+                  </Text>
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
         </View>
       </TouchableOpacity>
     </Modal>
@@ -243,12 +378,23 @@ const styles = StyleSheet.create({
   modalHandle: { width: 36, height: 4, backgroundColor: '#444', borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
   modalTitle: { fontSize: 20, fontWeight: '800', textAlign: 'center', marginBottom: 16 },
   planModalSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: 24, maxHeight: '92%' },
+  planCloseButton: { position: 'absolute', top: 14, right: 14, width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', zIndex: 2 },
   planCardNew: { borderRadius: 18, borderWidth: 1.5, padding: 16, marginBottom: 12, overflow: 'hidden', position: 'relative' as const },
   popularBadge: { position: 'absolute' as const, top: 0, right: 0, borderBottomLeftRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
   popularBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   radioCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: 'rgba(128,128,128,0.3)', alignItems: 'center' as const, justifyContent: 'center' as const },
   planContinueBtn: { borderRadius: 16, paddingVertical: 16, flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'center' as const, gap: 6 },
   planContinueBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  /** Apple-mandated auto-renewal disclosure copy. Sits within 50px of the CTA. */
+  iapDisclosure: { fontSize: 11, lineHeight: 15, textAlign: 'center', marginTop: 10, paddingHorizontal: 4 },
+  iapLinkRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' },
+  iapLinkText: { fontSize: 12, fontWeight: '700', textDecorationLine: 'underline' },
+  iapLinkSep: { fontSize: 12 },
+  legalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  legalCard: { width: '100%', maxHeight: '72%', borderRadius: 20, padding: 16 },
+  legalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 },
+  legalTitle: { flex: 1, fontSize: 18, fontWeight: '900' },
+  legalBody: { fontSize: 13, lineHeight: 20 },
   upgradeBtn: { backgroundColor: '#3B82F6', borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 12 },
   upgradeBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   modalInput: { borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, marginBottom: 12 },

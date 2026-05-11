@@ -408,7 +408,7 @@ export default function PartnerDashboard({ initialTab = 'overview' }: { initialT
 
   const handlePlanUpgrade = async (planId: string) => {
     if (planId !== 'starter' && planId !== 'growth') {
-      sendNotification('system', 'Plans', 'Choose Starter or Growth. For larger deployments, email sales@snaproad.co.')
+      sendNotification('system', 'Plans', 'Choose Starter or Growth. For larger deployments, email teams@snaproad.co.')
       return
     }
     try {

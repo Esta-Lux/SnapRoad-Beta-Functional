@@ -278,9 +278,9 @@ export default function PlaceCard({
                 <Ionicons name={icon} size={18} color={accentPrimary} />
               </View>
               <View style={styles.info}>
-                <Text style={[styles.name, { color: nameColor }]} numberOfLines={3}>{name}</Text>
+                <Text selectable style={[styles.name, { color: nameColor }]} numberOfLines={3}>{name}</Text>
                 {address ? (
-                  <Text style={[styles.address, { color: addrColor }]} numberOfLines={3}>{address}</Text>
+                  <Text selectable style={[styles.address, { color: addrColor }]} numberOfLines={3}>{address}</Text>
                 ) : null}
               </View>
             </View>
@@ -320,7 +320,7 @@ export default function PlaceCard({
             ) : null}
 
             {detailHint ? (
-              <Text style={[styles.detailHint, { color: metaColor }]}>{detailHint}</Text>
+              <Text selectable style={[styles.detailHint, { color: metaColor }]}>{detailHint}</Text>
             ) : null}
           </View>
         </ScrollView>
@@ -377,7 +377,7 @@ export default function PlaceCard({
   );
 }
 
-const PLACE_CARD_MAX_H = Dimensions.get('window').height * 0.62;
+const PLACE_CARD_MAX_H = Dimensions.get('window').height * 0.78;
 const HERO_HEIGHT = 148;
 
 const styles = StyleSheet.create({
@@ -449,7 +449,7 @@ const styles = StyleSheet.create({
 
   actions: {
     flexDirection: 'row', gap: 10,
-    paddingHorizontal: 20, paddingTop: 14,
+    paddingHorizontal: 20, paddingTop: 14, paddingBottom: 2,
     flexShrink: 0,
   },
   dirBtnWrap: { borderRadius: 14, overflow: 'hidden' },

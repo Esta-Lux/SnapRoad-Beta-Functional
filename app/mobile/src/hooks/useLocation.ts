@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as Location from 'expo-location';
 import { AppState, Platform, type AppStateStatus } from 'react-native';
+import {
+  requestBackgroundLocationWithRationale,
+  requestForegroundLocationWithRationale,
+} from '../components/permissions/LocationPermissionRationale';
 import { loadCachedLocation, persistCachedLocation } from '../utils/locationCache';
 import {
   accuracyQualityFactor,
@@ -222,7 +226,8 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
   }, []);
 
   const startWatching = useCallback(async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
+    // Pre-prompt rationale (Apple/Google guidance) → then the system sheet.
+    const { status } = await requestForegroundLocationWithRationale();
     if (status !== 'granted') {
       setState((prev) => ({ ...prev, isLocating: false, permissionDenied: true }));
       return;
@@ -230,9 +235,8 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
 
     if (isNavigating && !bgPermRequested.current) {
       bgPermRequested.current = true;
-      try {
-        await Location.requestBackgroundPermissionsAsync();
-      } catch { /* foreground-only nav */ }
+      // Same pattern for "Always Allow" — explain, then ask.
+      await requestBackgroundLocationWithRationale().catch(() => null);
     }
 
     watchDeliveredRef.current = false;

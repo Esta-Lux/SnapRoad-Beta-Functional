@@ -59,6 +59,7 @@ from routes.osm import router as osm_router
 from routes.traffic_safety import router as traffic_safety_router
 from routes.webhooks import router as webhooks_router
 from routes.payments import router as payments_router
+from routes.apple_iap_routes import router as apple_iap_payments_router
 from routes.family import router as family_router
 from routes.photo_reports import router as photo_reports_router
 from routes.place_alerts import router as place_alerts_router
@@ -261,6 +262,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(traffic_safety_router)
     app.include_router(webhooks_router)
     app.include_router(payments_router)
+    app.include_router(apple_iap_payments_router)
     app.include_router(family_router)
     app.include_router(photo_reports_router)
     app.include_router(place_alerts_router)

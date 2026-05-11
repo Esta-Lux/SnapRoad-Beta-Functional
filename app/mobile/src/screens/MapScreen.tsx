@@ -61,6 +61,7 @@ import {
   logMapboxAccessDiagnostics,
 } from '../config/mapbox';
 import {
+  effectiveAlternateRouteLineColor,
   effectiveNavRouteColors,
   getDrivingLightPreset,
   standardBasemapStyleImportConfig,
@@ -148,6 +149,7 @@ import {
 } from '../navigation/turnCardModel';
 import { sdkGuidanceStabilityKey } from '../navigation/sdkGuidanceUiKeys';
 import { sdkManeuverDisplayDistanceFromProgress } from '../navigation/sdkNavBridgePayload';
+import { destinationCrowMeters, shouldAcceptFinalDestinationArrival } from '../navigation/navArrivalGuard';
 import { useTurnConfirmationUntil } from '../hooks/useTurnConfirmationWindow';
 import { useMapWeather, weatherOverlayFactor } from '../hooks/useMapWeather';
 import MapWeatherOverlay from '../components/map/MapWeatherOverlay';
@@ -228,7 +230,13 @@ import { routeProfileForPlatform } from '../hooks/useNativeNavBridge';
 import { normalizeNativeNavParams } from '../navigation/nativeNavGuard';
 import type { TripSummary } from '../hooks/useDriveNavigation';
 import type { RouteProp } from '@react-navigation/native';
-import { useNavigation as useRNNavigation, useRoute, useIsFocused, useFocusEffect } from '@react-navigation/native';
+import {
+  useNavigation as useRNNavigation,
+  useRoute,
+  useIsFocused,
+  useFocusEffect,
+  useNavigationState,
+} from '@react-navigation/native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { MapStackParamList, MapStackScreenNavigationProp } from '../navigation/types';
 import { extractLocationSharingState, getApiErrorMessage } from '../features/social/locationSharing';
@@ -546,6 +554,14 @@ export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const rnNav = useRNNavigation<MapStackScreenNavigationProp>();
   const mapTabFocused = useIsFocused();
+  /** Top route of this stack — used so headless Mapbox nav stays mounted when the app backgrounds (turn card + progress keep updating). Only unmount hidden `MapboxNavigationView` when full-screen native nav owns the session. */
+  const topMapStackRouteName = useNavigationState((state) => {
+    const routes = state?.routes;
+    const idx = state?.index;
+    if (!routes?.length || typeof idx !== 'number' || idx < 0 || idx >= routes.length) return undefined;
+    return routes[idx]?.name as string | undefined;
+  });
+  const suppressHeadlessNavForNativeFullscreen = topMapStackRouteName === 'NativeNavigation';
   const { isNavigating: ctxNavigating, setIsNavigating: setNavCtx } = useNavigationMode();
   const [isNavActive, setIsNavActive] = useState(false);
   const { isLight, colors } = useTheme();
@@ -746,6 +762,26 @@ export default function MapScreen() {
     setNavLogicCoords([]);
   }, []);
 
+  useEffect(() => {
+    if (!nav.isNavigating) {
+      setNavLogicRuntimeDisabled(false);
+      return;
+    }
+    if (!navLogicEffective) return;
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') return;
+      try {
+        navLogicRef.current?.stopNavigation?.();
+      } catch (error) {
+        console.warn('[NavLogicSDK] background stop failed', error);
+      }
+      resetNavSdkState();
+      setNavLogicRuntimeDisabled(true);
+      setNavLogicCoords([]);
+    });
+    return () => sub.remove();
+  }, [nav.isNavigating, navLogicEffective]);
+
   /**
    * `navLogicCoords` is the `coordinates` prop on the hidden
    * `MapboxNavigationView`. A new `coordinates` value is an instruction to
@@ -832,6 +868,11 @@ export default function MapScreen() {
     ingestSdkVoiceSubtitle(t);
   }, []);
 
+  const sdkArrivalCallbackStreakRef = useRef(0);
+  useEffect(() => {
+    if (!nav.isNavigating) sdkArrivalCallbackStreakRef.current = 0;
+  }, [nav.isNavigating]);
+
   const handleSdkFinalDestinationArrival = useCallback(() => {
     const dest = nav.navigationData?.destination;
     const progress = nav.navigationProgress;
@@ -853,20 +894,17 @@ export default function MapScreen() {
       matched && Number.isFinite(matched.longitude)
         ? matched.longitude
         : nav.navigationProgressCoord.lng;
-    const crow =
-      dest && Number.isFinite(dest.lat) && Number.isFinite(dest.lng) && Number.isFinite(lat) && Number.isFinite(lng)
-        ? haversineMeters(lat, lng, dest.lat, dest.lng)
-        : Number.POSITIVE_INFINITY;
-    const timeNear =
-      typeof remainingSec === 'number' &&
-      Number.isFinite(remainingSec) &&
-      remainingSec <= 180;
-    const distanceNear =
-      typeof remainingMeters === 'number' &&
-      Number.isFinite(remainingMeters) &&
-      remainingMeters <= 260;
-    const physicallyAtDestination = crow <= 55;
-    if (!physicallyAtDestination && (!timeNear || !distanceNear)) {
+    const matchedCoord = Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+    const crow = destinationCrowMeters(dest ?? null, matchedCoord, null);
+    const accepted = shouldAcceptFinalDestinationArrival({
+      destination: dest ?? null,
+      matched: matchedCoord,
+      fallback: null,
+      remainingMeters,
+      remainingSeconds: remainingSec,
+    });
+    if (!accepted) {
+      sdkArrivalCallbackStreakRef.current = 0;
       if (__DEV__) {
         console.warn('[MapScreen] Ignored early SDK arrival callback', {
           remainingSec,
@@ -876,7 +914,9 @@ export default function MapScreen() {
       }
       return;
     }
-    nav.completeNavigationAtDestination();
+    sdkArrivalCallbackStreakRef.current += 1;
+    if (sdkArrivalCallbackStreakRef.current < 2) return;
+    requestAnimationFrame(() => nav.completeNavigationAtDestination());
   }, [
     nav.navigationData?.destination?.lat,
     nav.navigationData?.destination?.lng,
@@ -1046,7 +1086,7 @@ export default function MapScreen() {
       : 0.02;
   const smoothedFraction = useSmoothedNavFraction(stabilizedTargetFraction, nav.isNavigating, {
     /** Longer τ reduces polyline “creep” between matcher updates; Sport still settles fastest. */
-    timeConstantMs: drivingMode === 'calm' ? 215 : drivingMode === 'sport' ? 168 : 195,
+    timeConstantMs: drivingMode === 'calm' ? 245 : drivingMode === 'sport' ? 188 : 222,
     snapDeltaFraction,
     enabled: true,
     freezeWhenStationary: freezeNavSmoothing || stoppedForPuckSmoothing,
@@ -1152,6 +1192,8 @@ export default function MapScreen() {
   const lastPublishedPuckHeadingRef = useRef<number | null>(null);
   /** Cross-render state for {@link stabilizeDisplayPosition} (final puck/camera point). */
   const navDisplayPositionRef = useRef(INITIAL_DISPLAY_POSITION_STATE);
+  /** Browse-mode puck smoothing uses the same display filter so the default puck glides more cleanly. */
+  const browseDisplayPositionRef = useRef(INITIAL_DISPLAY_POSITION_STATE);
 
   const navStablePuck = useMemo(() => {
     const nowMs = Date.now();
@@ -1197,9 +1239,9 @@ export default function MapScreen() {
               : null);
 
     /**
-     * Heading: vehicle course first (chevron tracks real yaw). Route tangent is
-     * consulted inside {@link resolveRouteHeadingCandidate} only when course and
-     * geometry disagree sharply (fork / matcher confusion).
+     * Heading: while we remain on the active corridor, keep the chevron locked to
+     * the route tangent so the HUD arrow and camera stay steady on the polyline.
+     * Once we drift off-corridor, fall back to the live course for reroute handoff.
      */
     const sdkCourseDeg =
       typeof navDisplayHeading === 'number' && Number.isFinite(navDisplayHeading)
@@ -1314,6 +1356,25 @@ export default function MapScreen() {
     }
   }, [nav.isNavigating]);
 
+  useEffect(() => {
+    if (nav.isNavigating) {
+      browseDisplayPositionRef.current = INITIAL_DISPLAY_POSITION_STATE;
+    }
+  }, [nav.isNavigating]);
+
+  /** Higher `minMoveMeters` / `slowMinMoveMeters` hold tiny matcher jitter so the HUD puck glides instead of twitching. */
+  const navDisplaySmoothing = useMemo(() => ({
+    minMoveMeters: 3.6,
+    slowMinMoveMeters: 5.4,
+    timeConstantMs: drivingMode === 'calm' ? 470 : drivingMode === 'sport' ? 390 : 430,
+  }), [drivingMode]);
+
+  const browseDisplaySmoothing = useMemo(() => ({
+    minMoveMeters: 3.4,
+    slowMinMoveMeters: 5.2,
+    timeConstantMs: 460,
+  }), []);
+
   /**
    * Single display position for puck, camera anchor, and route overlay while navigating:
    * {@link navStablePuck} (leash + stationary lock) then {@link stabilizeDisplayPosition}
@@ -1354,6 +1415,7 @@ export default function MapScreen() {
       speedMps: spd,
       accuracyM: accuracy ?? null,
       nowMs: Date.now(),
+      ...navDisplaySmoothing,
     });
     navDisplayPositionRef.current = next;
     return next.coord ?? fromStable;
@@ -1365,9 +1427,32 @@ export default function MapScreen() {
     navDisplayCoordCandidate.lng,
     fusedSpeedMpsNav,
     accuracy,
+    navDisplaySmoothing,
     location.lat,
     location.lng,
   ]);
+
+  const browseDisplayCoord = useMemo((): Coordinate => {
+    if (
+      nav.isNavigating ||
+      !Number.isFinite(location.lat) ||
+      !Number.isFinite(location.lng) ||
+      (Math.abs(location.lat) < 1e-7 && Math.abs(location.lng) < 1e-7)
+    ) {
+      return { lat: location.lat, lng: location.lng };
+    }
+
+    const next = stabilizeDisplayPosition({
+      candidate: { lat: location.lat, lng: location.lng },
+      prev: browseDisplayPositionRef.current,
+      speedMps: Math.max(0, speed * 0.44704),
+      accuracyM: accuracy ?? null,
+      nowMs: Date.now(),
+      ...browseDisplaySmoothing,
+    });
+    browseDisplayPositionRef.current = next;
+    return next.coord ?? { lat: location.lat, lng: location.lng };
+  }, [accuracy, browseDisplaySmoothing, location.lat, location.lng, nav.isNavigating, speed]);
   /** True iff the stationary lock is currently engaged (frozen puck). */
   const navPuckStationary = navStablePuck.locked;
 
@@ -1852,6 +1937,8 @@ export default function MapScreen() {
    */
   useEffect(() => {
     if (!nav.isNavigating || !cameraLocked || navFollowZoomLevel == null || navFollowPitch == null) return;
+    /** Mapbox RN can assert if we drive the camera while inactive/background (resume crashes). */
+    if (AppState.currentState !== 'active') return;
     const cam = cameraRef.current;
     if (!cam?.setCamera) return;
     const anchor = { lat: navCameraAnchorLat, lng: navCameraAnchorLng };
@@ -2221,13 +2308,19 @@ export default function MapScreen() {
   );
   const standardStyleImportsEnabled = usesStandardStyleConfiguration(activeStyleURL);
 
+  const alternateRouteLineColor = useMemo(
+    () => effectiveAlternateRouteLineColor(mapLightPreset, isSatelliteStyle),
+    [mapLightPreset, isSatelliteStyle],
+  );
+  const routeLineLayerSlot = standardStyleImportsEnabled ? ('top' as const) : undefined;
+
   const standardBasemapImportConfig = useMemo(
     () =>
       standardBasemapStyleImportConfig(mapLightPreset, isSatelliteStyle, drivingMode, nav.isNavigating),
     [mapLightPreset, isSatelliteStyle, drivingMode, nav.isNavigating],
   );
 
-  /** Keeps 3D extrusions and route line under label layers where the style exposes anchors. */
+  /** Classic styles: anchor 3D extrusions below labels. On Standard/Satellite the route uses `slot="top"` so it clears 3D buildings. */
   const buildingsBelowLayerId = useMemo(
     () => labelAnchorLayerIdForStyleUrl(activeStyleURL),
     [activeStyleURL],
@@ -4694,11 +4787,11 @@ export default function MapScreen() {
         />
       )}
 
-      {navLogicEffective && nav.isNavigating && mapTabFocused && navLogicCoords.length >= 2 ? (
-        // Headless native session: this module has no separate "createSession" API — the hidden view
-        // drives logic + voice. IMPORTANT: `mapTabFocused` prevents a second nav session from spawning
-        // when the user opts into `NativeNavigationScreen` (full-screen), which would otherwise fight
-        // this hidden session for GPS / routing.
+      {navLogicEffective && nav.isNavigating && !suppressHeadlessNavForNativeFullscreen && navLogicCoords.length >= 2 ? (
+        // Headless native session: hidden view drives logic + voice for the RN map HUD.
+        // Do NOT gate on `useIsFocused`: that goes false on app background/inactive and would tear down
+        // the session (frozen turn card, bad remount on resume). Only suppress when `NativeNavigation`
+        // is on top so two native sessions do not fight for GPS / routing.
         <MapboxNavigationView
           ref={navLogicRef}
           style={{ position: 'absolute', width: 2, height: 2, opacity: 0, bottom: 0, right: 0, zIndex: -1 }}
@@ -4791,7 +4884,7 @@ export default function MapScreen() {
                   })()
                 : null}
             </>
-          ) : Number.isFinite(location.lat) && Number.isFinite(location.lng) ? (
+          ) : Number.isFinite(browseDisplayCoord.lat) && Number.isFinite(browseDisplayCoord.lng) ? (
             /**
              * Browse-mode `CustomLocationProvider`. The default Mapbox
              * `LocationPuck` subscribes to the OS location manager directly
@@ -4813,7 +4906,7 @@ export default function MapScreen() {
              * edge.
              */
             <MapboxGL.CustomLocationProvider
-              coordinate={[location.lng, location.lat]}
+              coordinate={[browseDisplayCoord.lng, browseDisplayCoord.lat]}
               heading={Number.isFinite(heading) ? heading : 0}
             />
           ) : null}
@@ -4926,7 +5019,7 @@ export default function MapScreen() {
               if (!route.polyline || route.polyline.length < 2) return null;
               const lineOpacity = Math.min(
                 0.78,
-                isSatelliteStyle || mapLightPreset === 'night' ? 0.52 : 0.44,
+                isSatelliteStyle || mapLightPreset === 'night' || mapLightPreset === 'dusk' ? 0.52 : 0.44,
               );
               const geo: GeoJSON.FeatureCollection = {
                 type: 'FeatureCollection',
@@ -4949,8 +5042,9 @@ export default function MapScreen() {
                 >
                   <MGL.LineLayer
                     id={`alt-route-line-${idx}`}
+                    slot={routeLineLayerSlot}
                     style={{
-                      lineColor: '#0A84FF',
+                      lineColor: alternateRouteLineColor,
                       lineWidth: 7,
                       lineOpacity,
                       lineCap: 'round',
@@ -5004,7 +5098,8 @@ export default function MapScreen() {
                       (nav.isNavigating || nav.showRoutePreview)
                     }
                     isRerouting={nav.isRerouting || sdkRouteHandoffUi}
-                    belowLayerID={buildingsBelowLayerId}
+                    belowLayerID={routeLineLayerSlot ? undefined : buildingsBelowLayerId}
+                    layerSlot={routeLineLayerSlot}
                   />
                 );
               })()
@@ -5094,7 +5189,7 @@ export default function MapScreen() {
               - Explore (not navigating): show the default `LocationPuck`
                 (raw device GPS + compass, with pulsing).
               - Navigating: hide `LocationPuck` entirely and show
-                `NavSdkPuck` fed from `navDisplayCoord` / `navPuckHeading` (course-first, tangent only on fork).
+                `NavSdkPuck` fed from `navDisplayCoord` / `navPuckHeading` (route-locked while on corridor).
                 This is the on-polyline snapped coord with the same smoothed
                 bearing that `CustomLocationProvider` feeds to the camera, so
                 puck + camera + route split all sit on a single point from

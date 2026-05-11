@@ -249,13 +249,23 @@ def oauth_supabase(request: Request, payload: dict):
     try:
         profile = sb_get_user_by_email(email) or {}
         if not profile:
-            raise HTTPException(
-                status_code=403,
-                detail=(
-                    "OAuth sign-up is not available yet. Create your account with email and password first, "
-                    "including date of birth verification, then you can sign in."
-                ),
+            generated_name = (
+                str(meta.get("full_name") or meta.get("name") or meta.get("preferred_username") or "").strip()
+                or email.split("@")[0]
             )
+            profile_seed = {
+                "id": uid or str(uuid.uuid4()),
+                "email": email,
+                "name": generated_name,
+                "full_name": generated_name,
+                "role": "driver",
+                "status": "active",
+                "xp": 0,
+                "level": 1,
+                "gems": 0,
+            }
+            get_supabase().table("profiles").upsert(profile_seed).execute()
+            profile = sb_get_user_by_email(email) or profile_seed
 
         status = str(profile.get("status") or "active").strip().lower()
         if status in {"deleted", "deactivated", "suspended", "disabled"}:

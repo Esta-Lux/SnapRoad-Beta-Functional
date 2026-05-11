@@ -25,7 +25,7 @@ from config import (
     OHGO_API_KEY,
     OHGO_API_BASE,
 )
-from middleware.auth import get_current_user
+from middleware.auth import get_current_user, get_current_user_optional
 from database import get_supabase
 from services.cache import cache_get, cache_set
 
@@ -387,17 +387,24 @@ def get_route_notifications(
 
 @router.get("/navigation/nearby-offers")
 def get_navigation_nearby_offers(
+    request: Request,
     lat: float = Query(...),
     lng: float = Query(...),
     trip_id: str = Query(...),
-    auth_user: dict = Depends(get_current_user),
+    auth_user: Optional[dict] = Depends(get_current_user_optional),
 ):
     from routes.offers import _active_offers_source
 
-    user_id, user_locations, user_routes = _resolve_user_scoped_data(auth_user)
-    profile = get_user_snapshot(user_id)
-    prior_visits = profile.get("saved_locations", user_locations) or user_locations
-    history = profile.get("saved_routes", user_routes) or user_routes
+    guest_id = str(request.headers.get("x-snaproad-guest-id") or "").strip()
+    if auth_user:
+        user_id, user_locations, user_routes = _resolve_user_scoped_data(auth_user)
+        profile = get_user_snapshot(user_id)
+        prior_visits = profile.get("saved_locations", user_locations) or user_locations
+        history = profile.get("saved_routes", user_routes) or user_routes
+    else:
+        user_id = guest_id or f"guest-trip-{trip_id}"
+        prior_visits = []
+        history = []
     alerted_key = f"nearby-offers-alerted:{trip_id}"
     alerted_ids = {str(item) for item in (cache_get(alerted_key) or [])}
 
