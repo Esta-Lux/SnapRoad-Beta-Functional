@@ -568,6 +568,7 @@ export default function OrionQuickMic({
     if (isListening) {
       void stopListening();
     } else if (isThinking) {
+      /** A second tap while Orion is thinking is treated as an explicit "stop this hands-free session" intent. */
       cancelPlayback();
     } else {
       void beginNavigationHandsFreeSession();

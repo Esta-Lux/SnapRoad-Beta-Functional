@@ -1362,6 +1362,7 @@ export default function MapScreen() {
     }
   }, [nav.isNavigating]);
 
+  /** Higher `minMoveMeters` / `slowMinMoveMeters` hold tiny matcher jitter so the HUD puck glides instead of twitching. */
   const navDisplaySmoothing = useMemo(() => ({
     minMoveMeters: 3.6,
     slowMinMoveMeters: 5.4,
