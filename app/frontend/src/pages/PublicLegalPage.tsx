@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { SUPPORT_EMAIL } from '@/lib/launchFlags'
 import { sanitizeHtml } from '@/lib/sanitizeHtml'
 import { getApiBaseUrl } from '@/services/api'
+import './publicLegalPage.css'
 
 type LegalDoc = {
   id: string
@@ -173,42 +174,7 @@ export default function PublicLegalPage({ docKey }: { docKey: LegalPageKey }) {
                 </p>
               </div>
             ) : renderedHtml ? (
-              <>
-                <style>{`
-                  .snaproad-legal h1 { font-size: 1.875rem; font-weight: 700; margin-bottom: 0.5rem; color: #f8fafc; }
-                  .snaproad-legal h2 {
-                    font-size: 1.125rem; font-weight: 700; margin-top: 2rem; margin-bottom: 0.75rem;
-                    color: #f8fafc; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.5rem;
-                  }
-                  .snaproad-legal h3 { font-size: 1rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.5rem; color: #e2e8f0; }
-                  .snaproad-legal p { margin: 0.75rem 0; color: #e2e8f0; line-height: 1.75; }
-                  .snaproad-legal ul, .snaproad-legal ol { margin: 0.75rem 0; padding-left: 1.5rem; color: #e2e8f0; }
-                  .snaproad-legal li { margin: 0.5rem 0; }
-                  .snaproad-legal a { color: #7dd3fc; text-decoration: underline; }
-                  .snaproad-legal strong { color: #f8fafc; }
-                  .snaproad-legal .updated { color: #94a3b8; font-size: 0.875rem; margin-bottom: 2rem; }
-                  .snaproad-legal .warning {
-                    background: rgba(245, 158, 11, 0.12); border-left: 4px solid #f59e0b;
-                    padding: 1rem; margin: 1rem 0; border-radius: 0.5rem; color: #fde68a;
-                  }
-                  .snaproad-legal .warning strong { color: #fef3c7; }
-                  .snaproad-legal .highlight {
-                    background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 0.75rem; margin: 1rem 0;
-                  }
-                  .snaproad-legal .contact-box {
-                    background: rgba(15, 23, 42, 0.95); color: #f8fafc; padding: 1.5rem;
-                    border-radius: 1rem; margin-top: 2rem; border: 1px solid rgba(255,255,255,0.08);
-                  }
-                  .snaproad-legal .contact-box a { color: #93c5fd; }
-                  .snaproad-legal .contact-box strong { color: #f8fafc; }
-                  .snaproad-legal table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.875rem; }
-                  .snaproad-legal th, .snaproad-legal td {
-                    padding: 0.75rem; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.08);
-                  }
-                  .snaproad-legal th { background: rgba(255,255,255,0.05); font-weight: 600; color: #f8fafc; }
-                `}</style>
-                <article className="snaproad-legal text-sm leading-7" dangerouslySetInnerHTML={{ __html: renderedHtml }} />
-              </>
+              <article className="snaproad-legal text-sm leading-7" dangerouslySetInnerHTML={{ __html: renderedHtml }} />
             ) : (
               <div className="space-y-3 text-sm text-slate-300">
                 <p>
