@@ -3,14 +3,13 @@ import { Platform } from 'react-native';
 import type { Purchase } from 'react-native-iap';
 import {
   endConnection,
+  fetchProducts,
   finishTransaction,
   getAvailablePurchases,
-  getSubscriptions,
   initConnection,
   purchaseErrorListener,
   purchaseUpdatedListener,
-  requestSubscription,
-  setup,
+  requestPurchase,
 } from 'react-native-iap';
 
 import { api } from '../api/client';
@@ -58,8 +57,8 @@ async function assertAppleIapServerReady(): Promise<void> {
 
 function hasStoreProduct(products: unknown, sku: string): boolean {
   return Array.isArray(products) && products.some((p) => {
-    const row = p as { productId?: unknown };
-    return String(row?.productId || '').trim() === sku;
+    const row = p as { id?: unknown; productId?: unknown };
+    return String(row?.id ?? row?.productId ?? '').trim() === sku;
   });
 }
 
@@ -96,15 +95,11 @@ export async function bootstrapAppleIap(): Promise<void> {
   }
   bootstrapped = true;
 
-  setup({ storekitMode: 'STOREKIT_HYBRID_MODE' });
   await initConnection();
 
-  purchaseSub = purchaseUpdatedListener(
-    (purchase) => {
-      void handlePurchaseUpdate(purchase);
-    },
-    (err) => console.warn('[IAP] purchaseUpdatedListener errorCallback', err),
-  );
+  purchaseSub = purchaseUpdatedListener((purchase) => {
+    void handlePurchaseUpdate(purchase);
+  });
 
   errorSub = purchaseErrorListener((err) => {
     if (!pending) return;
@@ -158,7 +153,7 @@ export function startAppleSubscriptionPurchase(
   return (async () => {
     await bootstrapAppleIap();
     await assertAppleIapServerReady();
-    const products = await getSubscriptions({ skus: [sku] });
+    const products = await fetchProducts({ skus: [sku], type: 'subs' });
     if (!hasStoreProduct(products, sku)) {
       throw new Error(`Apple could not find the ${plan} subscription product (${sku}) for this app build.`);
     }
@@ -166,10 +161,15 @@ export function startAppleSubscriptionPurchase(
     await new Promise<void>((resolve, reject) => {
       pending = { skus: new Set([sku]), resolve, reject };
 
-      void requestSubscription({
-        sku,
-        appAccountToken,
-        andDangerouslyFinishTransactionAutomaticallyIOS: false,
+      void requestPurchase({
+        type: 'subs',
+        request: {
+          apple: {
+            sku,
+            appAccountToken,
+            andDangerouslyFinishTransactionAutomatically: false,
+          },
+        },
       }).catch((e: unknown) => {
         if (pending) {
           pending.reject(e instanceof Error ? e : new Error(String(e)));
