@@ -1871,8 +1871,3 @@ const styles = StyleSheet.create({
   reqBtnT: { color: '#fff', fontSize: 12, fontWeight: '800' },
   searchHit: { borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: StyleSheet.hairlineWidth },
 });
-  useEffect(() => {
-    if (!FAMILY_MODE_LAUNCH_ENABLED && section === 'family') {
-      setSection('friends');
-    }
-  }, [section]);
