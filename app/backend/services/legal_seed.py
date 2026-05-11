@@ -1,5 +1,5 @@
 """
-Seed default SnapRoad Terms of Service and Privacy Policy into the
+Seed default SnapRoad legal documents into the
 `legal_documents` table.
 
 Why this lives in code (not a SQL migration):
@@ -47,6 +47,16 @@ DEFAULT_LEGAL_DOCS: list[dict[str, Any]] = [
         "is_required": True,
         "status": "published",
     },
+    {
+        "slug": "community-guidelines",
+        "name": "Community Guidelines",
+        "type": "community",
+        "filename": "community-guidelines.html",
+        "description": "Standards for safe reporting, respectful conduct, and acceptable use across SnapRoad.",
+        "version": "1.0",
+        "is_required": False,
+        "status": "published",
+    },
 ]
 
 
@@ -75,7 +85,7 @@ def _existing_slug_set() -> set[str]:
 
 def seed_default_legal_documents(*, force: bool = False) -> dict[str, Any]:
     """
-    Insert default Terms + Privacy if their slugs are not already in the table.
+    Insert default public legal documents if their slugs are not already in the table.
 
     Args:
       force: when True, overwrite the `content` of an existing row with the

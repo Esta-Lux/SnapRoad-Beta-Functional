@@ -401,6 +401,8 @@ def get_navigation_nearby_offers(
         prior_visits = profile.get("saved_locations", user_locations) or user_locations
         history = profile.get("saved_routes", user_routes) or user_routes
     else:
+        guest_id = str(request.headers.get("x-snaproad-guest-id") or "").strip()
+        user_id = guest_id or f"guest-trip-{trip_id}"
         prior_visits = []
         history = []
     alerted_key = f"nearby-offers-alerted:{trip_id}"

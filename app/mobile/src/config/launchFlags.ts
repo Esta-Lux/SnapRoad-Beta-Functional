@@ -5,4 +5,4 @@ const envBool = (value: string | undefined, fallback: boolean): boolean => {
 
 export const FAMILY_MODE_LAUNCH_ENABLED = envBool(process.env.EXPO_PUBLIC_ENABLE_FAMILY_MODE, false);
 export const IOS_EXTERNAL_BILLING_ENABLED = envBool(process.env.EXPO_PUBLIC_IOS_EXTERNAL_BILLING, false);
-export const SUPPORT_EMAIL = 'support@snaproad.co';
+export const SUPPORT_EMAIL = 'teams@snaproad.co';

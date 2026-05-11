@@ -7,7 +7,7 @@
 - Family launch surfaces are hidden by default until the backend is production-ready.
 - Release builds force `EXPO_PUBLIC_NAV_LOGIC_DEBUG=0`.
 - Mobile CI now runs unit/smoke tests, typecheck, and a production Expo export smoke.
-- Support contact is standardized on `support@snaproad.co`.
+- Support contact is standardized on `teams@snaproad.co`.
 
 ## Still required before App Store submission
 
@@ -38,7 +38,7 @@
 - [ ] Run `npx expo export --platform ios --platform android --output-dir dist-export --clear`
 - [ ] Verify iOS upgrade flows do not open external subscription checkout
 - [ ] Verify legal links open `/privacy`, `/terms`, `/community-guidelines`
-- [ ] Verify support contact shows `support@snaproad.co`
+- [ ] Verify support contact shows `teams@snaproad.co`
 
 ### Frontend
 
@@ -60,7 +60,7 @@
 - `EXPO_PUBLIC_NAV_LOGIC_DEBUG=0` for production
 - Sentry release uploads enabled when `SENTRY_AUTH_TOKEN` is configured
 - Family mode remains disabled unless product explicitly flips the launch flag
-- `support@snaproad.co` is the single public support contact
+- `teams@snaproad.co` is the single public support contact
 
 ## Deferred follow-ups
 

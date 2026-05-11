@@ -8,4 +8,4 @@ export const FAMILY_MODE_LAUNCH_ENABLED = envBool(
   false,
 );
 
-export const SUPPORT_EMAIL = 'support@snaproad.co';
+export const SUPPORT_EMAIL = 'teams@snaproad.co';

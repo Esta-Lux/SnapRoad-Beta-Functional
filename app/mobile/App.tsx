@@ -785,18 +785,22 @@ export default function App() {
   React.useEffect(() => {
     if (Platform.OS !== 'ios') return;
     let cancelled = false;
+    let shutdownAppleIap: (() => Promise<void>) | null = null;
     void (async () => {
       try {
-        const { bootstrapAppleIap } = await import('./src/billing/appleIap');
+        const appleIap = await import('./src/billing/appleIap');
         if (cancelled) return;
-        await bootstrapAppleIap();
+        shutdownAppleIap = appleIap.shutdownAppleIap;
+        await appleIap.bootstrapAppleIap();
       } catch (e) {
         console.warn('[IAP] bootstrap failed', e);
       }
     })();
     return () => {
       cancelled = true;
-      void import('./src/billing/appleIap').then((m) => m.shutdownAppleIap()).catch(() => {});
+      if (shutdownAppleIap) {
+        void shutdownAppleIap().catch(() => {});
+      }
     };
   }, []);
 
