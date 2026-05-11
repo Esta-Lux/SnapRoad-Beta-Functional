@@ -787,7 +787,7 @@ export default function App() {
     let cancelled = false;
     void (async () => {
       try {
-        const { bootstrapAppleIap, shutdownAppleIap } = await import('./src/billing/appleIap');
+        const { bootstrapAppleIap } = await import('./src/billing/appleIap');
         if (cancelled) return;
         await bootstrapAppleIap();
       } catch (e) {
