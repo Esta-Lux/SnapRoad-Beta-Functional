@@ -1362,6 +1362,18 @@ export default function MapScreen() {
     }
   }, [nav.isNavigating]);
 
+  const navDisplaySmoothing = useMemo(() => ({
+    minMoveMeters: 3.6,
+    slowMinMoveMeters: 5.4,
+    timeConstantMs: drivingMode === 'calm' ? 470 : drivingMode === 'sport' ? 390 : 430,
+  }), [drivingMode]);
+
+  const browseDisplaySmoothing = useMemo(() => ({
+    minMoveMeters: 3.4,
+    slowMinMoveMeters: 5.2,
+    timeConstantMs: 460,
+  }), []);
+
   /**
    * Single display position for puck, camera anchor, and route overlay while navigating:
    * {@link navStablePuck} (leash + stationary lock) then {@link stabilizeDisplayPosition}
@@ -1402,9 +1414,7 @@ export default function MapScreen() {
       speedMps: spd,
       accuracyM: accuracy ?? null,
       nowMs: Date.now(),
-      minMoveMeters: 3.6,
-      slowMinMoveMeters: 5.4,
-      timeConstantMs: drivingMode === 'calm' ? 470 : drivingMode === 'sport' ? 390 : 430,
+      ...navDisplaySmoothing,
     });
     navDisplayPositionRef.current = next;
     return next.coord ?? fromStable;
@@ -1416,7 +1426,7 @@ export default function MapScreen() {
     navDisplayCoordCandidate.lng,
     fusedSpeedMpsNav,
     accuracy,
-    drivingMode,
+    navDisplaySmoothing,
     location.lat,
     location.lng,
   ]);
@@ -1437,13 +1447,11 @@ export default function MapScreen() {
       speedMps: Math.max(0, speed * 0.44704),
       accuracyM: accuracy ?? null,
       nowMs: Date.now(),
-      minMoveMeters: 3.4,
-      slowMinMoveMeters: 5.2,
-      timeConstantMs: 460,
+      ...browseDisplaySmoothing,
     });
     browseDisplayPositionRef.current = next;
     return next.coord ?? { lat: location.lat, lng: location.lng };
-  }, [accuracy, location.lat, location.lng, nav.isNavigating, speed]);
+  }, [accuracy, browseDisplaySmoothing, location.lat, location.lng, nav.isNavigating, speed]);
   /** True iff the stationary lock is currently engaged (frozen puck). */
   const navPuckStationary = navStablePuck.locked;
 

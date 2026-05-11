@@ -285,9 +285,11 @@ export default function OrionQuickMic({
               )
               .slice(0, 6)
           : [];
+        /** In nav mode, suppress late replies once the user has toggled the hands-free session off. */
+        const shouldSpeakReply = !navModeRef.current || handsFreeSessionRef.current;
         onSuggestions?.(suggestions);
         onReply?.(reply);
-        if (!navModeRef.current || handsFreeSessionRef.current) {
+        if (shouldSpeakReply) {
           speakReplyAndMaybeContinue(reply, continuing);
         }
         if (Array.isArray(actions) && actions.length && onAction) {
@@ -297,8 +299,9 @@ export default function OrionQuickMic({
         }
       } catch {
         const fallback = "Sorry — I'm having trouble reaching the assistant. Try asking again in a moment.";
+        const shouldSpeakReply = !navModeRef.current || handsFreeSessionRef.current;
         onReply?.(fallback);
-        if (!navModeRef.current || handsFreeSessionRef.current) {
+        if (shouldSpeakReply) {
           speakReplyAndMaybeContinue(fallback, continuing);
         }
       } finally {
