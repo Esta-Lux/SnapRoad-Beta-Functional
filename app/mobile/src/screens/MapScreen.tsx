@@ -1086,7 +1086,7 @@ export default function MapScreen() {
       : 0.02;
   const smoothedFraction = useSmoothedNavFraction(stabilizedTargetFraction, nav.isNavigating, {
     /** Longer τ reduces polyline “creep” between matcher updates; Sport still settles fastest. */
-    timeConstantMs: drivingMode === 'calm' ? 215 : drivingMode === 'sport' ? 168 : 195,
+    timeConstantMs: drivingMode === 'calm' ? 245 : drivingMode === 'sport' ? 188 : 222,
     snapDeltaFraction,
     enabled: true,
     freezeWhenStationary: freezeNavSmoothing || stoppedForPuckSmoothing,
@@ -1192,6 +1192,8 @@ export default function MapScreen() {
   const lastPublishedPuckHeadingRef = useRef<number | null>(null);
   /** Cross-render state for {@link stabilizeDisplayPosition} (final puck/camera point). */
   const navDisplayPositionRef = useRef(INITIAL_DISPLAY_POSITION_STATE);
+  /** Browse-mode puck smoothing uses the same display filter so the default puck glides more cleanly. */
+  const browseDisplayPositionRef = useRef(INITIAL_DISPLAY_POSITION_STATE);
 
   const navStablePuck = useMemo(() => {
     const nowMs = Date.now();
@@ -1237,9 +1239,9 @@ export default function MapScreen() {
               : null);
 
     /**
-     * Heading: vehicle course first (chevron tracks real yaw). Route tangent is
-     * consulted inside {@link resolveRouteHeadingCandidate} only when course and
-     * geometry disagree sharply (fork / matcher confusion).
+     * Heading: while we remain on the active corridor, keep the chevron locked to
+     * the route tangent so the HUD arrow and camera stay steady on the polyline.
+     * Once we drift off-corridor, fall back to the live course for reroute handoff.
      */
     const sdkCourseDeg =
       typeof navDisplayHeading === 'number' && Number.isFinite(navDisplayHeading)
@@ -1354,6 +1356,25 @@ export default function MapScreen() {
     }
   }, [nav.isNavigating]);
 
+  useEffect(() => {
+    if (nav.isNavigating) {
+      browseDisplayPositionRef.current = INITIAL_DISPLAY_POSITION_STATE;
+    }
+  }, [nav.isNavigating]);
+
+  /** Higher `minMoveMeters` / `slowMinMoveMeters` hold tiny matcher jitter so the HUD puck glides instead of twitching. */
+  const navDisplaySmoothing = useMemo(() => ({
+    minMoveMeters: 3.6,
+    slowMinMoveMeters: 5.4,
+    timeConstantMs: drivingMode === 'calm' ? 470 : drivingMode === 'sport' ? 390 : 430,
+  }), [drivingMode]);
+
+  const browseDisplaySmoothing = useMemo(() => ({
+    minMoveMeters: 3.4,
+    slowMinMoveMeters: 5.2,
+    timeConstantMs: 460,
+  }), []);
+
   /**
    * Single display position for puck, camera anchor, and route overlay while navigating:
    * {@link navStablePuck} (leash + stationary lock) then {@link stabilizeDisplayPosition}
@@ -1394,6 +1415,7 @@ export default function MapScreen() {
       speedMps: spd,
       accuracyM: accuracy ?? null,
       nowMs: Date.now(),
+      ...navDisplaySmoothing,
     });
     navDisplayPositionRef.current = next;
     return next.coord ?? fromStable;
@@ -1405,9 +1427,32 @@ export default function MapScreen() {
     navDisplayCoordCandidate.lng,
     fusedSpeedMpsNav,
     accuracy,
+    navDisplaySmoothing,
     location.lat,
     location.lng,
   ]);
+
+  const browseDisplayCoord = useMemo((): Coordinate => {
+    if (
+      nav.isNavigating ||
+      !Number.isFinite(location.lat) ||
+      !Number.isFinite(location.lng) ||
+      (Math.abs(location.lat) < 1e-7 && Math.abs(location.lng) < 1e-7)
+    ) {
+      return { lat: location.lat, lng: location.lng };
+    }
+
+    const next = stabilizeDisplayPosition({
+      candidate: { lat: location.lat, lng: location.lng },
+      prev: browseDisplayPositionRef.current,
+      speedMps: Math.max(0, speed * 0.44704),
+      accuracyM: accuracy ?? null,
+      nowMs: Date.now(),
+      ...browseDisplaySmoothing,
+    });
+    browseDisplayPositionRef.current = next;
+    return next.coord ?? { lat: location.lat, lng: location.lng };
+  }, [accuracy, browseDisplaySmoothing, location.lat, location.lng, nav.isNavigating, speed]);
   /** True iff the stationary lock is currently engaged (frozen puck). */
   const navPuckStationary = navStablePuck.locked;
 
@@ -4839,7 +4884,7 @@ export default function MapScreen() {
                   })()
                 : null}
             </>
-          ) : Number.isFinite(location.lat) && Number.isFinite(location.lng) ? (
+          ) : Number.isFinite(browseDisplayCoord.lat) && Number.isFinite(browseDisplayCoord.lng) ? (
             /**
              * Browse-mode `CustomLocationProvider`. The default Mapbox
              * `LocationPuck` subscribes to the OS location manager directly
@@ -4861,7 +4906,7 @@ export default function MapScreen() {
              * edge.
              */
             <MapboxGL.CustomLocationProvider
-              coordinate={[location.lng, location.lat]}
+              coordinate={[browseDisplayCoord.lng, browseDisplayCoord.lat]}
               heading={Number.isFinite(heading) ? heading : 0}
             />
           ) : null}
@@ -5144,7 +5189,7 @@ export default function MapScreen() {
               - Explore (not navigating): show the default `LocationPuck`
                 (raw device GPS + compass, with pulsing).
               - Navigating: hide `LocationPuck` entirely and show
-                `NavSdkPuck` fed from `navDisplayCoord` / `navPuckHeading` (course-first, tangent only on fork).
+                `NavSdkPuck` fed from `navDisplayCoord` / `navPuckHeading` (route-locked while on corridor).
                 This is the on-polyline snapped coord with the same smoothed
                 bearing that `CustomLocationProvider` feeds to the camera, so
                 puck + camera + route split all sit on a single point from

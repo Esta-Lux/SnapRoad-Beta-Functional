@@ -97,11 +97,11 @@ test('shouldGluePuckToRoute: handles null', () => {
 
 /* ── resolveHeadingCandidate ─────────────────────────────────────────── */
 
-test('resolveHeadingCandidate: on-corridor, moving, course agrees → use SDK course', () => {
+test('resolveHeadingCandidate: on-corridor, moving, course agrees → stays locked to route tangent', () => {
   const poly = eastPolyline();
   const snap = snapPuckToRoute({ lat: poly[1]!.lat, lng: poly[1]!.lng }, poly)!;
   const out = resolveHeadingCandidate({ snap, sdkCourseDeg: 92, speedMps: 8 });
-  assert.equal(out, 92);
+  assert.ok(out != null && Math.abs(out - 90) < 6, `expected ~90° tangent, got ${out}`);
 });
 
 test('resolveHeadingCandidate: on-corridor, moving, course disagrees → use route tangent', () => {
@@ -110,6 +110,14 @@ test('resolveHeadingCandidate: on-corridor, moving, course disagrees → use rou
   // SDK reports 200° (south-westish) but the road is going east — trust route.
   const out = resolveHeadingCandidate({ snap, sdkCourseDeg: 200, speedMps: 8 });
   assert.ok(out != null && Math.abs(out - 90) < 6, `expected ~90° tangent, got ${out}`);
+});
+
+test('resolveHeadingCandidate: off-corridor keeps live SDK course for reroute handoff', () => {
+  const poly = eastPolyline();
+  const offNorth = 60 / 111320;
+  const snap = snapPuckToRoute({ lat: poly[2]!.lat + offNorth, lng: poly[2]!.lng }, poly)!;
+  const out = resolveHeadingCandidate({ snap, sdkCourseDeg: 208, speedMps: 8 });
+  assert.equal(out, 208);
 });
 
 test('resolveHeadingCandidate: stopped (no course, slow speed) returns null when no fallback', () => {
