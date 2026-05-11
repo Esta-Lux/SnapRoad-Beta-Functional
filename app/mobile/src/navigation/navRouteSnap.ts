@@ -142,16 +142,17 @@ export function shouldGluePuckToRoute(snap: RouteSnap | null): boolean {
   return snap.withinCorridor;
 }
 
-/** Only replace vehicle course with route geometry above this disagreement (fork / bad match). */
-const COURSE_VS_TANGENT_FORK_DEG = 50;
-
 /**
  * Resolve the heading the upstream stabilizer should consume.
  *
- * **Vehicle-first:** when moving, prefer the SDK/GPS course so the chevron turns
- * with the driver's actual yaw — it no longer leads into bends via polyline
- * tangents. We only fall back to the route tangent when course and geometry
- * disagree strongly (fork, parallel-road confusion), or when course is missing.
+ * **Route-first while on corridor:** when we're confidently snapped to the active
+ * route polyline, publish the route tangent as the chevron / camera heading so
+ * the HUD stays visually locked to the lane centerline. That prevents low-speed
+ * course jitter from wobbling the arrow while the user is still on-route.
+ *
+ * When we are no longer confidently on the route corridor (release / off-route
+ * handoff), fall back to the SDK/GPS course so reroutes and free-drive behavior
+ * still reflect the user's real motion immediately.
  */
 export function resolveHeadingCandidate(input: {
   snap: RouteSnap | null;
@@ -163,23 +164,16 @@ export function resolveHeadingCandidate(input: {
     typeof sdkCourseDeg === 'number' && Number.isFinite(sdkCourseDeg) && sdkCourseDeg >= 0
       ? ((sdkCourseDeg % 360) + 360) % 360
       : null;
-  const moving =
-    typeof speedMps === 'number' && Number.isFinite(speedMps) && speedMps >= TANGENT_PREFERRED_SPEED_MPS;
+  const routeLocked =
+    Boolean(snap?.withinCorridor) &&
+    snap?.shouldRelease !== true &&
+    snap?.tangentDeg != null;
 
-  if (!moving) {
-    if (course != null) return course;
-    if (snap?.tangentDeg != null) return snap.tangentDeg;
-    return null;
+  if (routeLocked && snap?.tangentDeg != null) {
+    return snap.tangentDeg;
   }
 
-  if (course != null) {
-    if (snap?.withinCorridor && snap.tangentDeg != null) {
-      const delta = Math.abs(((course - snap.tangentDeg + 540) % 360) - 180);
-      if (delta > COURSE_VS_TANGENT_FORK_DEG) return snap.tangentDeg;
-    }
-    return course;
-  }
-
+  if (course != null) return course;
   if (snap?.tangentDeg != null) return snap.tangentDeg;
   return null;
 }
