@@ -66,7 +66,7 @@ Use the **`production`** profile: it applies **`EXPO_PUBLIC_NAV_NATIVE_SDK=0`** 
 
 ### Logic-SDK diagnostics HUD (EAS / release)
 
-**`EXPO_PUBLIC_NAV_LOGIC_DEBUG`**: when `"1"`, the map shows the nav diagnostics HUD during active navigation. It is inlined at **JS bundle** time (`eas update` / Metro), so you can ship it via **OTA without a native rebuild**. This repo sets it in **`app/mobile/eas.json`** (per build profile) and the **GitHub `EAS Update` workflow** exports `EXPO_PUBLIC_NAV_LOGIC_DEBUG=1` when publishing production OTAs. For a **local** OTA from the repo root, run `export EXPO_PUBLIC_NAV_LOGIC_DEBUG=1` before `npm run eas:update:production` (or add the same key to Expo → Environment variables → production and `eas env:pull` before updating). The overlay lists env flags (LOGIC / NATIVE), resolved mode (`HEADLESS_LOGIC` vs `JS_GUIDANCE`), SDK trip phase, instruction source, native event counters, last voice pipeline, and progress age.
+**`EXPO_PUBLIC_NAV_LOGIC_DEBUG`**: when `"1"`, the map shows the nav diagnostics HUD during active navigation. It is inlined at **JS bundle** time (`eas update` / Metro), so you can ship it via **OTA without a native rebuild**. Production builds and production OTA publishes now force this flag to **`0`** so the diagnostics HUD stays out of store releases by default. For a short-lived investigation, enable it only on a temporary non-production build or override it briefly before a targeted OTA, then turn it back off. The overlay lists env flags (LOGIC / NATIVE), resolved mode (`HEADLESS_LOGIC` vs `JS_GUIDANCE`), SDK trip phase, instruction source, native event counters, last voice pipeline, and progress age.
 
 ## Podfile ENV dedupe
 

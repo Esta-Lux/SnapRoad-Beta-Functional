@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import SheetModal from '../common/Modal';
 import { PLANS } from '../../constants/plans';
 import type { PlanTier } from '../../types';
+import { FAMILY_MODE_LAUNCH_ENABLED } from '../../config/launchFlags';
 export function LevelProgressModal({
   visible,
   onClose,
@@ -119,7 +120,9 @@ export function PlanModal(props: { visible: boolean; onClose: () => void; cardBg
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
-            {(Object.entries(PLANS) as [PlanTier, typeof PLANS.basic][]).map(([tier, plan]) => {
+            {(Object.entries(PLANS) as [PlanTier, typeof PLANS.basic][])
+              .filter(([tier]) => FAMILY_MODE_LAUNCH_ENABLED || tier !== 'family')
+              .map(([tier, plan]) => {
               const isSel = selected === tier;
               const isCurrent = currentPlan === tier;
               const accent = PLAN_COLORS[tier as PlanTier];
@@ -190,7 +193,7 @@ export function PlanModal(props: { visible: boolean; onClose: () => void; cardBg
                   {isCurrent && <Text style={{ color: accent, fontSize: 11, fontWeight: '700', marginTop: 8 }}>Current plan</Text>}
                 </TouchableOpacity>
               );
-            })}
+              })}
           </ScrollView>
 
           <View style={{ paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)' }}>

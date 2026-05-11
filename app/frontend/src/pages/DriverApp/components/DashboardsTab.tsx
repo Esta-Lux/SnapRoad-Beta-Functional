@@ -1,4 +1,5 @@
 import { Users, Lock, Swords } from 'lucide-react'
+import { FAMILY_MODE_LAUNCH_ENABLED } from '@/lib/launchFlags'
 
 interface Props {
   isLight: boolean
@@ -48,7 +49,9 @@ export default function DashboardsTab({
     >
       <div className="px-4 pt-4 pb-3">
         <h1 className={`text-lg font-bold ${text}`}>Dashboards</h1>
-        <p className={`text-xs ${muted}`}>Premium features and family safety controls</p>
+        <p className={`text-xs ${muted}`}>
+          {FAMILY_MODE_LAUNCH_ENABLED ? 'Premium features and family safety controls' : 'Premium features and friends hub'}
+        </p>
       </div>
 
       <div className="px-4 pb-6 space-y-3">
@@ -106,39 +109,40 @@ export default function DashboardsTab({
           ) : null}
         </div>
 
-        {/* Family (Family or Premium) */}
-        <div className={`${card} border rounded-2xl p-4`}>
-          <div className="flex items-center gap-3">
-            <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${isLight ? 'bg-purple-100' : 'bg-purple-500/15'}`}>
-              <Users className={isLight ? 'text-purple-700' : 'text-purple-300'} size={18} />
+        {FAMILY_MODE_LAUNCH_ENABLED && (
+          <div className={`${card} border rounded-2xl p-4`}>
+            <div className="flex items-center gap-3">
+              <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${isLight ? 'bg-purple-100' : 'bg-purple-500/15'}`}>
+                <Users className={isLight ? 'text-purple-700' : 'text-purple-300'} size={18} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className={`font-semibold ${text}`}>Family Mode</div>
+                <div className={`text-xs ${muted}`}>Invite code, SOS, speed/curfew controls, trips</div>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <div className={`font-semibold ${text}`}>Family Mode</div>
-              <div className={`text-xs ${muted}`}>Invite code, SOS, speed/curfew controls, trips</div>
-            </div>
-          </div>
 
-          <div className="mt-3">
-            <button
-              onClick={() => (hasFamily ? onOpenFamily() : onUpgrade())}
-              className={`w-full px-3 py-2 rounded-xl text-sm font-semibold ${hasFamily ? (isLight ? 'bg-purple-600 text-white' : 'bg-purple-500 text-white') : (isLight ? 'bg-slate-100 text-slate-500' : 'bg-slate-800 text-slate-400')}`}
-            >
-              Open Family Dashboard
-            </button>
-          </div>
-
-          {!hasFamily && (
-            <div className="mt-3 space-y-1">
-              <Locked label="Family plan (or Premium) required" />
+            <div className="mt-3">
               <button
-                onClick={onUpgrade}
-                className={`mt-2 w-full rounded-xl py-2 text-sm font-bold ${isLight ? 'bg-amber-500 text-white' : 'bg-amber-500 text-white'}`}
+                onClick={() => (hasFamily ? onOpenFamily() : onUpgrade())}
+                className={`w-full px-3 py-2 rounded-xl text-sm font-semibold ${hasFamily ? (isLight ? 'bg-purple-600 text-white' : 'bg-purple-500 text-white') : (isLight ? 'bg-slate-100 text-slate-500' : 'bg-slate-800 text-slate-400')}`}
               >
-                Upgrade to Family or Premium
+                Open Family Dashboard
               </button>
             </div>
-          )}
-        </div>
+
+            {!hasFamily && (
+              <div className="mt-3 space-y-1">
+                <Locked label="Family plan (or Premium) required" />
+                <button
+                  onClick={onUpgrade}
+                  className={`mt-2 w-full rounded-xl py-2 text-sm font-bold ${isLight ? 'bg-amber-500 text-white' : 'bg-amber-500 text-white'}`}
+                >
+                  Upgrade to Family or Premium
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

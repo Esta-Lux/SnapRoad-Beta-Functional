@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Store, Gift, BarChart3, QrCode, ArrowRight, Star } from 'lucide-react'
 import snaproadLogo from '../assets/images/f1ce41940925932061ca7e2e293db7cdf37e4b87.png'
 
@@ -99,9 +99,14 @@ export default function PartnerWelcomePage() {
 
         <div className="border-t border-white/5 bg-slate-900/80 backdrop-blur-sm">
           <div className="max-w-6xl mx-auto px-6 py-6">
-            <p className="text-slate-500 text-sm text-center">
-              © {new Date().getFullYear()} SnapRoad. Partner portal.
-            </p>
+            <div className="flex flex-col items-center justify-center gap-3 text-center sm:flex-row sm:gap-6">
+              <p className="text-slate-500 text-sm">© {new Date().getFullYear()} SnapRoad. Partner portal.</p>
+              <div className="flex items-center gap-4 text-sm text-slate-400">
+                <Link to="/privacy" className="hover:text-white transition-colors">Privacy</Link>
+                <Link to="/terms" className="hover:text-white transition-colors">Terms</Link>
+                <Link to="/community-guidelines" className="hover:text-white transition-colors">Community Guidelines</Link>
+              </div>
+            </div>
           </div>
         </div>
       </div>

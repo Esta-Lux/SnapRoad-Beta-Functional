@@ -27,6 +27,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import type { DashboardStackScreenNavigationProp } from '../navigation/types';
 import { api } from '../api/client';
+import { FAMILY_MODE_LAUNCH_ENABLED } from '../config/launchFlags';
 import Skeleton from '../components/common/Skeleton';
 import Modal from '../components/common/Modal';
 import type { Friend, FriendCategory } from '../types';
@@ -185,6 +186,12 @@ export default function DashboardScreen() {
   // timestamp re-tick — short-circuits for free users who still briefly mount this screen
   // (the premium paywall renders via the early-return below).
   const friendsTabActive = section === 'friends' && isFocused && !!user?.isPremium;
+  useEffect(() => {
+    if (!FAMILY_MODE_LAUNCH_ENABLED && section === 'family') {
+      setSection('friends');
+    }
+  }, [section]);
+
   const { friendTrackingEnabled, liveLocationPublishingEnabled } = usePublicAppConfig(
     !!user?.isPremium && isFocused,
   );
@@ -903,7 +910,7 @@ export default function DashboardScreen() {
             </LinearGradient>
           </TouchableOpacity>
           <Text style={{ color: colors.textTertiary, fontSize: 12, marginTop: 20, lineHeight: 18 }}>
-            The Family tab preview (coming soon) will ship with the Family plan. Premium unlocks friend driving today.
+            Premium unlocks friend driving today, including live sharing, challenge history, and trusted-driver presence.
           </Text>
         </ScrollView>
       </SafeAreaView>
@@ -913,17 +920,17 @@ export default function DashboardScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <View style={{ paddingHorizontal: 16, paddingTop: 2, paddingBottom: 4 }}>
-        <SocialScreenHeader
-          title="Social"
-          subtitle={
-            section === 'friends'
-              ? 'Share location with trusted people on your terms.'
-              : 'Family is a launch-safe preview while the backend remains intentionally stubbed.'
-          }
-          onAddPress={section === 'friends' ? () => setShowAddFriend(true) : undefined}
-          accentColor={colors.primary}
-          textColor={colors.text}
-          subColor={colors.textSecondary}
+          <SocialScreenHeader
+            title="Social"
+            subtitle={
+              section === 'friends'
+                ? 'Share location with trusted people on your terms.'
+                : 'Family is hidden for launch until the backend is production-ready.'
+            }
+            onAddPress={section === 'friends' ? () => setShowAddFriend(true) : undefined}
+            accentColor={colors.primary}
+            textColor={colors.text}
+            subColor={colors.textSecondary}
         />
       </View>
 
@@ -938,7 +945,7 @@ export default function DashboardScreen() {
           },
         ]}
       >
-        {(['friends', 'family'] as Section[]).map((s) => (
+        {(FAMILY_MODE_LAUNCH_ENABLED ? (['friends', 'family'] as Section[]) : (['friends'] as Section[])).map((s) => (
           <TouchableOpacity
             key={s}
             style={[
@@ -1864,3 +1871,8 @@ const styles = StyleSheet.create({
   reqBtnT: { color: '#fff', fontSize: 12, fontWeight: '800' },
   searchHit: { borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: StyleSheet.hairlineWidth },
 });
+  useEffect(() => {
+    if (!FAMILY_MODE_LAUNCH_ENABLED && section === 'family') {
+      setSection('friends');
+    }
+  }, [section]);

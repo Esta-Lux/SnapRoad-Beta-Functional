@@ -16,6 +16,7 @@ import PartnerDashboard from './pages/PartnerDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 import DriverApp from './pages/DriverApp'
 import DriverWebRetiredPage from './pages/DriverWebRetiredPage'
+import PublicLegalPage from './pages/PublicLegalPage'
 import { NavigationCoreProvider } from './contexts/NavigationCoreContext'
 import { MapboxProvider } from './contexts/MapboxContext'
 import { ThemeProvider } from './contexts/ThemeContext'
@@ -68,6 +69,9 @@ function App() {
               )
             }
           />
+          <Route path="/privacy" element={<PublicLegalPage docKey="privacy" />} />
+          <Route path="/terms" element={<PublicLegalPage docKey="terms" />} />
+          <Route path="/community-guidelines" element={<PublicLegalPage docKey="community" />} />
 
           {partnerPrimary ? (
             <>

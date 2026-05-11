@@ -437,21 +437,26 @@ export default function WelcomePage() {
                   App Preview
                 </Link>
                 <span className="text-slate-700">|</span>
-                <button
-                  type="button"
-                  className="text-slate-400 hover:text-white transition-colors bg-transparent border-0 p-0 text-sm cursor-pointer font-inherit"
-                  onClick={() => toast('Privacy policy coming soon.', { icon: 'ℹ️' })}
+                <Link
+                  to="/privacy"
+                  className="text-slate-400 hover:text-white transition-colors"
                 >
                   Privacy Policy
-                </button>
+                </Link>
                 <span className="text-slate-700">|</span>
-                <button
-                  type="button"
-                  className="text-slate-400 hover:text-white transition-colors bg-transparent border-0 p-0 text-sm cursor-pointer font-inherit"
-                  onClick={() => toast('Terms of service coming soon.', { icon: 'ℹ️' })}
+                <Link
+                  to="/terms"
+                  className="text-slate-400 hover:text-white transition-colors"
                 >
                   Terms of Service
-                </button>
+                </Link>
+                <span className="text-slate-700">|</span>
+                <Link
+                  to="/community-guidelines"
+                  className="text-slate-400 hover:text-white transition-colors"
+                >
+                  Community Guidelines
+                </Link>
               </div>
             </div>
           </div>

@@ -67,6 +67,7 @@ import PhotoReportCapture from './components/PhotoReportCapture'
 import type { PhotoReport } from './components/PhotoIncidentFeed'
 import OfferRedemptionCard from './components/OfferRedemptionCard'
 import DashboardsTab from './components/DashboardsTab'
+import { FAMILY_MODE_LAUNCH_ENABLED } from '@/lib/launchFlags'
 import { useNavigationState } from './hooks/useNavigationState'
 import { useFriendTracking } from './hooks/useFriendTracking'
 import { useOffersAndRewards, type DriverUserData } from './hooks/useOffersAndRewards'
@@ -2239,7 +2240,9 @@ export default function DriverApp() {
           <p className={`text-[10px] font-medium uppercase tracking-wider px-2 py-1.5 ${menuSection}`}>Social</p>
           {[
             { icon: Users, label: 'Friends Hub', badge: userData.friends_count, action: () => { setShowFriendsHub(true); setShowMenu(false) } },
-            { icon: Users, label: 'Family Mode', action: () => { setShowFamilyDashboard(true); setShowMenu(false) } },
+            ...(FAMILY_MODE_LAUNCH_ENABLED
+              ? [{ icon: Users, label: 'Family Mode', action: () => { setShowFamilyDashboard(true); setShowMenu(false) } }]
+              : []),
             { icon: Users, label: 'Convoy Mode', action: () => { setShowConvoy(true); setShowMenu(false) } },
             { icon: Gem, label: 'Gem History', action: () => { setShowGemHistory(true); setShowMenu(false) } },
           ].map((item, i) => (

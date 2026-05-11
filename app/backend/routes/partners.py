@@ -781,10 +781,9 @@ def add_partner_credits(credits_req: BoostCreditsRequest, user: CurrentPartner, 
     if not partner:
         return {"success": False, "message": MSG_PARTNER_NOT_FOUND}
     current = partner.get("credits", 0) or 0
-    # The partners table in the real schema doesn't have a credits column yet;
-    # this will silently fail until the column is added. That's acceptable for now.
     new_balance = current + credits_req.amount
-    sb_update_partner(owned_partner_id, {"credits": new_balance})
+    if not sb_update_partner(owned_partner_id, {"credits": new_balance}):
+        raise HTTPException(status_code=503, detail="Partner credits are unavailable until schema sync succeeds")
     return {
         "success": True,
         "message": f"Added ${credits_req.amount} in credits",

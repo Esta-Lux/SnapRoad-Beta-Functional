@@ -165,6 +165,11 @@ jobs:
     defaults:
       run:
         working-directory: app/mobile
+    env:
+      EXPO_PUBLIC_API_URL: https://api.snaproad.app
+      APP_ENV: production
+      EAS_BUILD_PROFILE: production
+      EXPO_PUBLIC_NAV_LOGIC_DEBUG: "0"
     steps:
       - uses: actions/checkout@v4
 
@@ -175,8 +180,10 @@ jobs:
           cache-dependency-path: app/mobile/package-lock.json
 
       - run: npm ci
+      - run: npm test
       - run: npm audit --omit=dev --audit-level=moderate
       - run: npx tsc --noEmit
+      - run: npx expo export --platform ios --platform android --output-dir dist-export --clear
 
   # Sonar step runs only when SONAR_TOKEN is set (job-level `if` cannot use `secrets.*`; see GitHub Actions docs).
   # Fork PRs skip the whole job (no base-repo secrets on untrusted workflows).

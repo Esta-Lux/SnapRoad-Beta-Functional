@@ -56,6 +56,7 @@ import { ProfileStatsStrip, ProfileTabBar } from '../components/profile/ProfileS
 import { registerCommutePushToken } from '../utils/pushNotifications';
 import { mapProfileTripHistoryItem, recentTripsListFromPayload } from '../components/profile/tripHistoryMapping';
 import { sanitizeTripSpeedMph } from '../utils/driveMetrics';
+import { FAMILY_MODE_LAUNCH_ENABLED, IOS_EXTERNAL_BILLING_ENABLED, SUPPORT_EMAIL } from '../config/launchFlags';
 
 export default function ProfileScreen() {
   const navigation = useNavigation<ProfileStackScreenNavigationProp>();
@@ -122,6 +123,17 @@ export default function ProfileScreen() {
   const [showDriverSnapshot, setShowDriverSnapshot] = useState(false);
   const scrollRef = useRef<ScrollView | null>(null);
   const commuteSectionY = useRef(0);
+
+  const openPlanOptions = useCallback(() => {
+    if (Platform.OS === 'ios' && !IOS_EXTERNAL_BILLING_ENABLED) {
+      Alert.alert(
+        'Plans & Billing',
+        `SnapRoad does not sell Premium subscriptions inside the iPhone app. For launch-safe billing help, use Android or contact ${SUPPORT_EMAIL}.`,
+      );
+      return;
+    }
+    setShowPlanModal(true);
+  }, []);
   const [weeklyRecap, setWeeklyRecap] = useState<ProfileWeeklyRecap>({
     totalTrips: 0,
     totalMiles: 0,
@@ -415,9 +427,9 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (!route.params?.openBilling) return;
     setProfileTab('settings');
-    setShowPlanModal(true);
+    openPlanOptions();
     navigation.setParams({ openBilling: undefined });
-  }, [route.params?.openBilling, navigation]);
+  }, [route.params?.openBilling, navigation, openPlanOptions]);
 
   useEffect(() => {
     if (user?.vehicle_height_meters && user.vehicle_height_meters > 0) {
@@ -524,6 +536,14 @@ export default function ProfileScreen() {
     }
 
     try {
+      if (Platform.OS === 'ios' && !IOS_EXTERNAL_BILLING_ENABLED) {
+        Alert.alert(
+          'Plans & Billing',
+          `SnapRoad does not open external subscription checkout inside the iPhone app. For launch-safe billing help, contact ${SUPPORT_EMAIL}.`,
+        );
+        setShowPlanModal(false);
+        return;
+      }
       const checkoutRes = await api.post<any>('/api/payments/checkout/session', {
         plan_id: plan,
         user_email: user?.email ?? undefined,
@@ -613,7 +633,7 @@ export default function ProfileScreen() {
       badgeText: user?.isPremium ? 'PREMIUM' : 'LOCKED',
       onPress: async () => {
         if (!user?.isPremium) {
-          setShowPlanModal(true);
+          openPlanOptions();
           return;
         }
         const { lat, lng } = location;
@@ -638,7 +658,7 @@ export default function ProfileScreen() {
       value: user?.isPremium
         ? `${badgeRows.filter((b) => b.earned).length}/${badgeTotal} badges · open Insights for full list`
         : `${badgeRows.filter((b) => b.earned).length}/${badgeTotal} badges · Insights is Premium`,
-      onPress: () => (user?.isPremium ? setShowInsightsDashboard(true) : setShowPlanModal(true)),
+      onPress: () => (user?.isPremium ? setShowInsightsDashboard(true) : openPlanOptions()),
     },
     {
       key: 'incidents',
@@ -651,11 +671,13 @@ export default function ProfileScreen() {
       key: 'dashboards',
       icon: 'people-outline',
       label: 'Dashboards',
-      value: user?.isPremium ? 'Friends · Family' : 'Premium — Friends & family hub',
+      value: user?.isPremium
+        ? (FAMILY_MODE_LAUNCH_ENABLED ? 'Friends · Family' : 'Friends hub')
+        : (FAMILY_MODE_LAUNCH_ENABLED ? 'Premium — Friends & family hub' : 'Premium — Friends hub'),
       badgeText: user?.isPremium ? undefined : 'LOCKED',
       onPress: () => {
         if (user?.isPremium) navigation.getParent()?.navigate('Dashboards');
-        else setShowPlanModal(true);
+        else openPlanOptions();
       },
     },
     {
@@ -666,7 +688,7 @@ export default function ProfileScreen() {
       badgeText: user?.isPremium ? undefined : 'LOCKED',
       onPress: () => {
         if (user?.isPremium) navigation.getParent()?.navigate('Dashboards');
-        else setShowPlanModal(true);
+        else openPlanOptions();
       },
     },
   ];
@@ -713,7 +735,7 @@ export default function ProfileScreen() {
               activeOpacity={0.92}
               onPress={() => {
                 if (user?.isPremium) setShowInsightsDashboard(true);
-                else setShowPlanModal(true);
+                else openPlanOptions();
               }}
               style={{ marginHorizontal: 16, marginBottom: 12, borderRadius: 16, overflow: 'hidden' }}
               accessibilityRole="button"
@@ -837,7 +859,7 @@ export default function ProfileScreen() {
             </TouchableOpacity>
 
             <SectionHeader title="Your Plan" isLight={isLight} />
-            <PlanCard cardBg={cardBg} text={text} sub={sub} planName={planConfig.name} planPrice={planConfig.price} planFeatures={planConfig.features} currentPlan={currentPlan} onUpgrade={() => setShowPlanModal(true)} />
+            <PlanCard cardBg={cardBg} text={text} sub={sub} planName={planConfig.name} planPrice={planConfig.price} planFeatures={planConfig.features} currentPlan={currentPlan} onUpgrade={openPlanOptions} />
 
             <TouchableOpacity
               style={{
@@ -853,7 +875,7 @@ export default function ProfileScreen() {
                 alignItems: 'center',
                 justifyContent: 'space-between',
               }}
-              onPress={() => setShowPlanModal(true)}
+              onPress={openPlanOptions}
               activeOpacity={0.75}
               accessibilityRole="button"
               accessibilityLabel="Plans and billing"
@@ -861,15 +883,17 @@ export default function ProfileScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={{ color: text, fontSize: 15, fontWeight: '800' }}>Plans &amp; billing</Text>
                 <Text style={{ color: sub, fontSize: 11, marginTop: 3, lineHeight: 15 }} numberOfLines={1}>
-                  {currentPlan === 'basic'
-                    ? `${PLANS.premium.price} founders · reg. $${PREMIUM_PUBLIC_MONTHLY.toFixed(2)}/mo · ~${premiumSavingsPercent()}% off`
-                    : 'View plans, compare features, or change subscription'}
+                  {Platform.OS === 'ios' && !IOS_EXTERNAL_BILLING_ENABLED
+                    ? 'Plan changes are handled outside the iPhone app for launch-safe App Store review.'
+                    : currentPlan === 'basic'
+                      ? `${PLANS.premium.price} founders · reg. $${PREMIUM_PUBLIC_MONTHLY.toFixed(2)}/mo · ~${premiumSavingsPercent()}% off`
+                      : 'View plans, compare features, or change subscription'}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color={colors.primary} />
             </TouchableOpacity>
 
-            {currentPlan !== 'basic' && (
+            {currentPlan !== 'basic' && (Platform.OS !== 'ios' || IOS_EXTERNAL_BILLING_ENABLED) && (
               <TouchableOpacity
                 style={{ marginHorizontal: 16, marginBottom: 8, paddingVertical: 10, borderRadius: 11, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, alignItems: 'center', backgroundColor: cardBg }}
                 onPress={async () => {
@@ -1066,7 +1090,7 @@ export default function ProfileScreen() {
         isPremium={Boolean(user?.isPremium)}
         onUpgrade={() => {
           setShowInsightsDashboard(false);
-          setShowPlanModal(true);
+          openPlanOptions();
         }}
         onOpenFuelTracker={() => {
           setShowInsightsDashboard(false);

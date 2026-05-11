@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
 import { Check, Zap, Shield, Gift, BarChart3, Gem, Headphones, Navigation, Camera, MapPin, Sparkles, Star, Users, Bell, Route, MessageCircle, Trophy, Fuel } from 'lucide-react'
+import { FAMILY_MODE_LAUNCH_ENABLED } from '@/lib/launchFlags'
 
 interface PlanSelectionProps {
   onSelectPlan: (plan: 'basic' | 'premium' | 'family') => void
@@ -222,42 +223,43 @@ export default function PlanSelection({ onSelectPlan }: PlanSelectionProps) {
             </div>
           </button>
 
-          {/* Family Plan */}
-          <button
-            onClick={() => setSelectedPlan('family')}
-            data-testid="plan-family"
-            className={`w-full text-left rounded-2xl p-4 transition-all border-2 relative overflow-hidden ${
-              selectedPlan === 'family'
-                ? `${cardFamily} shadow-lg shadow-purple-500/20 border-purple-500`
-                : `${cardFamily} hover:border-purple-500/70`
-            }`}
-          >
-            <div className="flex items-start justify-between mb-2">
-              <div>
-                <h3 className="text-purple-400 font-bold text-base flex items-center gap-1">
-                  <Users size={14} /> Family
-                </h3>
-                <div className="flex items-baseline gap-2 flex-wrap mt-0.5">
-                  <span className={`text-2xl font-bold ${textPrimary}`}>$19.99</span>
-                  <span className={`text-sm ${textMuted}`}>/mo</span>
+          {FAMILY_MODE_LAUNCH_ENABLED && (
+            <button
+              onClick={() => setSelectedPlan('family')}
+              data-testid="plan-family"
+              className={`w-full text-left rounded-2xl p-4 transition-all border-2 relative overflow-hidden ${
+                selectedPlan === 'family'
+                  ? `${cardFamily} shadow-lg shadow-purple-500/20 border-purple-500`
+                  : `${cardFamily} hover:border-purple-500/70`
+              }`}
+            >
+              <div className="flex items-start justify-between mb-2">
+                <div>
+                  <h3 className="text-purple-400 font-bold text-base flex items-center gap-1">
+                    <Users size={14} /> Family
+                  </h3>
+                  <div className="flex items-baseline gap-2 flex-wrap mt-0.5">
+                    <span className={`text-2xl font-bold ${textPrimary}`}>$19.99</span>
+                    <span className={`text-sm ${textMuted}`}>/mo</span>
+                  </div>
+                  <p className={`text-xs mt-1 ${textMuted}`}>Shared safety and rewards for families.</p>
                 </div>
-                <p className={`text-xs mt-1 ${textMuted}`}>Shared safety and rewards for families.</p>
-              </div>
-              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                selectedPlan === 'family' ? 'bg-purple-500 border-purple-500' : 'border-slate-500'
-              }`}>
-                {selectedPlan === 'family' && <Check size={12} className="text-white" />}
-              </div>
-            </div>
-            <div className="space-y-1.5 mt-2">
-              {familyFeatures.map((feature, i) => (
-                <div key={i} className={`flex items-center gap-2 text-xs ${textMuted}`}>
-                  <feature.icon size={12} />
-                  <span>{feature.text}</span>
+                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                  selectedPlan === 'family' ? 'bg-purple-500 border-purple-500' : 'border-slate-500'
+                }`}>
+                  {selectedPlan === 'family' && <Check size={12} className="text-white" />}
                 </div>
-              ))}
-            </div>
-          </button>
+              </div>
+              <div className="space-y-1.5 mt-2">
+                {familyFeatures.map((feature, i) => (
+                  <div key={i} className={`flex items-center gap-2 text-xs ${textMuted}`}>
+                    <feature.icon size={12} />
+                    <span>{feature.text}</span>
+                  </div>
+                ))}
+              </div>
+            </button>
+          )}
         </div>
       </div>
 
