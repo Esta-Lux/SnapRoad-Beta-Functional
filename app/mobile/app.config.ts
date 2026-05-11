@@ -73,8 +73,12 @@ const _includeDevClient =
   ["development", "development-simulator", "preview"].includes(_profile) ||
   (!_prod && _profile.length === 0);
 
-function resolveSentryExpoPlugin(): string | [string, Record<string, string>] {
-  if (envAny(["SENTRY_ORG"], "").trim() && envAny(["SENTRY_PROJECT"], "").trim()) {
+function resolveSentryExpoPlugin(): string | [string, Record<string, string>] | null {
+  if (
+    envAny(["SENTRY_ORG"], "").trim() &&
+    envAny(["SENTRY_PROJECT"], "").trim() &&
+    envAny(["SENTRY_AUTH_TOKEN"], "").trim()
+  ) {
     return [
       "@sentry/react-native/expo",
       {
@@ -84,10 +88,12 @@ function resolveSentryExpoPlugin(): string | [string, Record<string, string>] {
       },
     ];
   }
-  return "@sentry/react-native/expo";
+  return null;
 }
 
 export default function expoConfig({ config }: { config: Record<string, unknown> }) {
+  const sentryExpoPlugin = resolveSentryExpoPlugin();
+
   return {
     ...config,
     name: "SnapRoad",
@@ -179,7 +185,7 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
       ...(_includeDevClient ? ["expo-dev-client"] : []),
       "expo-updates",
       // Native + EAS source map wiring; set SENTRY_ORG, SENTRY_PROJECT, SENTRY_AUTH_TOKEN on EAS for uploads.
-      resolveSentryExpoPlugin(),
+      ...(sentryExpoPlugin ? [sentryExpoPlugin] : []),
       [
         "expo-build-properties",
         {
