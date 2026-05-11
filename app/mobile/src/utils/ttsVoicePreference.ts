@@ -40,10 +40,10 @@ const MALE_NAME_HINTS = [
 ];
 
 const CLEAR_DEFAULT_NAME_PRIORITY = [
-  'alex',
   'nathan',
   'evan',
   'aaron',
+  'alex',
   'josh',
   'justin',
   'tyler',
@@ -54,10 +54,10 @@ const CLEAR_DEFAULT_NAME_PRIORITY = [
 ] as const;
 
 const YOUNG_ADULT_NAME_HINTS = [
-  'alex',
   'nathan',
   'evan',
   'aaron',
+  'alex',
   'josh',
   'justin',
   'tyler',
@@ -68,6 +68,8 @@ const YOUNG_ADULT_NAME_HINTS = [
 ];
 
 const OLDER_NAME_HINTS = ['fred', 'ralph', 'grandpa', 'albert', 'arthur', 'rocko', 'eddy', 'tom'];
+
+const BUILT_IN_ROBOTIC_HINTS = ['boing', 'bells', 'bubbles', 'cellos', 'deranged', 'hysterical', 'junior', 'whisper', 'zarvox'];
 
 const ACCENTED_OR_HARD_TO_HEAR_HINTS = [
   // Common non-US English voices exposed by iOS / Android engines.
@@ -123,7 +125,9 @@ function scoreVoice(v: Voice): number {
   for (const h of OLDER_NAME_HINTS) if (n.includes(h)) s -= 34;
   for (const h of ACCENTED_OR_HARD_TO_HEAR_HINTS) if (n.includes(h) && language !== 'en-us') s -= 45;
   for (const f of FEMALE_NAME_HINTS) if (n.includes(f)) s -= 55;
+  for (const h of BUILT_IN_ROBOTIC_HINTS) if (n.includes(h)) s -= 120;
   if (n.includes('compact')) s -= 20;
+  if (n.includes('premium')) s += 18;
   return s;
 }
 

@@ -184,8 +184,11 @@ test('HUD and Orion speech profiles use normal-rate clear US male-style settings
   assert.equal(calm.rate, 1.0);
   assert.equal(adaptive.rate, 1.0);
   assert.equal(sport.rate, 1.0);
-  assert.equal(calm.pitch, 0.96);
+  assert.equal(calm.pitch, 0.94);
   assert.equal(adaptive.pitch, calm.pitch);
   assert.equal(sport.pitch, calm.pitch);
+  assert.equal(calm.volume, 1.0);
+  assert.equal(adaptive.volume, calm.volume);
+  assert.equal(sport.volume, calm.volume);
   assert.equal(sport.rate, calm.rate);
 });

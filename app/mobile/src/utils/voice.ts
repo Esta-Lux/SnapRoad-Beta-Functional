@@ -96,6 +96,7 @@ export async function configureAudioSessionForVoiceInput(): Promise<void> {
 export type TtsSpeechProfile = {
   rate: number;
   pitch: number;
+  volume: number;
   language: 'en-US';
 };
 
@@ -107,17 +108,20 @@ export type TtsSpeechProfile = {
 const MODE_SPEECH_PROFILE: Record<DrivingMode, TtsSpeechProfile> = {
   calm: {
     rate: DRIVING_MODES.calm.speechRate,
-    pitch: DRIVING_MODES.calm.speechPitch,
+    pitch: 0.94,
+    volume: 1.0,
     language: 'en-US',
   },
   adaptive: {
     rate: DRIVING_MODES.adaptive.speechRate,
-    pitch: DRIVING_MODES.adaptive.speechPitch,
+    pitch: 0.94,
+    volume: 1.0,
     language: 'en-US',
   },
   sport: {
     rate: DRIVING_MODES.sport.speechRate,
-    pitch: DRIVING_MODES.sport.speechPitch,
+    pitch: 0.94,
+    volume: 1.0,
     language: 'en-US',
   },
 };
@@ -232,6 +236,7 @@ export function speak(
     Speech.speak(phrase, {
       rate: profile.rate,
       pitch: profile.pitch,
+      volume: profile.volume,
       language: profile.language,
       ...(voiceId ? { voice: voiceId } : {}),
       onDone: onUtteranceFinished,
@@ -279,6 +284,7 @@ export function speakGuidance(
     Speech.speak(phrase, {
       rate: profile.rate,
       pitch: profile.pitch,
+      volume: profile.volume,
       language: language || profile.language,
       ...(voiceId ? { voice: voiceId } : {}),
       onDone: onUtteranceFinished,
@@ -306,6 +312,7 @@ export function speakOrionReply(text: string, onFinish?: () => void, mode: Drivi
       Speech.speak(text.trim(), {
         rate: profile.rate,
         pitch: profile.pitch,
+        volume: profile.volume,
         language: profile.language,
         ...(voiceId ? { voice: voiceId } : {}),
         onDone: onFinish,
