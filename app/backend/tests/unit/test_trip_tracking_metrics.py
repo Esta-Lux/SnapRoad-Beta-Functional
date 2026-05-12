@@ -89,6 +89,12 @@ def test_trip_row_to_client_shape_returns_recap_summary_metrics_and_aliases():
         "fuel_used_gallons": "0.04",
         "fuel_cost_estimate": "0.14",
         "mileage_value_estimate": "0.71",
+        "baseline_fuel_estimate_gallons": "0.05",
+        "route_fuel_savings_gallons": "0.01",
+        "route_savings_dollars": "0.04",
+        "baseline_duration_seconds": "140",
+        "time_saved_seconds": "17",
+        "savings_model_version": "route-v1-distance-mpg",
         "hard_brakes": "1",
         "hard_accels": "2",
         "speeding_events": "2",
@@ -112,6 +118,13 @@ def test_trip_row_to_client_shape_returns_recap_summary_metrics_and_aliases():
     assert shaped["fuel_used_gallons"] == 0.04
     assert shaped["fuel_cost_estimate"] == 0.14
     assert shaped["mileage_value_estimate"] == 0.71
+    assert shaped["baseline_fuel_estimate_gallons"] == 0.05
+    assert shaped["route_fuel_savings_gallons"] == 0.01
+    assert shaped["route_savings_dollars"] == 0.04
+    assert shaped["route_savings_usd"] == 0.04
+    assert shaped["baseline_duration_seconds"] == 140
+    assert shaped["time_saved_seconds"] == 17
+    assert shaped["savings_model_version"] == "route-v1-distance-mpg"
     assert shaped["hard_braking_events"] == 1
     assert shaped["hard_acceleration_events"] == 2
     assert shaped["speeding_events"] == 2
@@ -140,3 +153,20 @@ def test_strip_missing_trip_optional_column_handles_schema_cache_wording():
     assert _strip_missing_trip_optional_column(row, err) is True
     assert "origin" not in row
     assert row["destination"] == "B"
+
+
+def test_build_trip_row_adds_route_savings_model_defaults():
+    body = TripCompleteBody(
+        distance_miles=25,
+        duration_seconds=1800,
+        safety_score=94,
+        fuel_used_gallons=1.0,
+        fuel_cost_estimate=3.5,
+    )
+    row = _build_trip_row("trip-save", "user-1", body, 25.0, 94, 5, 20)
+
+    assert row["baseline_fuel_estimate_gallons"] == 1.12
+    assert row["route_fuel_savings_gallons"] == 0.12
+    assert row["route_savings_dollars"] == 0.42
+    assert row["time_saved_seconds"] == 144
+    assert row["savings_model_version"] == "route-v1-distance-mpg"

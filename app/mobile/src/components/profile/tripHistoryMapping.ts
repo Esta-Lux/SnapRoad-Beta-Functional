@@ -162,6 +162,26 @@ export function mapProfileTripHistoryItem(raw: unknown, idx = 0): ProfileTripHis
       'mileage_value_usd',
       'mileage_value',
     ]),
+    baseline_fuel_estimate_gallons: firstNumber(t, [
+      'baseline_fuel_estimate_gallons',
+      'baselineFuelEstimateGallons',
+      'baseline_fuel_gallons',
+    ]),
+    route_fuel_savings_gallons: firstNumber(t, [
+      'route_fuel_savings_gallons',
+      'routeFuelSavingsGallons',
+      'fuel_savings_gallons',
+    ]),
+    route_savings_dollars: firstNumber(t, [
+      'route_savings_dollars',
+      'routeSavingsDollars',
+      'route_savings_usd',
+      'fuel_savings_dollars',
+    ]),
+    route_savings_usd: firstNumber(t, ['route_savings_usd', 'routeSavingsUsd', 'route_savings_dollars']),
+    baseline_duration_seconds: firstNumber(t, ['baseline_duration_seconds', 'baselineDurationSeconds']),
+    time_saved_seconds: firstNumber(t, ['time_saved_seconds', 'timeSavedSeconds', 'route_time_saved_seconds']),
+    savings_model_version: firstString(t, ['savings_model_version', 'savingsModelVersion']),
     hard_braking_events: firstNumber(t, ['hard_braking_events', 'hardBrakingEvents', 'hard_brakes']),
     hard_acceleration_events: firstNumber(t, [
       'hard_acceleration_events',

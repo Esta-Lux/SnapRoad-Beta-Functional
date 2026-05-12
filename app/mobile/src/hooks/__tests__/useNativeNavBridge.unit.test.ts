@@ -66,6 +66,12 @@ test('mergeTripCompleteResponse: merges tracking metrics used by trip summary', 
       fuel_used_gallons: 0.5,
       fuel_cost_estimate: 1.8,
       mileage_value_estimate: 8.34,
+      baseline_fuel_estimate_gallons: 0.6,
+      route_fuel_savings_gallons: 0.1,
+      route_savings_dollars: 0.36,
+      baseline_duration_seconds: 1980,
+      time_saved_seconds: 140,
+      savings_model_version: 'route-v1-distance-mpg',
       origin: 'Downtown pickup',
       destination: 'Airport dropoff',
     },
@@ -78,6 +84,13 @@ test('mergeTripCompleteResponse: merges tracking metrics used by trip summary', 
   assert.equal(merged.fuel_used_gallons, 0.5);
   assert.equal(merged.fuel_cost_estimate, 1.8);
   assert.equal(merged.mileage_value_estimate, 8.34);
+  assert.equal(merged.baseline_fuel_estimate_gallons, 0.6);
+  assert.equal(merged.route_fuel_savings_gallons, 0.1);
+  assert.equal(merged.route_savings_dollars, 0.36);
+  assert.equal(merged.route_savings_usd, 0.36);
+  assert.equal(merged.baseline_duration_seconds, 1980);
+  assert.equal(merged.time_saved_seconds, 140);
+  assert.equal(merged.savings_model_version, 'route-v1-distance-mpg');
   assert.equal(merged.origin, 'Downtown pickup');
   assert.equal(merged.destination, 'Airport dropoff');
 });

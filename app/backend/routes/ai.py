@@ -1,13 +1,13 @@
 import logging
 import re
 
-from typing import Annotated, Any, Dict, List
+from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Depends
 from starlette.requests import Request
 from fastapi.responses import StreamingResponse
 from models.schemas import OrionMessageRequest, OrionCompletionRequest, PhotoAnalysisRequest, ImageGenerateRequest
-from middleware.auth import get_current_user
+from middleware.auth import get_current_user, get_current_user_optional
 
 from limiter import limiter
 import uuid
@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["AI"])
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
+OptionalUser = Annotated[Optional[dict], Depends(get_current_user_optional)]
 
 ORION_DISABLED_DETAIL = "Orion coach is temporarily disabled."
 
@@ -256,7 +257,7 @@ async def generate_image_compat(request: Request, body: ImageGenerateRequest, _u
 async def orion_completions(
     request: Request,
     body: OrionCompletionRequest,
-    user: CurrentUser,
+    user: OptionalUser,
 ):
     """Orion chat completions via backend NVIDIA_API_KEY or OPENAI_API_KEY (never in the frontend)."""
     from services.runtime_config import require_enabled
@@ -286,7 +287,7 @@ async def orion_completions(
 async def orion_completions_stream(
     request: Request,
     body: OrionCompletionRequest,
-    user: CurrentUser,
+    user: OptionalUser,
 ):
     """Orion streaming completions; returns SSE in OpenAI-compatible format."""
     from services.runtime_config import require_enabled

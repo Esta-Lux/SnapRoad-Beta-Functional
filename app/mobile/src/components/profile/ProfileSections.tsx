@@ -412,6 +412,7 @@ export function CommuteRoutesSection({
   limit,
   onDelete,
   onAdd,
+  onEdit,
 }: {
   cardBg: string;
   text: string;
@@ -423,7 +424,17 @@ export function CommuteRoutesSection({
   limit: number;
   onDelete: (id: string) => void;
   onAdd: () => void;
+  onEdit?: (route: CommuteRoute) => void;
 }) {
+  const [expandedIds, setExpandedIds] = React.useState<Set<string>>(() => new Set());
+  const toggleExpanded = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
   return (
     <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 8 }}>
       <TouchableOpacity
@@ -452,32 +463,51 @@ export function CommuteRoutesSection({
           </Text>
         </View>
       ) : (
-        routes.map((r) => (
-          <View
-            key={r.id}
-            style={[styles.listRow, { backgroundColor: cardBg, borderRadius: 12, padding: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: border }]}
-          >
-            <Ionicons name="navigate-outline" size={18} color={primary} />
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={[styles.listTitle, { color: text }]}>{r.name}</Text>
-              <Text style={{ color: sub, fontSize: 11 }} numberOfLines={2}>
-                {(r.origin_label || 'Start') + ' → ' + (r.dest_label || 'End')}
-              </Text>
-              <Text style={{ color: sub, fontSize: 10, marginTop: 4, fontWeight: '600' }}>
-                Leave {r.leave_by_time} · alert {r.alert_minutes_before >= 60 ? `${Math.round(r.alert_minutes_before / 60)}h` : `${r.alert_minutes_before}m`} before
-              </Text>
-              <Text style={{ color: sub, fontSize: 10, marginTop: 2 }}>
-                Scan {r.monitoring_duration_minutes ?? 120}m · every {r.notification_interval_minutes ?? 30}m · max {r.max_notifications_per_window ?? 3}
-              </Text>
-              <Text style={{ color: sub, fontSize: 10, marginTop: 2 }}>
-                {(r.days_of_week || []).map((d) => DAY_LABELS[d] || d).join(' ')}
-              </Text>
+        routes.map((r) => {
+          const expanded = expandedIds.has(r.id);
+          const alertLabel = r.alert_minutes_before >= 60
+            ? `${Math.round(r.alert_minutes_before / 60)}h before`
+            : `${r.alert_minutes_before}m before`;
+          return (
+            <View
+              key={r.id}
+              style={[styles.listRow, { backgroundColor: cardBg, borderRadius: 12, padding: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: border }]}
+            >
+              <Ionicons name="navigate-outline" size={18} color={primary} />
+              <TouchableOpacity
+                activeOpacity={0.78}
+                onPress={() => toggleExpanded(r.id)}
+                style={{ flex: 1, marginLeft: 10, minWidth: 0 }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={[styles.listTitle, { color: text, flex: 1 }]} numberOfLines={1}>{r.name}</Text>
+                  <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={sub} />
+                </View>
+                <Text style={{ color: sub, fontSize: 11, marginTop: 2 }} numberOfLines={1}>
+                  {(r.origin_label || 'Start') + ' → ' + (r.dest_label || 'End')}
+                </Text>
+                <Text style={{ color: sub, fontSize: 10, marginTop: 4, fontWeight: '700' }} numberOfLines={1}>
+                  Leave {r.leave_by_time} · {alertLabel} · {(r.days_of_week || []).map((d) => DAY_LABELS[d] || d).join(' ')}
+                </Text>
+                {expanded ? (
+                  <Text style={{ color: sub, fontSize: 10, marginTop: 4 }} numberOfLines={2}>
+                    Scan {r.monitoring_duration_minutes ?? 120}m · every {r.notification_interval_minutes ?? 30}m · max {r.max_notifications_per_window ?? 3} alerts · {r.notifications_enabled ? 'Push on' : 'Push off'}
+                  </Text>
+                ) : null}
+              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                {onEdit ? (
+                  <TouchableOpacity onPress={() => onEdit(r)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="create-outline" size={18} color={primary} />
+                  </TouchableOpacity>
+                ) : null}
+                <TouchableOpacity onPress={() => onDelete(r.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                </TouchableOpacity>
+              </View>
             </View>
-            <TouchableOpacity onPress={() => onDelete(r.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="trash-outline" size={18} color="#EF4444" />
-            </TouchableOpacity>
-          </View>
-        ))
+          );
+        })
       )}
       <Text style={{ color: sub, fontSize: 10, textAlign: 'center' }}>
         {routes.length}/{limit} commute routes

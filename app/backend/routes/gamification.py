@@ -37,7 +37,8 @@ logger = logging.getLogger(__name__)
 _TRIP_RECAP_SELECT_FULL = (
     "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, "
     "ended_at, created_at, hard_braking_events, hard_acceleration_events, speeding_events, "
-    "max_speed_mph, avg_speed_mph, fuel_used_gallons, fuel_cost_estimate, mileage_value_estimate"
+    "max_speed_mph, avg_speed_mph, fuel_used_gallons, fuel_cost_estimate, mileage_value_estimate, "
+    "baseline_fuel_estimate_gallons, route_fuel_savings_gallons, route_savings_dollars, time_saved_seconds"
 )
 _TRIP_RECAP_SELECT_MIN = (
     "distance_miles, duration_minutes, gems_earned, xp_earned, safety_score, "
@@ -85,6 +86,22 @@ def _execute_weekly_recap_trip_query(
     if start and end:
         return q.gte("ended_at", start).lte("ended_at", end).execute()
     return q.gte("ended_at", cutoff).execute()
+
+
+def _execute_redemption_savings_query(sb, user_id: str, *, start: Optional[str], end: Optional[str], cutoff: str):
+    q = sb.table("redemptions").select("id,estimated_savings_usd").eq("user_id", user_id)
+    try:
+        if start and end:
+            return q.gte("created_at", start).lte("created_at", end).execute()
+        return q.gte("created_at", cutoff).execute()
+    except Exception as exc:
+        msg = _exc_text(exc).lower()
+        if "estimated_savings_usd" not in msg and "schema cache" not in msg and "column" not in msg:
+            raise
+        q2 = sb.table("redemptions").select("id").eq("user_id", user_id)
+        if start and end:
+            return q2.gte("created_at", start).lte("created_at", end).execute()
+        return q2.gte("created_at", cutoff).execute()
 
 
 MSG_NOT_ENOUGH_GEMS = "Not enough gems"
@@ -1013,14 +1030,7 @@ def get_weekly_recap(
                 trip_res = _execute_weekly_recap_trip_query(
                     sb, user_id, _TRIP_RECAP_SELECT_MIN, start=start, end=end, cutoff=cutoff
                 )
-            redemption_res = (
-                sb.table("redemptions")
-                .select("id")
-                .eq("user_id", user_id)
-                .gte("created_at", start)
-                .lte("created_at", end)
-                .execute()
-            )
+            redemption_res = _execute_redemption_savings_query(sb, user_id, start=start, end=end, cutoff=cutoff)
         else:
             try:
                 trip_res = _execute_weekly_recap_trip_query(
@@ -1033,10 +1043,11 @@ def get_weekly_recap(
                 trip_res = _execute_weekly_recap_trip_query(
                     sb, user_id, _TRIP_RECAP_SELECT_MIN, start=None, end=None, cutoff=cutoff
                 )
-            redemption_res = sb.table("redemptions").select("id").eq("user_id", user_id).gte("created_at", cutoff).execute()
+            redemption_res = _execute_redemption_savings_query(sb, user_id, start=None, end=None, cutoff=cutoff)
 
         trips = trip_res.data or []
-        offers_redeemed = len(redemption_res.data or [])
+        redemptions = redemption_res.data or []
+        offers_redeemed = len(redemptions)
 
         total_miles = sum(float(t.get("distance_miles", 0)) for t in trips)
         total_time = sum(int(t.get("duration_minutes", 0)) for t in trips)
@@ -1053,6 +1064,11 @@ def get_weekly_recap(
         fuel_gallons_sum = sum(float(t.get("fuel_used_gallons") or 0) for t in trips)
         fuel_cost_sum = sum(float(t.get("fuel_cost_estimate") or 0) for t in trips)
         mileage_value_sum = sum(float(t.get("mileage_value_estimate") or 0) for t in trips)
+        route_fuel_saved_sum = sum(float(t.get("route_fuel_savings_gallons") or 0) for t in trips)
+        route_savings_sum = sum(float(t.get("route_savings_dollars") or 0) for t in trips)
+        time_saved_sum = sum(int(t.get("time_saved_seconds") or 0) for t in trips)
+        offer_savings_sum = sum(float(r.get("estimated_savings_usd") or 0) for r in redemptions)
+        total_savings_sum = route_savings_sum + offer_savings_sum
         max_speeds = [float(t.get("max_speed_mph") or 0) for t in trips if t.get("max_speed_mph")]
         avg_speeds = [float(t.get("avg_speed_mph") or 0) for t in trips if t.get("avg_speed_mph")]
         top_speed = max(max_speeds) if max_speeds else 0.0
@@ -1064,6 +1080,10 @@ def get_weekly_recap(
             highlights.append(f"Longest trip: {round(longest, 1)} miles")
         if top_speed:
             highlights.append(f"Top speed: {int(round(top_speed))} mph")
+        if route_savings_sum > 0:
+            highlights.append(f"Route savings: ${route_savings_sum:.2f}")
+        if offer_savings_sum > 0:
+            highlights.append(f"Offer savings: ${offer_savings_sum:.2f}")
 
         orion_commentary: Optional[str] = None
         if is_premium and trips:
@@ -1077,6 +1097,10 @@ def get_weekly_recap(
                 "fuel_used_gallons": round(fuel_gallons_sum, 2),
                 "fuel_cost_estimate": round(fuel_cost_sum, 2),
                 "mileage_value_estimate": round(mileage_value_sum, 2),
+                "route_savings_dollars": round(route_savings_sum, 2),
+                "route_fuel_savings_gallons": round(route_fuel_saved_sum, 2),
+                "offer_savings_dollars": round(offer_savings_sum, 2),
+                "total_savings_dollars": round(total_savings_sum, 2),
                 "gems_earned": gems_earned,
             }
             orion_commentary = _llm_orion_tracking_commentary(payload)
@@ -1104,6 +1128,15 @@ def get_weekly_recap(
             "fuel_used_gallons": round(fuel_gallons_sum, 2),
             "fuel_cost_estimate": round(fuel_cost_sum, 2),
             "mileage_value_estimate": round(mileage_value_sum, 2),
+            "route_fuel_savings_gallons": round(route_fuel_saved_sum, 2),
+            "route_savings_dollars": round(route_savings_sum, 2),
+            "route_savings_usd": round(route_savings_sum, 2),
+            "offer_savings_dollars": round(offer_savings_sum, 2),
+            "offer_savings_usd": round(offer_savings_sum, 2),
+            "total_savings_dollars": round(total_savings_sum, 2),
+            "total_savings_usd": round(total_savings_sum, 2),
+            "time_saved_seconds": int(time_saved_sum),
+            "savings_disclaimer": "Estimated route savings compare this trip to a modeled baseline route; offer savings use recorded or estimated deal value.",
         }
         return {"success": True, "data": stats}
     except Exception:
@@ -1134,6 +1167,15 @@ def get_weekly_recap(
                 "fuel_used_gallons": 0.0,
                 "fuel_cost_estimate": 0.0,
                 "mileage_value_estimate": 0.0,
+                "route_fuel_savings_gallons": 0.0,
+                "route_savings_dollars": 0.0,
+                "route_savings_usd": 0.0,
+                "offer_savings_dollars": 0.0,
+                "offer_savings_usd": 0.0,
+                "total_savings_dollars": 0.0,
+                "total_savings_usd": 0.0,
+                "time_saved_seconds": 0,
+                "savings_disclaimer": "Estimated route savings compare this trip to a modeled baseline route; offer savings use recorded or estimated deal value.",
             },
         }
 

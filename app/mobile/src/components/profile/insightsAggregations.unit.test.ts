@@ -41,6 +41,9 @@ function trip(
     avg_speed_mph: 30,
     max_speed_mph: 55,
     fuel_used_gallons: 0.2,
+    route_fuel_savings_gallons: 0.03,
+    route_savings_dollars: 0.12,
+    time_saved_seconds: 30,
     hard_braking_events: 0,
     speeding_events: 0,
     tripEndedAtIso: new Date(ms).toISOString(),
@@ -128,6 +131,9 @@ test('computeKpis: aggregates, top speed is max, avg is mile-weighted', () => {
   assert.equal(k.miles, 12);
   assert.equal(k.gemsFromTrips, 7);
   assert.equal(k.xpFromTrips, 110);
+  assert.equal(k.routeSavingsUsd, 0.24);
+  assert.equal(k.routeFuelSavingsGallons, 0.06);
+  assert.equal(k.timeSavedSeconds, 60);
   assert.equal(k.topSpeedMph, 75);
   assert.equal(k.longestTripMiles, 10);
   // weighted by miles → (60*10 + 20*2) / 12 ≈ 53.33

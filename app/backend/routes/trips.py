@@ -37,6 +37,9 @@ FUEL_PRICES = get_fuel_prices()
 
 _MAX_TRIP_SPEED_MPH = 160.0
 _MAX_TRIP_AVG_SPEED_MPH = 130.0
+_DEFAULT_BASELINE_ROUTE_FUEL_FACTOR = 1.12
+_DEFAULT_BASELINE_ROUTE_TIME_FACTOR = 1.08
+_SAVINGS_MODEL_VERSION = "route-v1-distance-mpg"
 XP_CONFIG = get_xp_config()
 
 try:
@@ -108,6 +111,11 @@ def _float_or_none(value: Any) -> Optional[float]:
         return n if math.isfinite(n) else None
     except (TypeError, ValueError):
         return None
+
+
+def _positive_float_or_none(value: Any) -> Optional[float]:
+    n = _float_or_none(value)
+    return n if n is not None and n > 0 else None
 
 
 def _sanitize_speed_mph(value: Any, max_mph: float = _MAX_TRIP_SPEED_MPH) -> float:
@@ -197,6 +205,17 @@ def _trip_row_to_client_shape(r: dict) -> dict:
     mileage_value = _float_or_zero(
         _first_present(r, "mileage_value_estimate", "mileage_value_usd", "mileage_value"),
     )
+    baseline_fuel = _float_or_zero(
+        _first_present(r, "baseline_fuel_estimate_gallons", "baseline_fuel_gallons", "baseline_fuel"),
+    )
+    route_fuel_savings = _float_or_zero(
+        _first_present(r, "route_fuel_savings_gallons", "fuel_savings_gallons", "fuel_saved_gallons"),
+    )
+    route_savings = _float_or_zero(
+        _first_present(r, "route_savings_dollars", "route_savings_usd", "fuel_savings_dollars"),
+    )
+    baseline_duration = _int_or_zero(_first_present(r, "baseline_duration_seconds", "baseline_duration"))
+    time_saved = _int_or_zero(_first_present(r, "time_saved_seconds", "route_time_saved_seconds"))
     hard_braking = _int_or_zero(_first_present(r, "hard_braking_events", "hard_brakes"))
     hard_acceleration = _int_or_zero(_first_present(r, "hard_acceleration_events", "hard_accels"))
     speeding = _int_or_zero(_first_present(r, "speeding_events", "speeding"))
@@ -221,6 +240,13 @@ def _trip_row_to_client_shape(r: dict) -> dict:
         "fuel_used_gallons": fuel_used,
         "fuel_cost_estimate": fuel_cost,
         "mileage_value_estimate": mileage_value,
+        "baseline_fuel_estimate_gallons": baseline_fuel,
+        "route_fuel_savings_gallons": route_fuel_savings,
+        "route_savings_dollars": route_savings,
+        "route_savings_usd": route_savings,
+        "baseline_duration_seconds": baseline_duration,
+        "time_saved_seconds": time_saved,
+        "savings_model_version": r.get("savings_model_version") or "",
         "hard_braking_events": hard_braking,
         "hard_acceleration_events": hard_acceleration,
         "speeding_events": speeding,
@@ -547,6 +573,15 @@ class TripCompleteBody(BaseModel):
     fuel_used_gallons: Optional[float] = None
     fuel_cost_estimate: Optional[float] = None
     mileage_value_estimate: Optional[float] = None
+    planned_distance_miles: Optional[float] = None
+    planned_duration_seconds: Optional[int] = None
+    planned_fuel_estimate_gallons: Optional[float] = None
+    baseline_distance_miles: Optional[float] = None
+    baseline_duration_seconds: Optional[int] = None
+    baseline_fuel_estimate_gallons: Optional[float] = None
+    route_fuel_savings_gallons: Optional[float] = None
+    route_savings_dollars: Optional[float] = None
+    time_saved_seconds: Optional[int] = None
     hard_braking_events: int = 0
     hard_acceleration_events: int = 0
     speeding_events: int = 0
@@ -652,6 +687,36 @@ def _build_trip_row(
         if body.mileage_value_estimate is not None and math.isfinite(float(body.mileage_value_estimate))
         else float(distance) * 0.67
     )
+    price_per_gallon = (fuel_cost / fuel_used) if fuel_used > 0 and fuel_cost > 0 else 3.60
+    planned_distance = _positive_float_or_none(body.planned_distance_miles) or distance
+    planned_duration = _int_for_pg(body.planned_duration_seconds or duration_seconds, lo=0)
+    planned_fuel = _positive_float_or_none(body.planned_fuel_estimate_gallons) or fuel_used
+    baseline_distance = _positive_float_or_none(body.baseline_distance_miles)
+    baseline_duration = _int_for_pg(
+        body.baseline_duration_seconds
+        if body.baseline_duration_seconds is not None
+        else round(duration_seconds * _DEFAULT_BASELINE_ROUTE_TIME_FACTOR),
+        lo=0,
+    )
+    if baseline_distance is None:
+        baseline_distance = max(distance, planned_distance)
+    baseline_fuel = _positive_float_or_none(body.baseline_fuel_estimate_gallons)
+    if baseline_fuel is None:
+        baseline_fuel = max(fuel_used, planned_fuel, fuel_used * _DEFAULT_BASELINE_ROUTE_FUEL_FACTOR)
+    route_fuel_savings = _float_or_none(body.route_fuel_savings_gallons)
+    if route_fuel_savings is None:
+        route_fuel_savings = baseline_fuel - fuel_used
+    route_fuel_savings = max(0.0, float(route_fuel_savings))
+    route_savings = _float_or_none(body.route_savings_dollars)
+    if route_savings is None:
+        route_savings = route_fuel_savings * price_per_gallon
+    route_savings = max(0.0, float(route_savings))
+    time_saved = _int_for_pg(
+        body.time_saved_seconds
+        if body.time_saved_seconds is not None
+        else baseline_duration - duration_seconds,
+        lo=0,
+    )
     # INTEGER columns: use real Python int so JSON is 85 not 85.0 (invalid input for integer in Postgres).
     return {
         "id": trip_id,
@@ -670,6 +735,16 @@ def _build_trip_row(
         "fuel_used_gallons": round(max(0.0, fuel_used), 3),
         "fuel_cost_estimate": round(max(0.0, fuel_cost), 2),
         "mileage_value_estimate": round(max(0.0, mileage_value), 2),
+        "planned_distance_miles": round(max(0.0, planned_distance), 2),
+        "planned_duration_seconds": planned_duration,
+        "planned_fuel_estimate_gallons": round(max(0.0, planned_fuel), 3),
+        "baseline_distance_miles": round(max(0.0, baseline_distance), 2),
+        "baseline_duration_seconds": baseline_duration,
+        "baseline_fuel_estimate_gallons": round(max(0.0, baseline_fuel), 3),
+        "route_fuel_savings_gallons": round(route_fuel_savings, 3),
+        "route_savings_dollars": round(route_savings, 2),
+        "time_saved_seconds": time_saved,
+        "savings_model_version": _SAVINGS_MODEL_VERSION,
         "started_at": body.started_at or now_iso,
         "ended_at": body.ended_at or now_iso,
         "hard_braking_events": _int_for_pg(body.hard_braking_events),
@@ -711,6 +786,16 @@ def _strip_missing_trip_optional_column(trip_row: dict, exc: BaseException) -> b
         "fuel_used_gallons",
         "fuel_cost_estimate",
         "mileage_value_estimate",
+        "planned_distance_miles",
+        "planned_duration_seconds",
+        "planned_fuel_estimate_gallons",
+        "baseline_distance_miles",
+        "baseline_duration_seconds",
+        "baseline_fuel_estimate_gallons",
+        "route_fuel_savings_gallons",
+        "route_savings_dollars",
+        "time_saved_seconds",
+        "savings_model_version",
         "hard_acceleration_events",
     )
     for col in optional_columns:
@@ -932,6 +1017,13 @@ def complete_trip(request: Request, body: TripCompleteBody, user: CurrentUser):
         "fuel_used_gallons": trip_row.get("fuel_used_gallons"),
         "fuel_cost_estimate": trip_row.get("fuel_cost_estimate"),
         "mileage_value_estimate": trip_row.get("mileage_value_estimate"),
+        "baseline_fuel_estimate_gallons": trip_row.get("baseline_fuel_estimate_gallons"),
+        "route_fuel_savings_gallons": trip_row.get("route_fuel_savings_gallons"),
+        "route_savings_dollars": trip_row.get("route_savings_dollars"),
+        "route_savings_usd": trip_row.get("route_savings_dollars"),
+        "baseline_duration_seconds": trip_row.get("baseline_duration_seconds"),
+        "time_saved_seconds": trip_row.get("time_saved_seconds"),
+        "savings_model_version": trip_row.get("savings_model_version"),
         "hard_braking_events": trip_row.get("hard_braking_events"),
         "hard_acceleration_events": trip_row.get("hard_acceleration_events"),
         "speeding_events": trip_row.get("speeding_events"),

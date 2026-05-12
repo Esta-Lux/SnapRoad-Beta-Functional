@@ -25,6 +25,13 @@ export interface TripCompleteApiData {
   fuel_used_gallons?: number;
   fuel_cost_estimate?: number;
   mileage_value_estimate?: number;
+  baseline_fuel_estimate_gallons?: number;
+  route_fuel_savings_gallons?: number;
+  route_savings_dollars?: number;
+  route_savings_usd?: number;
+  baseline_duration_seconds?: number;
+  time_saved_seconds?: number;
+  savings_model_version?: string;
   hard_braking_events?: number;
   hard_acceleration_events?: number;
   speeding_events?: number;
@@ -109,6 +116,31 @@ export function mergeTripCompleteResponse(base: TripSummary, body: unknown): Tri
     fuel_cost_estimate: d.fuel_cost_estimate != null ? Number(d.fuel_cost_estimate) : base.fuel_cost_estimate,
     mileage_value_estimate:
       d.mileage_value_estimate != null ? Number(d.mileage_value_estimate) : base.mileage_value_estimate,
+    baseline_fuel_estimate_gallons:
+      d.baseline_fuel_estimate_gallons != null
+        ? Number(d.baseline_fuel_estimate_gallons)
+        : base.baseline_fuel_estimate_gallons,
+    route_fuel_savings_gallons:
+      d.route_fuel_savings_gallons != null
+        ? Number(d.route_fuel_savings_gallons)
+        : base.route_fuel_savings_gallons,
+    route_savings_dollars:
+      d.route_savings_dollars != null
+        ? Number(d.route_savings_dollars)
+        : d.route_savings_usd != null
+          ? Number(d.route_savings_usd)
+          : base.route_savings_dollars,
+    route_savings_usd:
+      d.route_savings_usd != null
+        ? Number(d.route_savings_usd)
+        : d.route_savings_dollars != null
+          ? Number(d.route_savings_dollars)
+          : base.route_savings_usd,
+    baseline_duration_seconds:
+      d.baseline_duration_seconds != null ? Number(d.baseline_duration_seconds) : base.baseline_duration_seconds,
+    time_saved_seconds: d.time_saved_seconds != null ? Number(d.time_saved_seconds) : base.time_saved_seconds,
+    savings_model_version:
+      typeof d.savings_model_version === 'string' ? d.savings_model_version : base.savings_model_version,
     hard_braking_events:
       d.hard_braking_events != null ? Number(d.hard_braking_events) : base.hard_braking_events,
     hard_acceleration_events:

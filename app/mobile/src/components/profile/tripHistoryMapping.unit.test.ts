@@ -29,6 +29,12 @@ test('mapProfileTripHistoryItem carries summary card metrics into recap details'
     fuel_used_gallons: 0.04,
     fuel_cost_estimate: 0.14,
     mileage_value_estimate: 0.71,
+    baseline_fuel_estimate_gallons: 0.05,
+    route_fuel_savings_gallons: 0.01,
+    route_savings_dollars: 0.04,
+    baseline_duration_seconds: 140,
+    time_saved_seconds: 17,
+    savings_model_version: 'route-v1-distance-mpg',
   });
 
   assert.equal(mapped.id, 'trip-rich');
@@ -45,6 +51,13 @@ test('mapProfileTripHistoryItem carries summary card metrics into recap details'
   assert.equal(mapped.fuel_used_gallons, 0.04);
   assert.equal(mapped.fuel_cost_estimate, 0.14);
   assert.equal(mapped.mileage_value_estimate, 0.71);
+  assert.equal(mapped.baseline_fuel_estimate_gallons, 0.05);
+  assert.equal(mapped.route_fuel_savings_gallons, 0.01);
+  assert.equal(mapped.route_savings_dollars, 0.04);
+  assert.equal(mapped.route_savings_usd, 0.04);
+  assert.equal(mapped.baseline_duration_seconds, 140);
+  assert.equal(mapped.time_saved_seconds, 17);
+  assert.equal(mapped.savings_model_version, 'route-v1-distance-mpg');
   assert.ok(mapped.tripEndedAtIso?.startsWith('2026-05-03T06:39:03'));
 });
 

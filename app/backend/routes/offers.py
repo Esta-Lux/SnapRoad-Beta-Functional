@@ -122,6 +122,59 @@ def _next_gem_total(user_id: str) -> int:
     return int(row.get("gems") or 0)
 
 
+def _estimated_offer_savings_usd(offer: dict, discount_percent: object) -> float:
+    """Best-effort dollar savings for recap metrics; redemption remains the source of truth."""
+    def num(value: object) -> Optional[float]:
+        try:
+            n = float(value)  # type: ignore[arg-type]
+            return n if n > 0 else None
+        except (TypeError, ValueError):
+            return None
+
+    original = num(offer.get("original_price") or offer.get("regular_price"))
+    sale = num(offer.get("sale_price"))
+    if original is not None and sale is not None and original > sale:
+        return round(original - sale, 2)
+
+    if offer.get("is_free_item"):
+        return round(original or 5.0, 2)
+
+    pct = num(discount_percent) or num(offer.get("discount_percent")) or 0.0
+    if original is not None and pct > 0:
+        return round(original * min(pct, 100.0) / 100.0, 2)
+
+    return round(min(max(pct, 0.0), 100.0) / 100.0 * 10.0, 2)
+
+
+def _record_offer_savings_estimate(sb, *, user_id: str, redemption_id: str, estimated_savings: float) -> None:
+    """Persist estimated offer savings when the optional migration has landed."""
+    if not redemption_id or estimated_savings <= 0:
+        return
+    try:
+        sb.table("redemptions").update({
+            "estimated_savings_usd": round(float(estimated_savings), 2),
+            "savings_source": "offer_estimate_v1",
+        }).eq("id", redemption_id).eq("user_id", user_id).execute()
+    except Exception:
+        logger.debug("redemption savings estimate column unavailable; skipping", exc_info=True)
+    try:
+        profile = sb.table("profiles").select("total_savings").eq("id", user_id).limit(1).execute()
+        if profile.data:
+            current = float(profile.data[0].get("total_savings") or 0)
+            sb.table("profiles").update({"total_savings": round(current + float(estimated_savings), 2)}).eq("id", user_id).execute()
+    except Exception:
+        logger.debug("profile total_savings update skipped", exc_info=True)
+
+
+def _is_missing_redemption_savings_column(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return (
+        "redemptions" in msg
+        and ("estimated_savings_usd" in msg or "savings_source" in msg)
+        and ("schema cache" in msg or "column" in msg or "does not exist" in msg or "could not find" in msg)
+    )
+
+
 def _try_redeem_offer_atomic(sb, *, user_id: str, offer: dict, fee_preview: dict) -> Optional[dict]:
     """Use the DB atomic redemption RPC when present; fall back to legacy writes otherwise."""
     offer_id = offer.get("id")
@@ -446,6 +499,13 @@ def complete_offer_redemption(
             gc = int(rpc_payload.get("gem_cost") or gem_cost)
             disc = int(rpc_payload.get("discount_percent") or discount)
             new_total = int(rpc_payload.get("new_gem_total") or _next_gem_total(user_id))
+            estimated_savings = _estimated_offer_savings_usd(offer, disc)
+            _record_offer_savings_estimate(
+                sb,
+                user_id=user_id,
+                redemption_id=rid,
+                estimated_savings=estimated_savings,
+            )
             rpc_current_gems_raw = rpc_payload.get("current_gems")
             rpc_current_gems: Optional[int] = None
             if rpc_current_gems_raw is not None:
@@ -493,6 +553,8 @@ def complete_offer_redemption(
                 "fee_amount": float(fee_preview.get("fee_amount") or 0),
                 "redeemed_at": redeemed_at,
                 "redemption_id": rid,
+                "estimated_savings_usd": estimated_savings,
+                "savings_source": "offer_estimate_v1",
             }
             if rid:
                 qr_payload = _issue_post_redeem_qr(offer=offer, user_id=user_id, redemption_id=rid)
@@ -534,6 +596,10 @@ def complete_offer_redemption(
         "qr_nonce": qr_nonce,
         "redeemed_at": redeemed_at,
     }
+    estimated_savings = _estimated_offer_savings_usd(offer, discount)
+    if estimated_savings > 0:
+        redemption_payload["estimated_savings_usd"] = estimated_savings
+        redemption_payload["savings_source"] = "offer_estimate_v1"
     redemption_id: Optional[str] = None
     try:
         ins = sb.table("redemptions").insert(redemption_payload).execute()
@@ -541,11 +607,24 @@ def complete_offer_redemption(
         if rows:
             redemption_id = str(rows[0].get("id")) if rows[0].get("id") is not None else None
     except Exception as exc:
-        if _is_unique_violation(exc):
-            return {"success": False, "message": "Offer already redeemed"}
-        logger.exception("redemption insert failed")
-        return {"success": False, "message": "Could not complete redemption"}
-
+        if _is_missing_redemption_savings_column(exc):
+            redemption_payload.pop("estimated_savings_usd", None)
+            redemption_payload.pop("savings_source", None)
+            try:
+                ins = sb.table("redemptions").insert(redemption_payload).execute()
+                rows = ins.data or []
+                if rows:
+                    redemption_id = str(rows[0].get("id")) if rows[0].get("id") is not None else None
+            except Exception as retry_exc:
+                if _is_unique_violation(retry_exc):
+                    return {"success": False, "message": "Offer already redeemed"}
+                logger.exception("redemption insert failed")
+                return {"success": False, "message": "Could not complete redemption"}
+        else:
+            if _is_unique_violation(exc):
+                return {"success": False, "message": "Offer already redeemed"}
+            logger.exception("redemption insert failed")
+            return {"success": False, "message": "Could not complete redemption"}
     if not redemption_id:
         try:
             r2 = (
@@ -608,6 +687,12 @@ def complete_offer_redemption(
     )
 
     new_total = _next_gem_total(user_id)
+    _record_offer_savings_estimate(
+        sb,
+        user_id=user_id,
+        redemption_id=str(redemption_id),
+        estimated_savings=estimated_savings,
+    )
     try:
         from services.wallet_ledger import record_wallet_transaction
 
@@ -636,6 +721,8 @@ def complete_offer_redemption(
         "fee_tier": fee_record["fee_tier"],
         "redeemed_at": redeemed_at,
         "redemption_id": redemption_id,
+        "estimated_savings_usd": estimated_savings,
+        "savings_source": "offer_estimate_v1",
     }
     if redemption_id:
         qr_payload = _issue_post_redeem_qr(offer=offer, user_id=user_id, redemption_id=str(redemption_id))
@@ -1028,7 +1115,7 @@ def get_my_offer_redemptions(
     try:
         red_res = (
             sb.table("redemptions")
-            .select("*")
+                .select("*")
             .eq("user_id", user_id)
             .order("redeemed_at", desc=True)
             .limit(limit)
@@ -1082,6 +1169,12 @@ def get_my_offer_redemptions(
             discount_applied = int(disc) if disc is not None else int(offer.get("discount_percent") or 0)
         except (TypeError, ValueError):
             discount_applied = int(offer.get("discount_percent") or 0)
+        try:
+            estimated_savings = float(r.get("estimated_savings_usd") or 0)
+        except (TypeError, ValueError):
+            estimated_savings = 0.0
+        if estimated_savings <= 0:
+            estimated_savings = _estimated_offer_savings_usd(offer, discount_applied)
 
         redeemed_at = r.get("redeemed_at") or r.get("created_at")
         attach_offer_category_fields(offer)
@@ -1100,6 +1193,8 @@ def get_my_offer_redemptions(
                 "image_url": offer.get("image_url"),
                 "address": offer.get("address"),
                 "discount_percent": int(offer.get("discount_percent") or discount_applied or 0),
+                "estimated_savings_usd": round(estimated_savings, 2),
+                "savings_source": r.get("savings_source") or "offer_estimate_v1",
                 "lat": offer.get("lat"),
                 "lng": offer.get("lng"),
                 "is_free_item": bool(offer.get("is_free_item")),

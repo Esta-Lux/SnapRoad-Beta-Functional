@@ -90,6 +90,7 @@ export default function ProfileScreen() {
   const [commutes, setCommutes] = useState<CommuteRoute[]>([]);
   const [commuteLimit, setCommuteLimit] = useState(5);
   const [showAddCommute, setShowAddCommute] = useState(false);
+  const [editingCommute, setEditingCommute] = useState<CommuteRoute | null>(null);
   const [notifSyncing, setNotifSyncing] = useState(false);
 
   const [vehicleType, setVehicleType] = useState<'car' | 'motorcycle'>('car');
@@ -334,6 +335,12 @@ export default function ProfileScreen() {
           fuelUsedGallons: 0,
           fuelCostEstimate: 0,
           mileageValueEstimate: 0,
+          routeFuelSavingsGallons: 0,
+          routeSavingsDollars: 0,
+          offerSavingsDollars: 0,
+          totalSavingsDollars: 0,
+          timeSavedSeconds: 0,
+          savingsDisclaimer: '',
         });
       } else {
         const weekly = (unwrapProfileApiData(weeklyRes?.data) as Record<string, unknown>) ?? {};
@@ -359,6 +366,12 @@ export default function ProfileScreen() {
           fuelUsedGallons: Number(weekly.fuel_used_gallons ?? 0),
           fuelCostEstimate: Number(weekly.fuel_cost_estimate ?? 0),
           mileageValueEstimate: Number(weekly.mileage_value_estimate ?? 0),
+          routeFuelSavingsGallons: Number(weekly.route_fuel_savings_gallons ?? 0),
+          routeSavingsDollars: Number(weekly.route_savings_dollars ?? weekly.route_savings_usd ?? 0),
+          offerSavingsDollars: Number(weekly.offer_savings_dollars ?? weekly.offer_savings_usd ?? 0),
+          totalSavingsDollars: Number(weekly.total_savings_dollars ?? weekly.total_savings_usd ?? 0),
+          timeSavedSeconds: Number(weekly.time_saved_seconds ?? 0),
+          savingsDisclaimer: typeof weekly.savings_disclaimer === 'string' ? weekly.savings_disclaimer : '',
         });
       }
       const vtRaw = pp.vehicle_type;
@@ -964,6 +977,12 @@ export default function ProfileScreen() {
                 onDelete={handleDeleteCommute}
                 onAdd={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setEditingCommute(null);
+                  setShowAddCommute(true);
+                }}
+                onEdit={(commute) => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setEditingCommute(commute);
                   setShowAddCommute(true);
                 }}
               />
@@ -1305,7 +1324,10 @@ export default function ProfileScreen() {
       />
       <AddCommuteModal
         visible={showAddCommute}
-        onClose={() => setShowAddCommute(false)}
+        onClose={() => {
+          setShowAddCommute(false);
+          setEditingCommute(null);
+        }}
         cardBg={cardBg}
         text={text}
         sub={sub}
@@ -1316,6 +1338,7 @@ export default function ProfileScreen() {
         originLng={location.lng}
         commuteCount={commutes.length}
         commuteLimit={commuteLimit}
+        editRoute={editingCommute}
         onCreated={() => void loadData('silent')}
       />
       <FuelTracker visible={showFuelTracker} onClose={() => setShowFuelTracker(false)} />

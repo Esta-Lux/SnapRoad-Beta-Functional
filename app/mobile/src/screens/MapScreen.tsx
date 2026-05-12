@@ -92,6 +92,7 @@ import ReportMarkers from '../components/map/ReportMarkers';
 import FriendMarkers from '../components/map/FriendMarkers';
 import CameraMarkers from '../components/map/CameraMarkers';
 import GasPriceMarkers from '../components/map/GasPriceMarkers';
+import BusinessPoiMarkers, { type BusinessPoi } from '../components/map/BusinessPoiMarkers';
 import type { CameraLocation, CameraViewFeed } from '../components/map/CameraMarkers';
 import type { GasPriceMapPoint } from '../components/map/GasPriceMarkers';
 import {
@@ -2217,6 +2218,7 @@ export default function MapScreen() {
 
   // ── New layer data ──
   const [photoReports, setPhotoReports] = useState<PhotoReport[]>([]);
+  const [businessPois, setBusinessPois] = useState<BusinessPoi[]>([]);
   const [trafficSafetyZones, setTrafficSafetyZones] = useState<TrafficSafetyZone[]>([]);
   /** User-visible status when speed-camera layer is on but empty / limited */
   const [trafficSafetyHint, setTrafficSafetyHint] = useState<string | null>(null);
@@ -2352,6 +2354,10 @@ export default function MapScreen() {
   }, [placeCardLocGridLat, placeCardLocGridLng, selectedPlace?.lat, selectedPlace?.lng, nav.isNavigating, nav.navigationProgressCoord.lat, nav.navigationProgressCoord.lng]);
 
   const refreshSavedPlaces = useCallback(() => {
+    if (!user?.id) {
+      setSavedPlaces([]);
+      return;
+    }
     api
       .get<any>('/api/locations')
       .then((r) => {
@@ -2363,7 +2369,7 @@ export default function MapScreen() {
         if (Array.isArray(d)) setSavedPlaces(d);
       })
       .catch((e) => logMapDataIssue('GET /api/locations', e));
-  }, []);
+  }, [user?.id]);
 
   const selectedPlaceFavoriteMatch = useMemo(() => {
     if (!selectedPlace?.lat || !selectedPlace?.lng) return { id: null as number | null, isFavorite: false };
@@ -2512,6 +2518,60 @@ export default function MapScreen() {
     }
     refreshFriendLocations();
   }, [refreshSavedPlaces, user?.isPremium, refreshFriendLocations]);
+
+  useEffect(() => {
+    if (!mapTabFocused || nav.isNavigating || nav.showRoutePreview) {
+      setBusinessPois([]);
+      return;
+    }
+    const rLat = Math.round(poiSearchCoord.lat * 250);
+    const rLng = Math.round(poiSearchCoord.lng * 250);
+    if (rLat === 0 && rLng === 0) {
+      setBusinessPois([]);
+      return;
+    }
+    api
+      .get<Record<string, unknown>>(
+        `/api/places/nearby?lat=${poiSearchCoord.lat}&lng=${poiSearchCoord.lng}&radius=2200&limit=24`,
+      )
+      .then((res) => {
+        if (!res.success || res.data == null) {
+          if (!res.success) logMapDataIssue('GET /api/places/nearby', res.error);
+          setBusinessPois([]);
+          return;
+        }
+        const raw = res.data as unknown;
+        const envelope = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+        const rows = Array.isArray(envelope.data) ? envelope.data : Array.isArray(raw) ? raw : [];
+        const mapped = rows
+          .map((row: unknown, idx: number) => {
+            const rec = row as Record<string, unknown>;
+            const lat = Number(rec.lat);
+            const lng = Number(rec.lng);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+            const placeId = rec.place_id != null ? String(rec.place_id) : undefined;
+            return {
+              id: placeId ?? `poi-${idx}-${lat.toFixed(5)}-${lng.toFixed(5)}`,
+              name: String(rec.name ?? 'Place'),
+              address: rec.address != null ? String(rec.address) : undefined,
+              lat,
+              lng,
+              place_id: placeId,
+              types: Array.isArray(rec.types) ? rec.types.map((x) => String(x)) : [],
+              rating: typeof rec.rating === 'number' ? rec.rating : undefined,
+              photo_reference: rec.photo_reference != null ? String(rec.photo_reference) : undefined,
+              open_now: typeof rec.open_now === 'boolean' ? rec.open_now : undefined,
+              price_level: typeof rec.price_level === 'number' ? rec.price_level : undefined,
+            } satisfies BusinessPoi;
+          })
+          .filter(Boolean) as BusinessPoi[];
+        setBusinessPois(mapped);
+      })
+      .catch((e) => {
+        logMapDataIssue('GET /api/places/nearby', e);
+        setBusinessPois([]);
+      });
+  }, [mapTabFocused, nav.isNavigating, nav.showRoutePreview, Math.round(poiSearchCoord.lat * 250), Math.round(poiSearchCoord.lng * 250)]);
 
   /** Premium friends list: faster poll while Map is focused so shared locations stay current. */
   useEffect(() => {
@@ -3182,31 +3242,12 @@ export default function MapScreen() {
     if (!loc || (Math.abs(loc.lat) < 1e-5 && Math.abs(loc.lng) < 1e-5)) return;
     try {
       const res = await api.get<{ success?: boolean; data?: Incident[] }>(
-        `/api/incidents/nearby?lat=${loc.lat}&lng=${loc.lng}&radius_miles=2`,
+        `/api/incidents/road-feed?lat=${loc.lat}&lng=${loc.lng}&radius_miles=2&limit=80`,
       );
       if (!res.success || res.data == null) return;
       const payload = res.data as { success?: boolean; data?: Incident[] };
       const d = payload.data;
-      let merged: Incident[] = Array.isArray(d) ? [...d] : [];
-      try {
-        const osm = await api.get<{ success?: boolean; data?: Incident[] }>(
-          `/api/incidents/osm-nearby?lat=${loc.lat}&lng=${loc.lng}&radius_miles=2`,
-        );
-        const op = osm.success && osm.data != null ? (osm.data as { success?: boolean; data?: Incident[] }) : null;
-        const raw = op?.data;
-        if (Array.isArray(raw)) {
-          const seen = new Set(merged.map((x) => String(x.id)));
-          for (const row of raw) {
-            const id = String((row as Incident).id);
-            if (!seen.has(id)) {
-              seen.add(id);
-              merged.push(row as Incident);
-            }
-          }
-        }
-      } catch {
-        /* OSM optional */
-      }
+      const merged: Incident[] = Array.isArray(d) ? [...d] : [];
       setNearbyIncidents(merged);
     } catch { /* offline / tunnel */ }
   }, []);
@@ -3216,12 +3257,13 @@ export default function MapScreen() {
     const ping = () => {
       const loc = locationRef.current;
       if (!loc || Math.abs(loc.lat) < 1e-5) return;
+      if (!user?.id) return;
       void api.post('/api/user/location-ping', { lat: loc.lat, lng: loc.lng }).catch(() => {});
     };
     ping();
     const id = setInterval(ping, 90_000);
     return () => clearInterval(id);
-  }, []);
+  }, [user?.id]);
 
   // Incident polling — faster while incidents layer is on so pins appear quickly
   useEffect(() => {
@@ -5161,6 +5203,31 @@ export default function MapScreen() {
               }
             />
           )}
+          {!nav.isNavigating && !nav.showRoutePreview && (
+            <BusinessPoiMarkers
+              pois={businessPois}
+              zoomLevel={mapZoomLevel}
+              referenceCoordinate={
+                Number.isFinite(location.lat) && Number.isFinite(location.lng)
+                  ? { lat: location.lat, lng: location.lng }
+                  : null
+              }
+              onPoiTap={(poi) => {
+                void handleSelectResult({
+                  name: poi.name,
+                  address: poi.address ?? '',
+                  lat: poi.lat,
+                  lng: poi.lng,
+                  place_id: poi.place_id,
+                  placeType: poi.types?.[0],
+                  photo_reference: poi.photo_reference,
+                  open_now: poi.open_now,
+                  price_level: poi.price_level,
+                  rating: poi.rating,
+                });
+              }}
+            />
+          )}
 
           {(nav.selectedDestination || selectedPlace) && (
             <MapboxGL.MarkerView
@@ -6341,66 +6408,6 @@ export default function MapScreen() {
             },
           ]}
         >
-          <View style={{ position: 'relative', alignItems: 'center' }}>
-            <OrionQuickMic
-              visible={!showOrion}
-              interactionMode="navigation"
-              compactHudFab
-              hudGlassTile={{
-                backgroundColor: hudChromeGlass.tileFill,
-                borderColor: hudChromeGlass.tileBorder,
-              }}
-              isPremium={Boolean(user?.isPremium)}
-              context={orionContext}
-              onOpenChat={() => setShowOrion(true)}
-              onSuggestions={(items) => setOrionPendingSuggestions(items)}
-              onReply={(text) => setOrionQuickReply(text)}
-              onAction={(action: {
-                type: string;
-                name?: string;
-                lat?: number;
-                lng?: number;
-                address?: string;
-              }) => {
-                if (action.type === 'navigate' && action.lat != null && action.lng != null) {
-                  const dest = {
-                    name: action.name ?? 'Destination',
-                    address: typeof action.address === 'string' ? action.address : '',
-                    lat: action.lat,
-                    lng: action.lng,
-                  };
-                  handleStartDirections(dest);
-                } else if (action.type === 'add_stop' && action.lat && action.lng) {
-                  nav.addWaypoint({ lat: action.lat, lng: action.lng, name: action.name ?? 'Stop' });
-                } else if (action.type === 'mode' && action.name) {
-                  const m = action.name.toLowerCase();
-                  if (m === 'calm' || m === 'adaptive' || m === 'sport') setDrivingMode(m as DrivingMode);
-                } else if (action.type === 'mute_voice') {
-                  setNavVoiceMuted(true);
-                  stopSpeaking();
-                } else if (action.type === 'unmute_voice') {
-                  setNavVoiceMuted(false);
-                }
-              }}
-            />
-            {!user?.isPremium && (
-              <View
-                style={{
-                  position: 'absolute',
-                  top: -2,
-                  right: -2,
-                  backgroundColor: '#3B82F6',
-                  borderRadius: 8,
-                  width: 16,
-                  height: 16,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Ionicons name="navigate" size={8} color="#fff" />
-              </View>
-            )}
-          </View>
           <TouchableOpacity
             style={[
               s.navHudBtn,

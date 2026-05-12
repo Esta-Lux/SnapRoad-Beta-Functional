@@ -22,6 +22,13 @@ export interface TripSummary {
   fuel_used_gallons?: number;
   fuel_cost_estimate?: number;
   mileage_value_estimate?: number;
+  baseline_fuel_estimate_gallons?: number;
+  route_fuel_savings_gallons?: number;
+  route_savings_dollars?: number;
+  route_savings_usd?: number;
+  baseline_duration_seconds?: number;
+  time_saved_seconds?: number;
+  savings_model_version?: string;
   /** Real safety-event counts forwarded to backend; 0 when not tracked. */
   hard_braking_events?: number;
   hard_acceleration_events?: number;

@@ -71,6 +71,16 @@ function routeTitle(trip: ProfileTripHistoryItem): string {
   return `${from} › ${to}`;
 }
 
+function formatSavedTime(seconds: number): string {
+  const s = Number.isFinite(seconds) ? Math.max(0, Math.round(seconds)) : 0;
+  if (s < 60) return `${s}s`;
+  const min = Math.round(s / 60);
+  if (min < 60) return `${min} min`;
+  const hours = Math.floor(min / 60);
+  const rem = min % 60;
+  return rem ? `${hours}h ${rem}m` : `${hours}h`;
+}
+
 function categoryIcon(cat: string): keyof typeof Ionicons.glyphMap {
   const c = (cat || '').toLowerCase();
   if (c === 'distance') return 'navigate-outline';
@@ -148,6 +158,9 @@ export default function ProfileInsightsDashboard({
   const kpis = useMemo(() => computeKpis(filteredTrips), [filteredTrips]);
   const previousKpis = useMemo(() => computeKpis(previousTrips), [previousTrips]);
   const deltas = useMemo(() => computeDeltas(kpis, previousKpis), [kpis, previousKpis]);
+  const rangeOfferSavings =
+    preset === 'week' ? Number(weeklyRecap.offerSavingsDollars ?? 0) : 0;
+  const rangeTotalSavings = kpis.routeSavingsUsd + rangeOfferSavings;
 
   /**
    * Sparkline buckets — one point per day. Cap at 31 buckets so wide custom
@@ -413,7 +426,9 @@ export default function ProfileInsightsDashboard({
             <View style={{ flex: 1 }}>
               <Text style={styles.heroEyebrow}>YOUR TRACKING</Text>
               <Text style={styles.heroTitle}>
-                {kpiTripsDisplay} {kpiTripsDisplay === 1 ? 'trip' : 'trips'} · ${kpis.fuelCostUsd.toFixed(2)} fuel
+                {rangeTotalSavings > 0
+                  ? `${formatUsd(rangeTotalSavings)} saved`
+                  : `${kpiTripsDisplay} ${kpiTripsDisplay === 1 ? 'trip' : 'trips'}`}
               </Text>
               <Text style={styles.heroSub}>
                 {preset === 'day'
@@ -506,6 +521,22 @@ export default function ProfileInsightsDashboard({
             deltas.gems,
             colors.warning,
           )}
+          {kpiTile(
+            'leaf-outline',
+            formatUsd(kpis.routeSavingsUsd),
+            'Route savings',
+            null,
+            colors.success,
+          )}
+          {preset === 'week'
+            ? kpiTile(
+                'receipt-outline',
+                formatUsd(rangeOfferSavings),
+                'Offer savings',
+                null,
+                colors.primary,
+              )
+            : null}
           {topSpeedDisplay > 0
             ? kpiTile(
                 'flash-off-outline',
@@ -529,8 +560,36 @@ export default function ProfileInsightsDashboard({
         <Text
           style={[typography.caption, { color: colors.textTertiary, marginTop: 6, marginBottom: spacing.sm, lineHeight: 18 }]}
         >
-          Trips, fuel cost, and safety reflect qualifying drives in this range. Deltas compare to the same length window before it.
+          Trips, route savings, fuel cost, and safety reflect qualifying drives in this range. Deltas compare to the same length window before it.
         </Text>
+
+        <View style={[styles.card, { borderColor: colors.border, backgroundColor: colors.card }]}>
+          <Text style={{ color: colors.text, fontWeight: '800', marginBottom: 8 }}>Savings breakdown</Text>
+          <View style={styles.savingsGrid}>
+            <View style={styles.savingsCell}>
+              <Ionicons name="leaf-outline" size={16} color={colors.success} />
+              <Text style={[styles.savingsValue, { color: colors.text }]}>{formatUsd(kpis.routeSavingsUsd)}</Text>
+              <Text style={[styles.savingsLabel, { color: colors.textSecondary }]}>Route fuel</Text>
+              <Text style={[styles.savingsMeta, { color: colors.textTertiary }]}>
+                {kpis.routeFuelSavingsGallons.toFixed(2)} gal · {formatSavedTime(kpis.timeSavedSeconds)}
+              </Text>
+            </View>
+            <View style={styles.savingsCell}>
+              <Ionicons name="receipt-outline" size={16} color={colors.primary} />
+              <Text style={[styles.savingsValue, { color: colors.text }]}>
+                {preset === 'week' ? formatUsd(rangeOfferSavings) : 'Week'}
+              </Text>
+              <Text style={[styles.savingsLabel, { color: colors.textSecondary }]}>Offer deals</Text>
+              <Text style={[styles.savingsMeta, { color: colors.textTertiary }]}>
+                {preset === 'week' ? 'Redeemed offers' : 'Switch to Week'}
+              </Text>
+            </View>
+          </View>
+          <Text style={[typography.caption, { color: colors.textTertiary, marginTop: 10, lineHeight: 18 }]}>
+            {weeklyRecap.savingsDisclaimer ||
+              'Route savings are estimated against a modeled baseline. Offer savings come from redemption value when available.'}
+          </Text>
+        </View>
 
         {weeklyRecap.highlights && weeklyRecap.highlights.length > 0 ? (
           <View style={[styles.card, { borderColor: colors.border, backgroundColor: colors.card }]}>
@@ -689,6 +748,9 @@ export default function ProfileInsightsDashboard({
                     {Number(trip.distance_miles ?? 0).toFixed(1)} mi · {trip.duration_minutes ?? 0} min
                     {typeof trip.gems_earned === 'number' && trip.gems_earned > 0
                       ? ` · ${trip.gems_earned} gems`
+                      : ''}
+                    {(trip.route_savings_dollars ?? 0) > 0
+                      ? ` · ${formatUsd(trip.route_savings_dollars ?? 0)} saved`
                       : ''}
                   </Text>
                   <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '700', marginTop: 4 }}>
@@ -885,6 +947,30 @@ export default function ProfileInsightsDashboard({
                   {formatUsd(tripDetail.fuel_cost_estimate ?? 0)}
                 </Text>
               </View>
+              {(tripDetail.route_savings_dollars ?? tripDetail.route_savings_usd ?? 0) > 0 ? (
+                <View style={styles.tripStatCell}>
+                  <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Route saved</Text>
+                  <Text style={{ color: colors.success, fontSize: 18, fontWeight: '900' }}>
+                    {formatUsd(tripDetail.route_savings_dollars ?? tripDetail.route_savings_usd ?? 0)}
+                  </Text>
+                </View>
+              ) : null}
+              {(tripDetail.route_fuel_savings_gallons ?? 0) > 0 ? (
+                <View style={styles.tripStatCell}>
+                  <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Fuel saved</Text>
+                  <Text style={{ color: colors.text, fontSize: 18, fontWeight: '900' }}>
+                    {(tripDetail.route_fuel_savings_gallons ?? 0).toFixed(2)} gal
+                  </Text>
+                </View>
+              ) : null}
+              {(tripDetail.time_saved_seconds ?? 0) > 0 ? (
+                <View style={styles.tripStatCell}>
+                  <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Time saved</Text>
+                  <Text style={{ color: colors.primary, fontSize: 18, fontWeight: '900' }}>
+                    {formatSavedTime(tripDetail.time_saved_seconds ?? 0)}
+                  </Text>
+                </View>
+              ) : null}
               <View style={styles.tripStatCell}>
                 <Text style={{ color: colors.textSecondary, fontSize: 11 }}>Safety</Text>
                 <Text style={{ color: colors.text, fontSize: 18, fontWeight: '900' }}>
@@ -1099,6 +1185,20 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 12,
   },
+  savingsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  savingsCell: {
+    flexGrow: 1,
+    flexBasis: '47%',
+    minWidth: 140,
+    paddingVertical: 6,
+  },
+  savingsValue: { fontSize: 20, fontWeight: '900', marginTop: 8 },
+  savingsLabel: { fontSize: 11, fontWeight: '800', marginTop: 2, textTransform: 'uppercase' },
+  savingsMeta: { fontSize: 11, fontWeight: '600', marginTop: 6 },
   lockBox: {
     borderWidth: 1,
     borderRadius: 14,

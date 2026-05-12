@@ -29,6 +29,12 @@ export type ProfileWeeklyRecap = {
   fuelUsedGallons?: number;
   fuelCostEstimate?: number;
   mileageValueEstimate?: number;
+  routeFuelSavingsGallons?: number;
+  routeSavingsDollars?: number;
+  offerSavingsDollars?: number;
+  totalSavingsDollars?: number;
+  timeSavedSeconds?: number;
+  savingsDisclaimer?: string;
 };
 
 export type ProfileBadgeItem = {
@@ -59,6 +65,13 @@ export type ProfileTripHistoryItem = {
   fuel_used_gallons?: number;
   fuel_cost_estimate?: number;
   mileage_value_estimate?: number;
+  baseline_fuel_estimate_gallons?: number;
+  route_fuel_savings_gallons?: number;
+  route_savings_dollars?: number;
+  route_savings_usd?: number;
+  baseline_duration_seconds?: number;
+  time_saved_seconds?: number;
+  savings_model_version?: string;
   duration_seconds?: number;
   /** Behavioral counts forwarded from the trip row when present. */
   hard_braking_events?: number;

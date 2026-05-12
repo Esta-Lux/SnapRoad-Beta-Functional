@@ -12,7 +12,7 @@ import {
 import Modal from '../common/Modal';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../api/client';
-import type { SavedLocation } from '../../types';
+import type { CommuteRoute, SavedLocation } from '../../types';
 import type { GeocodeResult } from '../../lib/directions';
 import {
   buildLocalCommuteHits,
@@ -47,6 +47,7 @@ type Props = {
   originLng: number;
   commuteCount: number;
   commuteLimit: number;
+  editRoute?: CommuteRoute | null;
   onCreated: () => void;
 };
 
@@ -63,6 +64,7 @@ export default function AddCommuteModal({
   originLng,
   commuteCount,
   commuteLimit,
+  editRoute,
   onCreated,
 }: Props) {
   const [name, setName] = useState('My commute');
@@ -105,6 +107,7 @@ export default function AddCommuteModal({
   }, [originLat, originLng]);
 
   const prox = useMemo(() => (locOk ? { lat: originLat, lng: originLng } : undefined), [locOk, originLat, originLng]);
+  const isEditing = Boolean(editRoute?.id);
 
   const placesWithCoords = useMemo(
     () => places.filter((p) => p.lat != null && p.lng != null && Number.isFinite(p.lat) && Number.isFinite(p.lng)),
@@ -114,6 +117,61 @@ export default function AddCommuteModal({
   const toggleDay = (key: string) => {
     setDayMap((m) => ({ ...m, [key]: !m[key] }));
   };
+
+  useEffect(() => {
+    if (!visible) return;
+    const route = editRoute;
+    if (!route) {
+      setName('My commute');
+      setLeaveBy('08:00');
+      setAlertMin('120');
+      setMonitorMin('120');
+      setNotifyEveryMin('30');
+      setMaxPushes('3');
+      setDayMap(DAYS.reduce((a, d) => ({ ...a, [d.key]: true }), {} as Record<string, boolean>));
+      setOriginMode('current');
+      setOriginPlaceId(null);
+      setOriginQuery('');
+      setOriginHits([]);
+      setOriginPick(null);
+      setOriginPickIdx(null);
+      setDestQuery('');
+      setDestHits([]);
+      setDestPick(null);
+      setDestPickIdx(null);
+      return;
+    }
+    setName(route.name || 'Commute');
+    setLeaveBy(route.leave_by_time || '08:00');
+    setAlertMin(String(route.alert_minutes_before ?? 120));
+    setMonitorMin(String(route.monitoring_duration_minutes ?? 120));
+    setNotifyEveryMin(String(route.notification_interval_minutes ?? 30));
+    setMaxPushes(String(route.max_notifications_per_window ?? 3));
+    const days = new Set((route.days_of_week || []).map((d) => String(d).toLowerCase().slice(0, 3)));
+    setDayMap(DAYS.reduce((a, d) => ({ ...a, [d.key]: days.has(d.key) }), {} as Record<string, boolean>));
+    setOriginMode('address');
+    setOriginPlaceId(null);
+    const originHit: CommuteGeocodeHit = {
+      name: route.origin_label || 'Starting point',
+      address: route.origin_label || '',
+      lat: Number(route.origin_lat),
+      lng: Number(route.origin_lng),
+    };
+    setOriginQuery(route.origin_label || '');
+    setOriginHits([]);
+    setOriginPick(originHit);
+    setOriginPickIdx(null);
+    const destHit: CommuteGeocodeHit = {
+      name: route.dest_label || 'Destination',
+      address: route.dest_label || '',
+      lat: Number(route.dest_lat),
+      lng: Number(route.dest_lng),
+    };
+    setDestQuery(route.dest_label || '');
+    setDestHits([]);
+    setDestPick(destHit);
+    setDestPickIdx(null);
+  }, [visible, editRoute]);
 
   useEffect(() => {
     if (!visible) return;
@@ -150,8 +208,6 @@ export default function AddCommuteModal({
         try {
           const hits = await fetchCommuteAddressSuggestions(q, prox, places, recentSearches);
           if (originGenRef.current !== gen) return;
-          setOriginPick(null);
-          setOriginPickIdx(null);
           setOriginHits(hits);
         } finally {
           if (originGenRef.current === gen) setOriginSuggestLoading(false);
@@ -179,8 +235,6 @@ export default function AddCommuteModal({
         try {
           const hits = await fetchCommuteAddressSuggestions(q, prox, places, recentSearches);
           if (destGenRef.current !== gen) return;
-          setDestPick(null);
-          setDestPickIdx(null);
           setDestHits(hits);
         } finally {
           if (destGenRef.current === gen) setDestSuggestLoading(false);
@@ -201,8 +255,6 @@ export default function AddCommuteModal({
     setOriginSuggestLoading(true);
     try {
       const hits = await fetchCommuteAddressSuggestions(q, prox, places, recentSearches);
-      setOriginPick(null);
-      setOriginPickIdx(null);
       setOriginHits(hits);
     } finally {
       setOriginSuggestLoading(false);
@@ -218,8 +270,6 @@ export default function AddCommuteModal({
     setDestSuggestLoading(true);
     try {
       const hits = await fetchCommuteAddressSuggestions(q, prox, places, recentSearches);
-      setDestPick(null);
-      setDestPickIdx(null);
       setDestHits(hits);
     } finally {
       setDestSuggestLoading(false);
@@ -227,7 +277,7 @@ export default function AddCommuteModal({
   }, [destQuery, prox, places, recentSearches]);
 
   const submit = async () => {
-    if (commuteCount >= commuteLimit) {
+    if (!isEditing && commuteCount >= commuteLimit) {
       Alert.alert(
         'Limit reached',
         `You can save up to ${commuteLimit} commute routes on your plan.`,
@@ -289,7 +339,7 @@ export default function AddCommuteModal({
     setSaving(true);
     try {
       await registerCommutePushToken();
-      const res = await api.post('/api/commute-routes', {
+      const payload = {
         name: name.trim() || 'Commute',
         origin_lat: oLat,
         origin_lng: oLng,
@@ -305,9 +355,12 @@ export default function AddCommuteModal({
         max_notifications_per_window: max,
         days_of_week: days,
         notifications_enabled: true,
-      });
+      };
+      const res = isEditing && editRoute?.id
+        ? await api.put(`/api/commute-routes/${editRoute.id}`, payload)
+        : await api.post('/api/commute-routes', payload);
       if (!res.success) {
-        Alert.alert('Could not save', res.error || 'Try again.');
+        Alert.alert(isEditing ? 'Could not update' : 'Could not save', res.error || 'Try again.');
         return;
       }
       onCreated();
@@ -325,7 +378,7 @@ export default function AddCommuteModal({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 8 }}
       >
-        <Text style={[styles.title, { color: text }]}>Commute Alerts</Text>
+        <Text style={[styles.title, { color: text }]}>{isEditing ? 'Edit Commute' : 'Commute Alerts'}</Text>
         <Text style={[styles.sub, { color: sub }]}>
           Save your route once. SnapRoad scans 2h before leave time and sends short push updates when traffic matters.
         </Text>
@@ -393,7 +446,11 @@ export default function AddCommuteModal({
             <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
               <TextInput
                 value={originQuery}
-                onChangeText={setOriginQuery}
+                onChangeText={(value) => {
+                  setOriginQuery(value);
+                  setOriginPick(null);
+                  setOriginPickIdx(null);
+                }}
                 placeholder="Starting address"
                 placeholderTextColor={sub}
                 style={[
@@ -425,6 +482,8 @@ export default function AddCommuteModal({
                   }
                   setOriginPickIdx(i);
                   setOriginPick({ ...resolved, fromSavedPlaces: h.fromSavedPlaces });
+                  setOriginQuery(resolved.address || resolved.name || h.address || h.name);
+                  setOriginHits([]);
                 }}
                 style={[
                   styles.hitRow,
@@ -457,7 +516,11 @@ export default function AddCommuteModal({
         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 }}>
           <TextInput
             value={destQuery}
-            onChangeText={setDestQuery}
+            onChangeText={(value) => {
+              setDestQuery(value);
+              setDestPick(null);
+              setDestPickIdx(null);
+            }}
             placeholder="Work, school, or full address"
             placeholderTextColor={sub}
             style={[
@@ -489,6 +552,8 @@ export default function AddCommuteModal({
               }
               setDestPickIdx(i);
               setDestPick({ ...resolved, fromSavedPlaces: h.fromSavedPlaces });
+              setDestQuery(resolved.address || resolved.name || h.address || h.name);
+              setDestHits([]);
             }}
             style={[styles.hitRow, { borderColor: destPickIdx === i ? primary : border, backgroundColor: cardBg }]}
           >
@@ -583,7 +648,9 @@ export default function AddCommuteModal({
           onPress={() => void submit()}
           disabled={saving}
         >
-          <Text style={styles.saveBtnText}>{saving ? 'Saving...' : 'Save commute alert'}</Text>
+          <Text style={styles.saveBtnText}>
+            {saving ? (isEditing ? 'Updating...' : 'Saving...') : isEditing ? 'Update commute alert' : 'Save commute alert'}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </Modal>

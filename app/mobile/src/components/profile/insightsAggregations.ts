@@ -30,6 +30,12 @@ export type InsightsKpis = {
   fuelGallons: number;
   /** Sum of `fuel_cost_estimate` across the bucket. */
   fuelCostUsd: number;
+  /** Estimated dollars saved from choosing better routes. */
+  routeSavingsUsd: number;
+  /** Estimated gallons saved from choosing better routes. */
+  routeFuelSavingsGallons: number;
+  /** Estimated time saved from route choice. */
+  timeSavedSeconds: number;
   /** Sum of `hard_braking_events` across the bucket. */
   hardBrakingTotal: number;
   /** Sum of `hard_acceleration_events` across the bucket. */
@@ -158,6 +164,9 @@ export function computeKpis(trips: ProfileTripHistoryItem[]): InsightsKpis {
       avgSpeedMph: 0,
       fuelGallons: 0,
       fuelCostUsd: 0,
+      routeSavingsUsd: 0,
+      routeFuelSavingsGallons: 0,
+      timeSavedSeconds: 0,
       hardBrakingTotal: 0,
       hardAccelerationTotal: 0,
       speedingTotal: 0,
@@ -177,6 +186,9 @@ export function computeKpis(trips: ProfileTripHistoryItem[]): InsightsKpis {
   let plainSpeedCount = 0;
   let fuel = 0;
   let fuelCostUsd = 0;
+  let routeSavingsUsd = 0;
+  let routeFuelSavingsGallons = 0;
+  let timeSavedSeconds = 0;
   let hard = 0;
   let hardAccel = 0;
   let speeding = 0;
@@ -215,6 +227,12 @@ export function computeKpis(trips: ProfileTripHistoryItem[]): InsightsKpis {
     if (Number.isFinite(f) && f > 0) fuel += f;
     const fc = Number(t.fuel_cost_estimate ?? 0);
     if (Number.isFinite(fc) && fc > 0) fuelCostUsd += fc;
+    const routeSavings = Number(t.route_savings_dollars ?? t.route_savings_usd ?? 0);
+    if (Number.isFinite(routeSavings) && routeSavings > 0) routeSavingsUsd += routeSavings;
+    const routeFuel = Number(t.route_fuel_savings_gallons ?? 0);
+    if (Number.isFinite(routeFuel) && routeFuel > 0) routeFuelSavingsGallons += routeFuel;
+    const savedSeconds = Number(t.time_saved_seconds ?? 0);
+    if (Number.isFinite(savedSeconds) && savedSeconds > 0) timeSavedSeconds += savedSeconds;
     hard += Number(t.hard_braking_events ?? 0) || 0;
     hardAccel += Number(t.hard_acceleration_events ?? 0) || 0;
     speeding += Number(t.speeding_events ?? 0) || 0;
@@ -237,6 +255,9 @@ export function computeKpis(trips: ProfileTripHistoryItem[]): InsightsKpis {
     avgSpeedMph: avgSpeed,
     fuelGallons: fuel,
     fuelCostUsd,
+    routeSavingsUsd,
+    routeFuelSavingsGallons,
+    timeSavedSeconds,
     hardBrakingTotal: hard,
     hardAccelerationTotal: hardAccel,
     speedingTotal: speeding,

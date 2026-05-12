@@ -57,7 +57,7 @@ function normalizeDobForApi(value: string): string | null {
 }
 
 type Props = {
-  navigation: { navigate: (name: string, params?: object) => void; goBack: () => void };
+  navigation: { navigate: (name: string, params?: object) => void; goBack: () => void; getParent?: () => { navigate?: (name: string, params?: object) => void } | undefined };
   route?: { params?: { mode?: 'signin' | 'signup'; referral_code?: string } };
 };
 
@@ -102,6 +102,15 @@ export default function AuthScreen({ navigation, route }: Props) {
   const error = localError || authError;
   const strength = getPasswordStrength(password);
 
+  const returnToMap = useCallback(() => {
+    const parent = navigation.getParent?.();
+    if (parent?.navigate) {
+      parent.navigate('Map', { screen: 'MapMain' });
+      return;
+    }
+    navigation.navigate('ProfileMain');
+  }, [navigation]);
+
   useEffect(() => {
     const routeMode = route?.params?.mode === 'signup' ? 'signup' : 'signin';
     setMode(routeMode);
@@ -143,16 +152,18 @@ export default function AuthScreen({ navigation, route }: Props) {
       if (!email.trim()) { setLocalError('Email is required'); return; }
       if (password.length < 6) { setLocalError('Password must be at least 6 characters'); return; }
       if (password !== confirmPw) { setLocalError('Passwords do not match'); return; }
-      await signup(
+      const ok = await signup(
         `${firstName.trim()} ${lastName.trim()}`,
         email,
         password,
         normalizedDob,
         route?.params?.referral_code,
       );
+      if (ok) returnToMap();
     } else {
       if (!email.trim() || !password) { setLocalError('Email and password required'); return; }
-      await login(email, password);
+      const ok = await login(email, password);
+      if (ok) returnToMap();
     }
   };
 
@@ -202,6 +213,7 @@ export default function AuthScreen({ navigation, route }: Props) {
         if (session?.access_token && session?.refresh_token) {
           const fin = await completeOAuthSignIn(session.access_token, session.refresh_token);
           if (!fin.ok && fin.message) setLocalError(fin.message);
+          if (fin.ok) returnToMap();
         }
         return;
       }
@@ -211,6 +223,7 @@ export default function AuthScreen({ navigation, route }: Props) {
       if (accessToken && refreshToken) {
         const fin = await completeOAuthSignIn(accessToken, refreshToken);
         if (!fin.ok && fin.message) setLocalError(fin.message);
+        if (fin.ok) returnToMap();
         return;
       }
 
@@ -269,6 +282,7 @@ export default function AuthScreen({ navigation, route }: Props) {
 
       const fin = await completeOAuthSignIn(result.accessToken, result.refreshToken);
       if (!fin.ok && fin.message) setLocalError(fin.message);
+      if (fin.ok) returnToMap();
     } catch (e: unknown) {
       const raw = String(e instanceof Error ? e.message : e || '');
       if (/network|timed?\s*out|timeout/i.test(raw)) {

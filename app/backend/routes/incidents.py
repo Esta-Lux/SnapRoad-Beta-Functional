@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any, Annotated
 from services.incident_nearby_notify import notify_drivers_near_incident
 from datetime import datetime, timedelta, timezone
 import math
-from middleware.auth import get_current_user, require_admin
+from middleware.auth import get_current_user, get_current_user_optional, require_admin
 from limiter import limiter
 from database import get_supabase
 from config import ENVIRONMENT, EXPOSE_INCIDENT_BACKEND_ERRORS
@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
+OptionalUser = Annotated[Optional[dict], Depends(get_current_user_optional)]
 AdminUser = Annotated[dict, Depends(require_admin)]
 
 MSG_INCIDENT_SERVICE_UNAVAILABLE = "Incident service unavailable"
@@ -245,7 +246,7 @@ def _memory_report_fallback(
 
 @router.post("/report", responses=OPENAPI_ERROR_RESPONSES)
 @limiter.limit("30/minute")
-def report_incident(request: Request, report: IncidentReportCompat, user: CurrentUser):
+def report_incident(request: Request, report: IncidentReportCompat, user: OptionalUser):
     """Create an incident report. Returns the created incident and gems_earned."""
     from services.runtime_config import require_enabled
 
@@ -263,7 +264,7 @@ def report_incident(request: Request, report: IncidentReportCompat, user: Curren
     if not (-90 <= float(report.lat) <= 90) or not (-180 <= float(report.lng) <= 180):
         raise HTTPException(status_code=422, detail="Invalid coordinates")
 
-    uid = str(user.get("id") or "")
+    uid = str((user or {}).get("id") or request.headers.get("x-snaproad-guest-id") or "guest").strip()
     now = _utc_now()
     recent = incident_report_times.get(uid, [])
     recent = [t for t in recent if (now - t).total_seconds() <= 600]
@@ -398,6 +399,47 @@ def get_osm_road_signals_nearby(
     r_m = float(radius_miles) * 1609.344
     data = fetch_osm_road_signals(lat, lng, r_m)
     return {"success": True, "data": data}
+
+
+@router.get("/road-feed", responses=OPENAPI_ERROR_RESPONSES)
+def get_road_report_feed(
+    lat: Annotated[float, Query(...)],
+    lng: Annotated[float, Query(...)],
+    radius_miles: Annotated[float, Query(ge=0.1, le=25)] = 2,
+    limit: Annotated[int, Query(ge=1, le=100)] = 80,
+):
+    """Merged driver-visible road reports: SnapRoad community reports plus optional OSM road signals."""
+    now = _utc_now()
+    merged: list[dict[str, Any]] = []
+    try:
+        merged.extend(
+            {**row, "source": row.get("source") or "snaproad"}
+            for row in _nearby_from_db(lat, lng, radius_miles, now, limit)
+        )
+    except Exception as e:
+        _maybe_raise_incident_503(e, "get_road_report_feed supabase")
+        merged.extend(
+            {**row, "source": row.get("source") or "snaproad_memory"}
+            for row in _nearby_from_memory(lat, lng, radius_miles, now, limit)
+        )
+
+    try:
+        from services.osm_road_signals import fetch_osm_road_signals
+
+        merged.extend(fetch_osm_road_signals(lat, lng, float(radius_miles) * 1609.344))
+    except Exception as e:
+        logger.debug("road feed OSM merge failed: %s", e)
+
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for row in merged:
+        key = str(row.get("id") or f"{row.get('type')}:{row.get('lat')}:{row.get('lng')}")
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    out.sort(key=lambda row: float(row.get("distance_miles") or 999))
+    return {"success": True, "data": out[:limit], "sources": ["snaproad", "osm"]}
 
 
 @router.get("/nearby", responses=OPENAPI_ERROR_RESPONSES)
