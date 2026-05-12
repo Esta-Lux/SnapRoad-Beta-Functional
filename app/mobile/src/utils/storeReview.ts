@@ -1,12 +1,15 @@
 import { Linking, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
-import * as StoreReview from 'expo-store-review';
 
 const TRIP_COUNT_KEY = 'snaproad_store_review_completed_trip_count';
 const LAST_REQUESTED_KEY = 'snaproad_store_review_last_requested_at';
 const MIN_COMPLETED_TRIPS = 2;
 const DAYS_BETWEEN_PROMPTS = 90;
+
+type StoreReviewModule = typeof import('expo-store-review');
+
+let storeReviewModule: StoreReviewModule | null | undefined;
 
 type ReviewMoment = {
   counted?: boolean;
@@ -36,6 +39,19 @@ function getStoreIds(): { iosAppStoreId?: string; androidPackage?: string } {
   };
 }
 
+function getStoreReviewModule(): StoreReviewModule | null {
+  if (storeReviewModule !== undefined) return storeReviewModule;
+  try {
+    // `expo-store-review` is native-backed. Keep it optional so OTA/dev-client
+    // launches do not crash before a build containing the native module ships.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    storeReviewModule = require('expo-store-review') as StoreReviewModule;
+  } catch {
+    storeReviewModule = null;
+  }
+  return storeReviewModule;
+}
+
 export async function maybeRequestStoreReviewAfterTrip(moment: ReviewMoment): Promise<void> {
   if (Platform.OS === 'web') return;
   if (moment.isNavigating) return;
@@ -43,6 +59,9 @@ export async function maybeRequestStoreReviewAfterTrip(moment: ReviewMoment): Pr
   if (typeof moment.distanceMiles === 'number' && moment.distanceMiles < 0.5) return;
 
   try {
+    const StoreReview = getStoreReviewModule();
+    if (!StoreReview) return;
+
     const completedTrips = (await numberFromStorage(TRIP_COUNT_KEY)) + 1;
     await AsyncStorage.setItem(TRIP_COUNT_KEY, String(completedTrips));
     if (completedTrips < MIN_COMPLETED_TRIPS) return;
@@ -64,7 +83,7 @@ export async function maybeRequestStoreReviewAfterTrip(moment: ReviewMoment): Pr
 }
 
 export async function openStoreReviewPage(): Promise<void> {
-  const directStoreUrl = StoreReview.storeUrl();
+  const directStoreUrl = getStoreReviewModule()?.storeUrl() ?? null;
   if (directStoreUrl) {
     await Linking.openURL(directStoreUrl);
     return;
