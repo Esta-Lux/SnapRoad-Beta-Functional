@@ -127,8 +127,8 @@ export function usesStandardStyleConfiguration(url: string): boolean {
 }
 
 /**
- * Satellite config — mirrors the Standard config so 3D buildings and road labels
- * render on top of aerial imagery while SnapRoad owns business POI rendering.
+ * Satellite config — mirrors the Standard config so 3D buildings, landmarks, and POI labels
+ * render on top of aerial imagery, consistent with the Standard style experience.
  * show3dObjects enables extruded buildings on Standard-Satellite just as it does on Standard.
  *
  * @see https://docs.mapbox.com/map-styles/standard/api/ (Standard-Satellite table)
@@ -145,21 +145,32 @@ function standardSatelliteBasemapConfig(
     show3dLandmarks: 'true',
     show3dFacades: 'true',
     ...(isNavigating ? { show3dTrees: 'false' } : { show3dTrees: 'true' }),
-    // SnapRoad renders business POIs through MarkerView so Mapbox labels do not double-stack underneath.
-    showPointOfInterestLabels: 'false',
+    // Let Mapbox own business POIs so labels participate in the basemap collision stack above 3D geometry.
+    showPointOfInterestLabels: 'true',
     showPlaceLabels: 'true',
     showRoadLabels: 'true',
-    showTransitLabels: 'false',
+    showTransitLabels: 'true',
     showPedestrianRoads: 'true',
     showAdminBoundaries: 'true',
-    densityPointOfInterestLabels: '1',
-    showLandmarkIcons: 'false',
-    showLandmarkIconLabels: 'false',
+    // Documented Standard-Satellite API (v11.11+): max POI density + landmark icons.
+    densityPointOfInterestLabels: '5',
+    showLandmarkIcons: 'true',
+    showLandmarkIconLabels: 'true',
     ...poiAndLabelBoostForDarkBasemap(lightPreset),
   };
 }
 
-/** Keep any future Standard label tuning centralized so unknown config keys do not reject the style import. */
+/**
+ * Dark basemap label/POI tuning. Important: do NOT switch
+ * `colorModePointOfInterestLabels` to `single`, and do NOT force
+ * `backgroundPointOfInterestLabels` — those collapse Mapbox's maki icon set
+ * into uniform single-color dots, which reads as "POIs missing" on the map.
+ *
+ * Default (`default` mode, no background override) keeps the variety of icon
+ * fills Mapbox ships with the Standard style at every `densityPointOfInterestLabels`.
+ *
+ * @see https://docs.mapbox.com/map-styles/standard/api/
+ */
 function poiAndLabelBoostForDarkBasemap(
   lightPreset: MapboxLightPreset,
 ): Record<string, string> {
@@ -174,8 +185,8 @@ function poiAndLabelBoostForDarkBasemap(
  * Only keys from the public Standard API are included. Unknown keys can cause the
  * native bridge to reject the whole `config` object (see mapbox style docs), so
  * we avoid experimental properties.
- * Business POIs are intentionally disabled in the basemap. The app renders a curated,
- * zoom-filtered SnapRoad POI layer so native labels do not collide with custom markers.
+ * `densityPointOfInterestLabels` (1-5) and `showLandmarkIcons` are documented
+ * since iOS/Android SDK v11.11.0; they improve POI/landmark visibility vs defaults.
  *
  * @see https://docs.mapbox.com/map-styles/standard/api/
  */
@@ -197,16 +208,16 @@ export function standardBasemapStyleImportConfig(
     show3dLandmarks: 'true',
     show3dFacades: 'true',
     ...(isNavigating ? { show3dTrees: 'false' } : { show3dTrees: 'true' }),
-    // Label layers — keep roads/places, but disable business POIs to avoid double-labeling.
-    showPointOfInterestLabels: 'false',
+    // Label layers — all on at max visibility so Mapbox POIs sit in the basemap label stack.
+    showPointOfInterestLabels: 'true',
     showPlaceLabels: 'true',
     showRoadLabels: 'true',
-    showTransitLabels: 'false',
+    showTransitLabels: 'true',
     showPedestrianRoads: 'true',
     showAdminBoundaries: 'true',
-    densityPointOfInterestLabels: '1',
-    showLandmarkIcons: 'false',
-    showLandmarkIconLabels: 'false',
+    densityPointOfInterestLabels: '5',
+    showLandmarkIcons: 'true',
+    showLandmarkIconLabels: 'true',
     ...poiAndLabelBoostForDarkBasemap(lightPreset),
   };
 }

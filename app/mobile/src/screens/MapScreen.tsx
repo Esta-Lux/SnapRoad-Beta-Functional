@@ -92,7 +92,6 @@ import ReportMarkers from '../components/map/ReportMarkers';
 import FriendMarkers from '../components/map/FriendMarkers';
 import CameraMarkers from '../components/map/CameraMarkers';
 import GasPriceMarkers from '../components/map/GasPriceMarkers';
-import BusinessPoiMarkers, { type BusinessPoi } from '../components/map/BusinessPoiMarkers';
 import type { CameraLocation, CameraViewFeed } from '../components/map/CameraMarkers';
 import type { GasPriceMapPoint } from '../components/map/GasPriceMarkers';
 import {
@@ -2219,7 +2218,6 @@ export default function MapScreen() {
 
   // ── New layer data ──
   const [photoReports, setPhotoReports] = useState<PhotoReport[]>([]);
-  const [businessPois, setBusinessPois] = useState<BusinessPoi[]>([]);
   const [trafficSafetyZones, setTrafficSafetyZones] = useState<TrafficSafetyZone[]>([]);
   /** User-visible status when speed-camera layer is on but empty / limited */
   const [trafficSafetyHint, setTrafficSafetyHint] = useState<string | null>(null);
@@ -2312,25 +2310,6 @@ export default function MapScreen() {
     [drivingMode, isLight],
   );
   const isSatelliteStyle = activeStyleURL.includes('standard-satellite');
-  const poiLabelTheme = isSatelliteStyle || mapLightPreset === 'night' || mapLightPreset === 'dusk' ? 'dark' : 'light';
-  const activeBusinessPoiType = useMemo(() => {
-    switch (activeChip) {
-      case 'nearbyGas':
-        return 'gas_station';
-      case 'food':
-        return 'restaurant';
-      case 'coffee':
-        return 'cafe';
-      case 'parking':
-        return 'parking';
-      case 'grocery':
-        return 'supermarket';
-      case 'ev':
-        return 'electric_vehicle_charging_station';
-      default:
-        return null;
-    }
-  }, [activeChip]);
   const navRouteColors = useMemo(
     () => effectiveNavRouteColors(modeConfig, mapLightPreset, isSatelliteStyle, drivingMode, { speedMphForRoute: displaySpeedMph }),
     [modeConfig, mapLightPreset, isSatelliteStyle, drivingMode, displaySpeedMph],
@@ -2545,73 +2524,6 @@ export default function MapScreen() {
     }
     refreshFriendLocations();
   }, [refreshSavedPlaces, user?.isPremium, refreshFriendLocations]);
-
-  useEffect(() => {
-    if (!mapTabFocused || nav.isNavigating || nav.showRoutePreview) {
-      setBusinessPois([]);
-      return;
-    }
-    const rLat = Math.round(poiSearchCoord.lat * 250);
-    const rLng = Math.round(poiSearchCoord.lng * 250);
-    if (rLat === 0 && rLng === 0) {
-      setBusinessPois([]);
-      return;
-    }
-    const typeParam = activeBusinessPoiType ? `&type=${encodeURIComponent(activeBusinessPoiType)}` : '';
-    api
-      .get<Record<string, unknown>>(
-        `/api/places/nearby?lat=${poiSearchCoord.lat}&lng=${poiSearchCoord.lng}&radius=2200&limit=24${typeParam}`,
-      )
-      .then((res) => {
-        if (!res.success || res.data == null) {
-          if (!res.success) logMapDataIssue('GET /api/places/nearby', res.error);
-          setBusinessPois([]);
-          return;
-        }
-        const raw = res.data as unknown;
-        const envelope = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
-        const rows = Array.isArray(envelope.data) ? envelope.data : Array.isArray(raw) ? raw : [];
-        const mapped = rows
-          .map((row: unknown, idx: number) => {
-            const rec = row as Record<string, unknown>;
-            const lat = Number(rec.lat);
-            const lng = Number(rec.lng);
-            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-            const placeId = rec.place_id != null ? String(rec.place_id) : undefined;
-            return {
-              id: placeId ?? `poi-${idx}-${lat.toFixed(5)}-${lng.toFixed(5)}`,
-              name: String(rec.name ?? 'Place'),
-              address: rec.address != null ? String(rec.address) : undefined,
-              lat,
-              lng,
-              place_id: placeId,
-              types: Array.isArray(rec.types) ? rec.types.map((x) => String(x)) : [],
-              rating: typeof rec.rating === 'number' ? rec.rating : undefined,
-              user_ratings_total: typeof rec.user_ratings_total === 'number' ? rec.user_ratings_total : undefined,
-              prominence:
-                rec.prominence === 'major' || rec.prominence === 'standard' || rec.prominence === 'minor'
-                  ? rec.prominence
-                  : undefined,
-              photo_reference: rec.photo_reference != null ? String(rec.photo_reference) : undefined,
-              open_now: typeof rec.open_now === 'boolean' ? rec.open_now : undefined,
-              price_level: typeof rec.price_level === 'number' ? rec.price_level : undefined,
-            } satisfies BusinessPoi;
-          })
-          .filter(Boolean) as BusinessPoi[];
-        setBusinessPois(mapped);
-      })
-      .catch((e) => {
-        logMapDataIssue('GET /api/places/nearby', e);
-        setBusinessPois([]);
-      });
-  }, [
-    activeBusinessPoiType,
-    mapTabFocused,
-    nav.isNavigating,
-    nav.showRoutePreview,
-    Math.round(poiSearchCoord.lat * 250),
-    Math.round(poiSearchCoord.lng * 250),
-  ]);
 
   /** Premium friends list: faster poll while Map is focused so shared locations stay current. */
   useEffect(() => {
@@ -5243,33 +5155,6 @@ export default function MapScreen() {
               }
             />
           )}
-          {!nav.isNavigating && !nav.showRoutePreview && (
-            <BusinessPoiMarkers
-              pois={businessPois}
-              zoomLevel={mapZoomLevel}
-              labelTheme={poiLabelTheme}
-              referenceCoordinate={
-                Number.isFinite(location.lat) && Number.isFinite(location.lng)
-                  ? { lat: location.lat, lng: location.lng }
-                  : null
-              }
-              onPoiTap={(poi) => {
-                void handleSelectResult({
-                  name: poi.name,
-                  address: poi.address ?? '',
-                  lat: poi.lat,
-                  lng: poi.lng,
-                  place_id: poi.place_id,
-                  placeType: poi.types?.[0],
-                  photo_reference: poi.photo_reference,
-                  open_now: poi.open_now,
-                  price_level: poi.price_level,
-                  rating: poi.rating,
-                });
-              }}
-            />
-          )}
-
           {(nav.selectedDestination || selectedPlace) && (
             <MapboxGL.MarkerView
               id="dest-pin"
