@@ -117,6 +117,7 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
       supportsTablet: true,
       bundleIdentifier: "com.snaproad.app",
       usesAppleSignIn: true,
+      appStoreUrl: "https://apps.apple.com/app/apple-store/id6761516426",
       privacyManifests: {
         NSPrivacyTracking: false,
         NSPrivacyAccessedAPITypes: [
@@ -159,6 +160,7 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
     // `usesCleartextTraffic` is honored by Expo prebuild but omitted from ExpoConfig.android types (SDK 54).
     android: {
       package: "com.snaproad.app",
+      playStoreUrl: "https://play.google.com/store/apps/details?id=com.snaproad.app",
       softwareKeyboardLayoutMode: "resize",
       adaptiveIcon: {
         backgroundColor: "#0a0a0f",

@@ -50,16 +50,19 @@ test('alternate route preview is dimmed iOS blue on day; brighter blue on dark /
   assert.equal(effectiveAlternateRouteLineColor('day', true), 'rgba(94,168,255,0.7)');
 });
 
-test('Standard basemap config keeps full POI variety; nav run hides 3D trees for clean buildings', () => {
+test('Standard basemap config lets SnapRoad own business POIs and hides 3D trees during nav', () => {
   const explore = standardBasemapStyleImportConfig('night', false, 'sport', false);
-  assert.equal(explore.densityPointOfInterestLabels, '5');
-  assert.equal(explore.showLandmarkIcons, 'true');
-  // Must NOT collapse POIs into single-color dots — that read as "POIs missing".
+  assert.equal(explore.showPointOfInterestLabels, 'false');
+  assert.equal(explore.showTransitLabels, 'false');
+  assert.equal(explore.densityPointOfInterestLabels, '1');
+  assert.equal(explore.showLandmarkIcons, 'false');
+  // SnapRoad MarkerViews own POIs, so do not style native POI labels into competing dots.
   assert.equal(explore.colorModePointOfInterestLabels, undefined);
   assert.equal(explore.backgroundPointOfInterestLabels, undefined);
   assert.equal(explore.show3dTrees, 'true');
 
   const nav = standardBasemapStyleImportConfig('night', false, 'sport', true);
+  assert.equal(nav.showPointOfInterestLabels, 'false');
   assert.equal(nav.show3dTrees, 'false');
   assert.equal(nav.show3dBuildings, 'true');
 });

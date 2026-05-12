@@ -445,12 +445,34 @@ def _nearby_rows_from_google_results(results: list, *, limit_slice: int = 20) ->
             "lng": plng,
             "photo_reference": ref,
             "rating": p.get("rating"),
+            "user_ratings_total": p.get("user_ratings_total"),
             "types": p.get("types", []),
             "open_now": oh.get("open_now"),
             "price_level": p.get("price_level"),
             "business_status": p.get("business_status"),
+            "prominence": _place_prominence(p),
         })
     return raw
+
+
+def _place_prominence(place: dict) -> str:
+    try:
+        rating = float(place.get("rating") or 0)
+    except (TypeError, ValueError):
+        rating = 0.0
+    try:
+        reviews = int(place.get("user_ratings_total") or 0)
+    except (TypeError, ValueError):
+        reviews = 0
+    types = place.get("types") if isinstance(place.get("types"), list) else []
+    type_text = " ".join(str(t) for t in types).lower()
+    if rating >= 4.0 and reviews >= 500:
+        return "major"
+    if any(t in type_text for t in ("shopping_mall", "tourist_attraction", "stadium", "airport")) and reviews >= 150:
+        return "major"
+    if rating >= 3.5 and reviews >= 50:
+        return "standard"
+    return "minor"
 
 
 async def fetch_nearby_places_list(

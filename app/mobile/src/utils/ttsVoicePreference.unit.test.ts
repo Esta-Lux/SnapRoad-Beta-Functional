@@ -58,3 +58,13 @@ test('honors forced TTS voice identifier when available', () => {
     else process.env.EXPO_PUBLIC_TTS_VOICE_IDENTIFIER = prev;
   }
 });
+
+test('prefers premium or enhanced natural voices over compact variants', () => {
+  const id = pickMaleEnglishVoiceIdentifier([
+    { identifier: 'com.apple.ttsbundle.Nathan-compact', name: 'Nathan', language: 'en-US', quality: 'Default' },
+    { identifier: 'com.apple.ttsbundle.Nathan-premium', name: 'Nathan', language: 'en-US', quality: 'Enhanced' },
+    { identifier: 'com.apple.ttsbundle.Alex-compact', name: 'Alex', language: 'en-US', quality: 'Default' },
+  ] as never);
+
+  assert.equal(id, 'com.apple.ttsbundle.Nathan-premium');
+});

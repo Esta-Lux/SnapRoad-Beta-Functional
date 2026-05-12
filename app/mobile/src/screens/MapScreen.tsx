@@ -173,6 +173,7 @@ import { useSmoothedNavFraction } from '../hooks/useSmoothedNavFraction';
 import { formatDuration } from '../utils/format';
 import { formatUsd } from '../utils/driveMetrics';
 import { speak, stopSpeaking } from '../utils/voice';
+import { maybeRequestStoreReviewAfterTrip } from '../utils/storeReview';
 import { api, API_BASE_URL } from '../api/client';
 import { absolutizeMediaUrl } from '../utils/mediaUrl';
 import {
@@ -2281,9 +2282,16 @@ export default function MapScreen() {
 
   const activeTripSummary = nav.tripSummary ?? nativeNavTripSummary;
   const dismissActiveTripSummary = useCallback(() => {
+    if (activeTripSummary) {
+      void maybeRequestStoreReviewAfterTrip({
+        counted: activeTripSummary.counted,
+        isNavigating: nav.isNavigating,
+        distanceMiles: activeTripSummary.distance,
+      });
+    }
     nav.dismissTripSummary();
     setNativeNavTripSummary(null);
-  }, [nav]);
+  }, [activeTripSummary, nav]);
   const openTripShare = useCallback(() => {
     if (!activeTripSummary) return;
     // Snapshot summary first, then close the recap sheet so share UI is unambiguous.
@@ -2304,6 +2312,25 @@ export default function MapScreen() {
     [drivingMode, isLight],
   );
   const isSatelliteStyle = activeStyleURL.includes('standard-satellite');
+  const poiLabelTheme = isSatelliteStyle || mapLightPreset === 'night' || mapLightPreset === 'dusk' ? 'dark' : 'light';
+  const activeBusinessPoiType = useMemo(() => {
+    switch (activeChip) {
+      case 'nearbyGas':
+        return 'gas_station';
+      case 'food':
+        return 'restaurant';
+      case 'coffee':
+        return 'cafe';
+      case 'parking':
+        return 'parking';
+      case 'grocery':
+        return 'supermarket';
+      case 'ev':
+        return 'electric_vehicle_charging_station';
+      default:
+        return null;
+    }
+  }, [activeChip]);
   const navRouteColors = useMemo(
     () => effectiveNavRouteColors(modeConfig, mapLightPreset, isSatelliteStyle, drivingMode, { speedMphForRoute: displaySpeedMph }),
     [modeConfig, mapLightPreset, isSatelliteStyle, drivingMode, displaySpeedMph],
@@ -2530,9 +2557,10 @@ export default function MapScreen() {
       setBusinessPois([]);
       return;
     }
+    const typeParam = activeBusinessPoiType ? `&type=${encodeURIComponent(activeBusinessPoiType)}` : '';
     api
       .get<Record<string, unknown>>(
-        `/api/places/nearby?lat=${poiSearchCoord.lat}&lng=${poiSearchCoord.lng}&radius=2200&limit=24`,
+        `/api/places/nearby?lat=${poiSearchCoord.lat}&lng=${poiSearchCoord.lng}&radius=2200&limit=24${typeParam}`,
       )
       .then((res) => {
         if (!res.success || res.data == null) {
@@ -2559,6 +2587,11 @@ export default function MapScreen() {
               place_id: placeId,
               types: Array.isArray(rec.types) ? rec.types.map((x) => String(x)) : [],
               rating: typeof rec.rating === 'number' ? rec.rating : undefined,
+              user_ratings_total: typeof rec.user_ratings_total === 'number' ? rec.user_ratings_total : undefined,
+              prominence:
+                rec.prominence === 'major' || rec.prominence === 'standard' || rec.prominence === 'minor'
+                  ? rec.prominence
+                  : undefined,
               photo_reference: rec.photo_reference != null ? String(rec.photo_reference) : undefined,
               open_now: typeof rec.open_now === 'boolean' ? rec.open_now : undefined,
               price_level: typeof rec.price_level === 'number' ? rec.price_level : undefined,
@@ -2571,7 +2604,14 @@ export default function MapScreen() {
         logMapDataIssue('GET /api/places/nearby', e);
         setBusinessPois([]);
       });
-  }, [mapTabFocused, nav.isNavigating, nav.showRoutePreview, Math.round(poiSearchCoord.lat * 250), Math.round(poiSearchCoord.lng * 250)]);
+  }, [
+    activeBusinessPoiType,
+    mapTabFocused,
+    nav.isNavigating,
+    nav.showRoutePreview,
+    Math.round(poiSearchCoord.lat * 250),
+    Math.round(poiSearchCoord.lng * 250),
+  ]);
 
   /** Premium friends list: faster poll while Map is focused so shared locations stay current. */
   useEffect(() => {
@@ -5207,6 +5247,7 @@ export default function MapScreen() {
             <BusinessPoiMarkers
               pois={businessPois}
               zoomLevel={mapZoomLevel}
+              labelTheme={poiLabelTheme}
               referenceCoordinate={
                 Number.isFinite(location.lat) && Number.isFinite(location.lng)
                   ? { lat: location.lat, lng: location.lng }

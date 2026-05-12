@@ -53,6 +53,8 @@ const CLEAR_DEFAULT_NAME_PRIORITY = [
   'daniel',
 ] as const;
 
+const PREMIUM_ENGINE_HINTS = ['premium', 'enhanced', 'neural', 'natural'];
+
 const YOUNG_ADULT_NAME_HINTS = [
   'nathan',
   'evan',
@@ -116,8 +118,9 @@ function scoreVoice(v: Voice): number {
   else if (language.startsWith('en-us')) s += 95;
   else if (language.startsWith('en')) s -= 45;
   else s -= 80;
-  if (quality.includes('enhanced')) s += 22;
-  if (quality.includes('premium')) s += 28;
+  if (quality.includes('enhanced')) s += 34;
+  if (quality.includes('premium')) s += 46;
+  for (const h of PREMIUM_ENGINE_HINTS) if (n.includes(h)) s += 22;
   const priorityIndex = CLEAR_DEFAULT_NAME_PRIORITY.findIndex((h) => n.includes(h));
   if (priorityIndex >= 0) s += 80 - priorityIndex * 4;
   for (const h of MALE_NAME_HINTS) if (n.includes(h)) s += 18;
@@ -126,8 +129,7 @@ function scoreVoice(v: Voice): number {
   for (const h of ACCENTED_OR_HARD_TO_HEAR_HINTS) if (n.includes(h) && language !== 'en-us') s -= 45;
   for (const f of FEMALE_NAME_HINTS) if (n.includes(f)) s -= 55;
   for (const h of BUILT_IN_ROBOTIC_HINTS) if (n.includes(h)) s -= 120;
-  if (n.includes('compact')) s -= 20;
-  if (n.includes('premium')) s += 18;
+  if (n.includes('compact')) s -= 40;
   return s;
 }
 

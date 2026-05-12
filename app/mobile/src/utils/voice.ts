@@ -100,27 +100,29 @@ export type TtsSpeechProfile = {
   language: 'en-US';
 };
 
+const PREMIUM_MALE_TTS_PITCH = 0.9;
+
 /**
- * One house voice for navigation + Orion: calm, clear, young-adult male when
+ * One house voice for navigation + Orion: calm, clear, premium US male when
  * the device exposes a matching voice. Expo treats `rate: 1.0` as normal speed;
  * keep all driving modes on the same pace so HUD cues feel steady in a car.
  */
 const MODE_SPEECH_PROFILE: Record<DrivingMode, TtsSpeechProfile> = {
   calm: {
     rate: DRIVING_MODES.calm.speechRate,
-    pitch: 0.94,
+    pitch: PREMIUM_MALE_TTS_PITCH,
     volume: 1.0,
     language: 'en-US',
   },
   adaptive: {
     rate: DRIVING_MODES.adaptive.speechRate,
-    pitch: 0.94,
+    pitch: PREMIUM_MALE_TTS_PITCH,
     volume: 1.0,
     language: 'en-US',
   },
   sport: {
     rate: DRIVING_MODES.sport.speechRate,
-    pitch: 0.94,
+    pitch: PREMIUM_MALE_TTS_PITCH,
     volume: 1.0,
     language: 'en-US',
   },
