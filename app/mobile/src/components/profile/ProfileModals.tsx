@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -133,6 +133,10 @@ export function PlanModal(props: {
   } = props;
   const [selected, setSelected] = useState<PlanTier | null>(null);
 
+  useEffect(() => {
+    if (!visible) setSelected(null);
+  }, [visible]);
+
   const handleContinue = () => {
     if (selected) { onSelectPlan(selected); }
   };
@@ -155,14 +159,12 @@ export function PlanModal(props: {
           >
             <Ionicons name="close" size={18} color={sub} />
           </TouchableOpacity>
-          <View style={{ alignItems: 'center', marginBottom: 16 }}>
-            <Ionicons name="sparkles" size={18} color="#FF9500" />
-            <Text style={{ color: '#FF9500', fontSize: 11, fontWeight: '700', letterSpacing: 1, marginTop: 4, textTransform: 'uppercase' }}>Choose your plan</Text>
-            <Text style={[styles.modalTitle, { color: text, marginBottom: 0, marginTop: 4 }]}>Start your journey</Text>
-            <Text style={{ color: sub, fontSize: 13, marginTop: 4 }}>Drive safer. Earn rewards. Privacy guaranteed.</Text>
+          <View style={styles.planModalHeader}>
+            <Text style={[styles.planModalTitle, { color: text }]}>Plans</Text>
+            <Text style={[styles.planModalSub, { color: sub }]}>Pick a plan to continue</Text>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 4 }}>
             {(Object.entries(PLANS) as [PlanTier, typeof PLANS.basic][])
               .filter(([tier]) => FAMILY_MODE_LAUNCH_ENABLED || tier !== 'family')
               .map(([tier, plan]) => {
@@ -196,27 +198,29 @@ export function PlanModal(props: {
                   )}
 
                   <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Ionicons name={PLAN_ICONS[tier as PlanTier] as any} size={16} color={accent} />
-                        <Text style={{ color: accent, fontSize: 16, fontWeight: '800' }}>{plan.name}</Text>
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                        <Ionicons name={PLAN_ICONS[tier as PlanTier] as any} size={15} color={accent} />
+                        <Text style={{ color: accent, fontSize: 15, fontWeight: '800' }}>{plan.name}</Text>
                       </View>
-                      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
-                        <Text style={{ color: text, fontSize: 26, fontWeight: '900' }}>{plan.price.split('/')[0]}</Text>
-                        {plan.price.includes('/') && <Text style={{ color: sub, fontSize: 13 }}>/{plan.price.split('/')[1]}</Text>}
+                      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3, marginTop: 3, flexWrap: 'wrap' }}>
+                        <Text style={{ color: text, fontSize: 22, fontWeight: '900' }}>{plan.price.split('/')[0]}</Text>
+                        {plan.price.includes('/') && (
+                          <Text style={{ color: sub, fontSize: 12 }}>/{plan.price.split('/')[1]}</Text>
+                        )}
                       </View>
                       {plan.compareAtPrice ? (
-                        <Text style={{ color: sub, fontSize: 13, marginTop: 4, textDecorationLine: 'line-through' }}>
+                        <Text style={[styles.planCardMetaStrike, { color: sub }]}>
                           Regular {plan.compareAtPrice}
                         </Text>
                       ) : null}
                       {plan.savingsHint ? (
-                        <Text style={{ color: '#22C55E', fontSize: 12, fontWeight: '600', marginTop: 4 }}>{plan.savingsHint}</Text>
+                        <Text style={styles.planCardSavings}>{plan.savingsHint}</Text>
                       ) : null}
                       {(plan as any).foundersNote && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                        <View style={styles.planFoundersRow}>
                           <Ionicons name="star" size={10} color="#FF9500" />
-                          <Text style={{ color: '#FF9500', fontSize: 10, fontWeight: '600' }}>{(plan as any).foundersNote}</Text>
+                          <Text style={styles.planFoundersText}>{(plan as any).foundersNote}</Text>
                         </View>
                       )}
                     </View>
@@ -225,21 +229,34 @@ export function PlanModal(props: {
                     </View>
                   </View>
 
-                  <View style={{ marginTop: 10, gap: 4 }}>
-                    {plan.features.slice(0, tier === 'premium' ? 8 : 4).map((f, i) => (
-                      <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Ionicons name={tier === 'premium' ? 'checkmark-circle' : 'checkmark'} size={13} color={tier === 'premium' ? '#FF9500' : sub} />
-                        <Text style={{ color: tier === 'premium' ? (isLight ? '#374151' : '#d1d5db') : sub, fontSize: 12 }}>{f}</Text>
+                  <View style={styles.planFeatureBlock}>
+                    {plan.features.slice(0, tier === 'premium' ? 4 : 3).map((f, i) => (
+                      <View key={i} style={styles.planFeatureRow}>
+                        <Ionicons
+                          name={tier === 'premium' ? 'checkmark-circle' : 'checkmark'}
+                          size={11}
+                          color={tier === 'premium' ? '#FF9500' : sub}
+                        />
+                        <Text style={[styles.planFeatureText, { color: tier === 'premium' ? (isLight ? '#374151' : '#cbd5e1') : sub }]}>
+                          {f}
+                        </Text>
                       </View>
                     ))}
                   </View>
-                  {isCurrent && <Text style={{ color: accent, fontSize: 11, fontWeight: '700', marginTop: 8 }}>Current plan</Text>}
+                  {isCurrent && (
+                    <Text style={[styles.planCurrentBadge, { color: accent }]}>Current plan</Text>
+                  )}
                 </TouchableOpacity>
               );
               })}
           </ScrollView>
 
-          <View style={{ paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)' }}>
+          <View
+            style={[
+              styles.planFooterDivider,
+              { borderTopColor: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)' },
+            ]}
+          >
             {isIosPaidSelected ? (
               <>
                 <View
@@ -251,7 +268,7 @@ export function PlanModal(props: {
                     },
                   ]}
                 >
-                  <Text style={[styles.iapSubscriptionTitle, { color: text }]}>SnapRoad Premium</Text>
+                  <Text style={[styles.iapSubscriptionTitleCompact, { color: text }]}>SnapRoad Premium</Text>
                   {(() => {
                     const line = iosSubscriptionStoreLines?.premium;
                     const catalog = PLANS.premium;
@@ -259,71 +276,65 @@ export function PlanModal(props: {
                     const storePrice = line?.displayPrice ?? null;
                     const fallbackPrice =
                       catalog?.price && catalog.price !== 'Free' ? catalog.price : null;
-                    const priceLabel = fallbackPrice ?? storePrice;
-                    return (
-                      <>
-                        <Text style={[styles.iapSubscriptionMeta, { color: sub }]}>
-                          {period ? `Length: ${period}` : 'Auto-renewing subscription'}
-                        </Text>
-                        {priceLabel ? (
-                          <Text style={[styles.iapSubscriptionPrice, { color: text }]}>
-                            Price: {priceLabel}
-                          </Text>
-                        ) : null}
-                      </>
-                    );
+                    const priceLabel = storePrice ?? fallbackPrice;
+                    const periodBit = period ? period.toLowerCase() : 'monthly';
+                    const lineMain = priceLabel
+                      ? `${priceLabel} · renews ${periodBit}`
+                      : `Auto-renewing subscription${period ? ` (${period})` : ''}`;
+                    return <Text style={[styles.iapSubscriptionOneLine, { color: sub }]}>{lineMain}</Text>;
                   })()}
                 </View>
 
                 <Text style={[styles.iapDisclosureLong, { color: sub }]}>
-                  Subscription automatically renews unless canceled at least 24 hours before the end of the current
-                  period. Your Apple ID account will be charged for renewal within 24 hours before the end of the
-                  current period. You can manage or cancel your subscription in Apple ID subscription settings.
+                  Subscription automatically renews until you cancel at least 24 hours before the end of the current
+                  period. Your account is charged within 24 hours before renewal. Manage or cancel in Settings → Apple
+                  ID → Subscriptions.
                 </Text>
 
-                <View style={[styles.iapLinkRow, styles.iapLegalLinks, { marginTop: 10 }]}>
+                <View style={[styles.iapLinkRow, styles.iapLegalLinksCompact, styles.iapFooterTightRow]}>
+                  {Platform.OS === 'ios' && onRestorePurchases ? (
+                    <TouchableOpacity
+                      onPress={onRestorePurchases}
+                      disabled={!!restoreInFlight}
+                      accessibilityRole="button"
+                      accessibilityLabel="Restore purchases"
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={[styles.iapLinkTextCompact, { color: sub, opacity: restoreInFlight ? 0.5 : 1 }]}>
+                        {restoreInFlight ? 'Restoring…' : 'Restore'}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                  {Platform.OS === 'ios' && onRestorePurchases ? (
+                    <Text style={[styles.iapLinkSepCompact, { color: sub }]}>·</Text>
+                  ) : null}
                   <TouchableOpacity
                     onPress={() => void openLegalDocumentExternally('terms-of-service')}
                     accessibilityRole="link"
                     accessibilityLabel="Terms of Service"
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Text style={[styles.iapLinkText, { color: text }]}>Terms</Text>
+                    <Text style={[styles.iapLinkTextCompact, { color: text }]}>Terms</Text>
                   </TouchableOpacity>
-                  <Text style={[styles.iapLinkSep, { color: sub }]}>·</Text>
+                  <Text style={[styles.iapLinkSepCompact, { color: sub }]}>·</Text>
                   <TouchableOpacity
                     onPress={() => void openLegalDocumentExternally('privacy-policy')}
                     accessibilityRole="link"
                     accessibilityLabel="Privacy Policy"
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Text style={[styles.iapLinkText, { color: text }]}>Privacy</Text>
+                    <Text style={[styles.iapLinkTextCompact, { color: text }]}>Privacy</Text>
                   </TouchableOpacity>
-                  <Text style={[styles.iapLinkSep, { color: sub }]}>·</Text>
+                  <Text style={[styles.iapLinkSepCompact, { color: sub }]}>·</Text>
                   <TouchableOpacity
                     onPress={() => void openLegalDocumentExternally('community-guidelines')}
                     accessibilityRole="link"
                     accessibilityLabel="Community Guidelines"
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Text style={[styles.iapLinkText, { color: text }]}>Community</Text>
+                    <Text style={[styles.iapLinkTextCompact, { color: text }]}>Community</Text>
                   </TouchableOpacity>
                 </View>
-
-                {Platform.OS === 'ios' && onRestorePurchases ? (
-                  <TouchableOpacity
-                    style={{ alignSelf: 'center', marginTop: 8 }}
-                    onPress={onRestorePurchases}
-                    disabled={!!restoreInFlight}
-                    accessibilityRole="button"
-                    accessibilityLabel="Restore purchases"
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Text style={[styles.iapLinkText, { color: sub, opacity: restoreInFlight ? 0.5 : 1 }]}>
-                      {restoreInFlight ? 'Restoring…' : 'Restore Purchases'}
-                    </Text>
-                  </TouchableOpacity>
-                ) : null}
               </>
             ) : null}
 
@@ -331,7 +342,7 @@ export function PlanModal(props: {
               activeOpacity={selected ? 0.8 : 1}
               onPress={handleContinue}
               disabled={!selected}
-              style={{ opacity: selected ? 1 : 0.4, marginTop: isIosPaidSelected ? 12 : 0 }}
+              style={{ opacity: selected ? 1 : 0.4, marginTop: isIosPaidSelected ? 8 : 0 }}
               accessibilityRole="button"
               accessibilityLabel={
                 selected === 'premium'
@@ -355,11 +366,13 @@ export function PlanModal(props: {
             </TouchableOpacity>
 
             {!isIosPaidSelected ? (
-              <Text style={{ color: sub, fontSize: 11, textAlign: 'center', marginTop: 8 }}>No contracts · Cancel anytime</Text>
+              <Text style={[styles.planFooterCaption, { color: sub }]}>
+                No contracts · Cancel anytime
+              </Text>
             ) : null}
 
             {!isIosPaidSelected ? (
-              <View style={[styles.iapLinkRow, styles.iapLegalLinks]}>
+              <View style={[styles.iapLinkRow, styles.iapLegalLinksCompact, styles.iapFooterTightRow]}>
                 {Platform.OS === 'ios' && onRestorePurchases ? (
                   <TouchableOpacity
                     onPress={onRestorePurchases}
@@ -368,13 +381,13 @@ export function PlanModal(props: {
                     accessibilityLabel="Restore purchases"
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Text style={[styles.iapLinkText, { color: sub, opacity: restoreInFlight ? 0.5 : 1 }]}>
-                      {restoreInFlight ? 'Restoring…' : 'Restore Purchases'}
+                    <Text style={[styles.iapLinkTextCompact, { color: sub, opacity: restoreInFlight ? 0.5 : 1 }]}>
+                      {restoreInFlight ? 'Restoring…' : 'Restore'}
                     </Text>
                   </TouchableOpacity>
                 ) : null}
                 {Platform.OS === 'ios' && onRestorePurchases ? (
-                  <Text style={[styles.iapLinkSep, { color: sub }]}>·</Text>
+                  <Text style={[styles.iapLinkSepCompact, { color: sub }]}>·</Text>
                 ) : null}
                 <TouchableOpacity
                   onPress={() => void openLegalDocumentExternally('terms-of-service')}
@@ -382,25 +395,25 @@ export function PlanModal(props: {
                   accessibilityLabel="Terms of Service"
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Text style={[styles.iapLinkText, { color: sub }]}>Terms</Text>
+                  <Text style={[styles.iapLinkTextCompact, { color: text }]}>Terms</Text>
                 </TouchableOpacity>
-                <Text style={[styles.iapLinkSep, { color: sub }]}>·</Text>
+                <Text style={[styles.iapLinkSepCompact, { color: sub }]}>·</Text>
                 <TouchableOpacity
                   onPress={() => void openLegalDocumentExternally('privacy-policy')}
                   accessibilityRole="link"
                   accessibilityLabel="Privacy Policy"
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Text style={[styles.iapLinkText, { color: sub }]}>Privacy</Text>
+                  <Text style={[styles.iapLinkTextCompact, { color: text }]}>Privacy</Text>
                 </TouchableOpacity>
-                <Text style={[styles.iapLinkSep, { color: sub }]}>·</Text>
+                <Text style={[styles.iapLinkSepCompact, { color: sub }]}>·</Text>
                 <TouchableOpacity
                   onPress={() => void openLegalDocumentExternally('community-guidelines')}
                   accessibilityRole="link"
                   accessibilityLabel="Community Guidelines"
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Text style={[styles.iapLinkText, { color: sub }]}>Community</Text>
+                  <Text style={[styles.iapLinkTextCompact, { color: text }]}>Community</Text>
                 </TouchableOpacity>
               </View>
             ) : null}
@@ -430,29 +443,48 @@ const styles = StyleSheet.create({
   modalSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40, maxHeight: '85%' },
   modalHandle: { width: 36, height: 4, backgroundColor: '#444', borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
   modalTitle: { fontSize: 20, fontWeight: '800', textAlign: 'center', marginBottom: 16 },
-  planModalSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: 24, maxHeight: '92%' },
+  planModalSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 16, paddingBottom: 20, maxHeight: '88%' },
   planCloseButton: { position: 'absolute', top: 14, right: 14, width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', zIndex: 2 },
-  planCardNew: { borderRadius: 18, borderWidth: 1.5, padding: 16, marginBottom: 12, overflow: 'hidden', position: 'relative' as const },
+  planModalHeader: { alignItems: 'center', marginBottom: 10, paddingHorizontal: 8 },
+  planModalTitle: { fontSize: 19, fontWeight: '900', textAlign: 'center' },
+  planModalSub: { fontSize: 12, fontWeight: '600', marginTop: 4, textAlign: 'center' },
+  planCardNew: { borderRadius: 16, borderWidth: 1.5, padding: 12, marginBottom: 8, overflow: 'hidden', position: 'relative' as const },
+  planCardMetaStrike: { fontSize: 11, marginTop: 2, textDecorationLine: 'line-through' },
+  planCardSavings: { color: '#22C55E', fontSize: 11, fontWeight: '600', marginTop: 2 },
+  planFoundersRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  planFoundersText: { color: '#FF9500', fontSize: 10, fontWeight: '600' },
+  planFeatureBlock: { marginTop: 8, gap: 3 },
+  planFeatureRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  planFeatureText: { fontSize: 11, flex: 1 },
+  planCurrentBadge: { fontSize: 10, fontWeight: '800', marginTop: 6 },
+  planFooterDivider: { paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth },
+  planFooterCaption: { fontSize: 10, textAlign: 'center', marginTop: 6 },
   popularBadge: { position: 'absolute' as const, top: 0, right: 0, borderBottomLeftRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
   popularBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   radioCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: 'rgba(128,128,128,0.3)', alignItems: 'center' as const, justifyContent: 'center' as const },
-  planContinueBtn: { borderRadius: 16, paddingVertical: 16, flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'center' as const, gap: 6 },
+  planContinueBtn: { borderRadius: 16, paddingVertical: 14, flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'center' as const, gap: 6 },
   planContinueBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   /** App Store subscription summary card (3.1.2). */
   iapSubscriptionCard: {
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
-    padding: 14,
-    marginBottom: 10,
+    padding: 12,
+    marginBottom: 8,
   },
+  iapSubscriptionTitleCompact: { fontSize: 15, fontWeight: '900', textAlign: 'center', marginBottom: 4 },
+  iapSubscriptionOneLine: { fontSize: 12, fontWeight: '600', textAlign: 'center', lineHeight: 16 },
   iapSubscriptionTitle: { fontSize: 17, fontWeight: '900', textAlign: 'center', marginBottom: 6 },
   iapSubscriptionMeta: { fontSize: 13, textAlign: 'center', fontWeight: '600', marginBottom: 4 },
   iapSubscriptionPrice: { fontSize: 18, fontWeight: '900', textAlign: 'center' },
   /** Apple-mandated auto-renewal disclosure copy (full). */
-  iapDisclosureLong: { fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: 4, paddingHorizontal: 14 },
+  iapDisclosureLong: { fontSize: 11, lineHeight: 15, textAlign: 'center', marginTop: 6, paddingHorizontal: 10 },
   /** @deprecated shorter copy — prefer iapDisclosureLong on iOS paid tier. */
   iapDisclosure: { fontSize: 11, lineHeight: 15, textAlign: 'center', marginTop: 10, paddingHorizontal: 4 },
   iapLinkRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' },
+  iapLegalLinksCompact: { paddingHorizontal: 4, alignSelf: 'stretch' },
+  iapFooterTightRow: { marginTop: 6, gap: 6 },
+  iapLinkTextCompact: { fontSize: 11, fontWeight: '700', textDecorationLine: 'underline' },
+  iapLinkSepCompact: { fontSize: 11 },
   iapLegalLinks: { paddingHorizontal: 12, alignSelf: 'stretch' },
   iapLinkText: { fontSize: 12, fontWeight: '700', textDecorationLine: 'underline' },
   iapLinkSep: { fontSize: 12 },

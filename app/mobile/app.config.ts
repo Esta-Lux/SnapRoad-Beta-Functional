@@ -67,6 +67,20 @@ const resolveApiUrl = (): string => {
   return value;
 };
 
+/**
+ * Premium IAP Product ID baked into the native bundle. ASC must expose this exact SKU.
+ * If env is unset (or still has the deprecated `*.monthly` ID), we fall back so TestFlight/App Store builds
+ * resolve the live subscription regardless of stale Expo dashboard / local `.env`.
+ */
+const APPLE_IAP_PREMIUM_LEGACY_SKU = "com.snaproad.app.premium.monthly";
+const APPLE_IAP_PREMIUM_PRODUCT_ID_CANONICAL = "com.snaproad.app.premium.monthly.plan";
+
+function resolveAppleIapPremiumProductId(): string {
+  const raw = envAny(["EXPO_PUBLIC_APPLE_IAP_PREMIUM", "APPLE_IAP_PREMIUM_PRODUCT_ID"], "").trim();
+  if (!raw || raw === APPLE_IAP_PREMIUM_LEGACY_SKU) return APPLE_IAP_PREMIUM_PRODUCT_ID_CANONICAL;
+  return raw;
+}
+
 const _prod = isProductionBuild();
 const _profile = String(process.env.EAS_BUILD_PROFILE || "").toLowerCase();
 const _includeDevClient =
@@ -258,7 +272,7 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
       supabaseUrl: envAny(["EXPO_PUBLIC_SUPABASE_URL", "SUPABASE_URL"]),
       supabaseAnonKey: envAny(["EXPO_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_ANON_KEY"]),
       /** App Store premium subscription Product ID — must match App Store Connect + backend APPLE_IAP_PREMIUM_PRODUCT_ID. */
-      appleIapPremiumProductId: envAny(["EXPO_PUBLIC_APPLE_IAP_PREMIUM", "APPLE_IAP_PREMIUM_PRODUCT_ID"], ""),
+      appleIapPremiumProductId: resolveAppleIapPremiumProductId(),
       sentryDsn: envAny(["EXPO_PUBLIC_SENTRY_DSN", "SENTRY_DSN"]),
       /** Expo dashboard / project page (overridable via EXPO_PUBLIC_EXPO_PROJECT_URL in eas.json). */
       expoProjectUrl: envAny(
