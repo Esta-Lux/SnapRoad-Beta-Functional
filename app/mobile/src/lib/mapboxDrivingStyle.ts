@@ -143,7 +143,7 @@ function standardSatelliteBasemapConfig(
     show3dObjects: 'true',
     show3dBuildings: 'true',
     show3dLandmarks: 'true',
-    show3dFacades: 'true',
+    show3dFacades: isNavigating ? 'true' : 'false',
     ...(isNavigating ? { show3dTrees: 'false' } : { show3dTrees: 'true' }),
     // Let Mapbox own business POIs so labels participate in the basemap collision stack above 3D geometry.
     showPointOfInterestLabels: 'true',
@@ -156,6 +156,7 @@ function standardSatelliteBasemapConfig(
     densityPointOfInterestLabels: '5',
     showLandmarkIcons: 'true',
     showLandmarkIconLabels: 'true',
+    backgroundPointOfInterestLabels: 'circle',
     ...poiAndLabelBoostForDarkBasemap(lightPreset),
   };
 }
@@ -206,7 +207,8 @@ export function standardBasemapStyleImportConfig(
     show3dObjects: 'true',
     show3dBuildings: 'true',
     show3dLandmarks: 'true',
-    show3dFacades: 'true',
+    /** Facades add depth that can bury mesh-aligned POIs at medium pitch — keep roofs when browsing. */
+    show3dFacades: isNavigating ? 'true' : 'false',
     ...(isNavigating ? { show3dTrees: 'false' } : { show3dTrees: 'true' }),
     // Label layers — all on at max visibility so Mapbox POIs sit in the basemap label stack.
     showPointOfInterestLabels: 'true',
@@ -216,6 +218,8 @@ export function standardBasemapStyleImportConfig(
     showPedestrianRoads: 'true',
     showAdminBoundaries: 'true',
     densityPointOfInterestLabels: '5',
+    /** Circle chips help POIs read atop extruded blocks without flattening meshes. */
+    backgroundPointOfInterestLabels: 'circle',
     showLandmarkIcons: 'true',
     showLandmarkIconLabels: 'true',
     ...poiAndLabelBoostForDarkBasemap(lightPreset),

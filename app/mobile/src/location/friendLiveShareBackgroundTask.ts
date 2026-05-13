@@ -21,9 +21,11 @@ import {
   FRIEND_LIVE_SHARE_STORAGE_KEY,
   FRIEND_LIVE_SHARE_DISTANCE_INTERVAL_M,
   FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS,
+  normalizeFriendLiveShareMode,
   type FriendLiveShareMode,
   isAlwaysFollowMode,
 } from './friendLiveShareConfig';
+import { storage } from '../utils/storage';
 
 export const FRIEND_LIVE_SHARE_TASK_NAME = 'snaproad-friend-live-share';
 
@@ -137,18 +139,24 @@ export async function startFriendLiveShareBackgroundUpdates(): Promise<void> {
     }
   }
 
-  await Location.startLocationUpdatesAsync(FRIEND_LIVE_SHARE_TASK_NAME, {
-    accuracy: Location.Accuracy.High,
-    timeInterval: FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS,
-    distanceInterval: FRIEND_LIVE_SHARE_DISTANCE_INTERVAL_M,
-    pausesUpdatesAutomatically: false,
-    showsBackgroundLocationIndicator: true,
-    foregroundService: {
-      notificationTitle: 'Sharing location',
-      notificationBody: 'Friends see your updated position on the map.',
-      notificationColor: '#FF6B2B',
-    },
-  });
+  try {
+    await Location.startLocationUpdatesAsync(FRIEND_LIVE_SHARE_TASK_NAME, {
+      accuracy: Location.Accuracy.Highest,
+      timeInterval: FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS,
+      distanceInterval: FRIEND_LIVE_SHARE_DISTANCE_INTERVAL_M,
+      pausesUpdatesAutomatically: false,
+      deferredUpdatesDistance: Math.max(8, FRIEND_LIVE_SHARE_DISTANCE_INTERVAL_M),
+      deferredUpdatesInterval: Math.max(FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS, 2000),
+      showsBackgroundLocationIndicator: true,
+      foregroundService: {
+        notificationTitle: 'Sharing location',
+        notificationBody: 'Friends see your updated position on the map.',
+        notificationColor: '#FF6B2B',
+      },
+    });
+  } catch (e) {
+    console.warn('[friendLiveShare] startLocationUpdatesAsync failed:', e);
+  }
 }
 
 export async function stopFriendLiveShareBackgroundUpdates(): Promise<void> {
@@ -173,9 +181,29 @@ export async function syncFriendLiveShareBackgroundFromPolicy(opts: {
   canPublish: boolean;
   mode?: FriendLiveShareMode;
 }): Promise<void> {
+  await mirrorFriendLiveShareKeysFromLocalStorageAsync();
   if (!opts.sharingEnabled || !opts.canPublish || opts.mode !== 'always_follow') {
     await stopFriendLiveShareBackgroundUpdates();
     return;
   }
   await startFriendLiveShareBackgroundUpdates();
+}
+
+/**
+ * Persist share toggles via `storage` (memory + delayed AsyncStorage) do not overlap on the JS tick
+ * with `TaskManager`; mirror keys synchronously onto AsyncStorage so background posts see `sharing === '1'`.
+ */
+export async function mirrorFriendLiveShareKeysFromLocalStorageAsync(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  try {
+    const { default: AsyncStore } = await import('@react-native-async-storage/async-storage');
+    const on = storage.getString(FRIEND_LIVE_SHARE_STORAGE_KEY) === '1';
+    const mode = normalizeFriendLiveShareMode(storage.getString(FRIEND_LIVE_SHARE_MODE_KEY), on);
+    await AsyncStore.multiSet([
+      [FRIEND_LIVE_SHARE_STORAGE_KEY, on ? '1' : '0'],
+      [FRIEND_LIVE_SHARE_MODE_KEY, mode],
+    ]);
+  } catch {
+    /* best-effort */
+  }
 }

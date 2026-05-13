@@ -76,16 +76,14 @@ import {
   FRIEND_FOLLOW_REROUTE_MIN_MOVE_M,
 } from '../navigation/friendFollowConfig';
 import RouteOverlay from '../components/map/RouteOverlay';
-import {
-  startFriendLiveShareBackgroundUpdates,
-  stopFriendLiveShareBackgroundUpdates,
-} from '../location/friendLiveShareBackgroundTask';
+import { syncFriendLiveShareBackgroundFromPolicy } from '../location/friendLiveShareBackgroundTask';
 import {
   FRIEND_LIVE_LAST_NAV_KEY,
   FRIEND_LIVE_SHARE_MODE_KEY,
   FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS,
   FRIEND_LIVE_SHARE_STORAGE_KEY,
   isAlwaysFollowMode,
+  normalizeFriendLiveShareMode,
 } from '../location/friendLiveShareConfig';
 import { nudgeBackgroundLocationAfterEnablingShare } from '../location/friendLocationPermissionUx';
 import OfferMarkers from '../components/map/OfferMarkers';
@@ -3092,18 +3090,17 @@ export default function MapScreen() {
     };
   }, [user?.isPremium, canPublishFriendLocation, shareLocEpoch]);
 
+  /** OS background TaskManager reads AsyncStorage keys — mirror via syncFriendLiveShareBackgroundFromPolicy. */
   useEffect(() => {
-    if (!user?.isPremium || !canPublishFriendLocation) {
-      void stopFriendLiveShareBackgroundUpdates();
-      return;
-    }
-    const sharingOn = storage.getString(FRIEND_LIVE_SHARE_STORAGE_KEY) === '1';
-    const alwaysFollowOn = isAlwaysFollowMode(storage.getString(FRIEND_LIVE_SHARE_MODE_KEY));
-    if (!sharingOn || !alwaysFollowOn) {
-      void stopFriendLiveShareBackgroundUpdates();
-      return;
-    }
-    void startFriendLiveShareBackgroundUpdates();
+    void (async () => {
+      const sharingOn = storage.getString(FRIEND_LIVE_SHARE_STORAGE_KEY) === '1';
+      const mode = normalizeFriendLiveShareMode(storage.getString(FRIEND_LIVE_SHARE_MODE_KEY), sharingOn);
+      await syncFriendLiveShareBackgroundFromPolicy({
+        sharingEnabled: sharingOn,
+        canPublish: Boolean(user?.isPremium && canPublishFriendLocation),
+        mode,
+      });
+    })();
   }, [user?.isPremium, canPublishFriendLocation, shareLocEpoch]);
 
   // Fix 1: On nav start (false→true), force follow + remount Camera (preview fitBounds leaves native
@@ -4217,13 +4214,24 @@ export default function MapScreen() {
     });
   }, [route.params?.navigateToFriend?.nonce, beginFriendFollowNavigation, rnNav]);
 
-  const lastMapFocusFriendNonceRef = useRef<number | null>(null);
+  const pendingMapFocusRef = useRef<MapFocusFriendParams | null>(null);
+  const lastHandledMapFocusNonceRef = useRef<number | null>(null);
+
+  /** Deep link / Social "View on map": stash params; separate effect waits for markers + camera ref. */
   useEffect(() => {
     const p = route.params?.mapFocusFriend as MapFocusFriendParams | undefined;
     if (!p?.friendId || p.nonce == null) return;
-    if (lastMapFocusFriendNonceRef.current === p.nonce) return;
-    lastMapFocusFriendNonceRef.current = p.nonce;
+    if (lastHandledMapFocusNonceRef.current === p.nonce) return;
+    pendingMapFocusRef.current = p;
     rnNav.setParams({ mapFocusFriend: undefined } as never);
+  }, [route.params?.mapFocusFriend?.nonce, rnNav]);
+
+  useEffect(() => {
+    if (!mapTabFocused) return;
+    const p = pendingMapFocusRef.current;
+    if (!p?.friendId || p.nonce == null) return;
+    if (lastHandledMapFocusNonceRef.current === p.nonce) return;
+
     const fl = friendLocations.find((f) => String(f.id) === String(p.friendId));
     let lat: number | undefined;
     let lng: number | undefined;
@@ -4241,14 +4249,45 @@ export default function MapScreen() {
       lng = p.lng;
     }
     if (lat == null || lng == null) return;
-    cameraRef.current?.setCamera({
-      centerCoordinate: [lng, lat],
-      zoomLevel: 15,
-      pitch: 45,
-      animationDuration: 650,
-      animationMode: 'flyTo',
-    } as any);
-  }, [route.params?.mapFocusFriend?.nonce, friendLocations, rnNav]);
+
+    let rafId: ReturnType<typeof requestAnimationFrame> | undefined;
+    let rafLoops = 0;
+
+    const tryFly = (): boolean => {
+      try {
+        const cam = cameraRef.current as { setCamera?: (c: object) => void } | undefined;
+        if (!cam?.setCamera) return false;
+        cam.setCamera({
+          centerCoordinate: [lng as number, lat as number],
+          zoomLevel: 15,
+          pitch: 45,
+          animationDuration: 650,
+          animationMode: 'flyTo',
+        } as any);
+        pendingMapFocusRef.current = null;
+        lastHandledMapFocusNonceRef.current = p.nonce ?? null;
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    InteractionManager.runAfterInteractions(() => {
+      if (tryFly()) return;
+      const tick = () => {
+        if (tryFly()) return;
+        rafLoops += 1;
+        if (rafLoops < 48) {
+          rafId = requestAnimationFrame(tick);
+        }
+      };
+      rafId = requestAnimationFrame(tick);
+    });
+
+    return () => {
+      if (rafId != null) cancelAnimationFrame(rafId);
+    };
+  }, [friendLocations, mapTabFocused]);
 
   const friendFollowNavActiveRef = useRef(false);
   useEffect(() => {

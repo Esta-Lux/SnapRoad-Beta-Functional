@@ -371,15 +371,8 @@ def _commute_traffic_push_copy(dest: str, snapshot) -> tuple[str, str]:
     )
 
 
-@router.post("/internal/dispatch")
-async def dispatch_commute_alerts(request: Request):
-    """Cron/worker: send push alerts when leave window approaches.
-
-    Auth: HMAC-SHA256 over ``{unix_ts}\\n{raw_body}`` in headers X-Internal-Timestamp + X-Internal-Signature
-    (see services/internal_request_auth), or legacy X-Commute-Dispatch-Secret when allowed.
-    """
-    plain = (request.headers.get("X-Commute-Dispatch-Secret") or "").strip() or None
-    await verify_commute_internal_request(request, plain_secret_header=plain)
+def run_commute_scan_dispatch_tick() -> dict:
+    """Send window-start pushes (no HTTP). Used by cron and optional in-process ticker."""
     sb = get_supabase()
     try:
         res = sb.table("commute_routes").select("*").eq("notifications_enabled", True).execute()
@@ -446,32 +439,8 @@ async def dispatch_commute_alerts(request: Request):
     return {"success": True, "dispatched": sent, "checked": len(routes)}
 
 
-@router.post("/internal/dispatch-traffic")
-async def dispatch_commute_traffic_alerts(request: Request):
-    """
-    Cron/worker: poll Mapbox driving-traffic alternatives for each qualifying commute
-    and push when delay exceeds COMMUTE_TRAFFIC_* thresholds.
-
-    Auth: same HMAC / legacy headers as POST /internal/dispatch. Legacy plain header must match
-    COMMUTE_TRAFFIC_DISPATCH_SECRET if set, else COMMUTE_DISPATCH_SECRET.
-
-    Suggested schedule: every 10 minutes (overlap with leave window is filtered per route).
-
-    Env:
-      COMMUTE_TRAFFIC_DISPATCH_SECRET — optional; falls back to COMMUTE_DISPATCH_SECRET (legacy header only)
-      COMMUTE_TRAFFIC_WINDOW_START_BEFORE_LEAVE_MIN — default 120 (first poll starts this many minutes before leave_by)
-      COMMUTE_TRAFFIC_MIN_EXTRA_SEC — default 300 (absolute delay vs non-traffic baseline)
-      COMMUTE_TRAFFIC_EXTRA_RATIO — default 0.12 (delay must also exceed ratio * baseline when combined with min via max())
-      COMMUTE_TRAFFIC_PUSH_COOLDOWN_SEC — default 2700 (per-route minimum gap between traffic pushes)
-    """
-    plain = (request.headers.get("X-Commute-Dispatch-Secret") or "").strip() or None
-    legacy_secret = (os.getenv("COMMUTE_TRAFFIC_DISPATCH_SECRET") or os.getenv("COMMUTE_DISPATCH_SECRET") or "").strip()
-    await verify_commute_internal_request(
-        request,
-        plain_secret_header=plain,
-        legacy_plain_secret_expected=legacy_secret or None,
-    )
-
+def run_commute_traffic_dispatch_tick() -> dict:
+    """Poll traffic + optionally push delays (blocking httpx.Client). Matches /internal/dispatch-traffic."""
     window_min = max(30, min(360, int(os.getenv("COMMUTE_TRAFFIC_WINDOW_START_BEFORE_LEAVE_MIN", "120"))))
     min_extra = float(os.getenv("COMMUTE_TRAFFIC_MIN_EXTRA_SEC", "300"))
     min_ratio = float(os.getenv("COMMUTE_TRAFFIC_EXTRA_RATIO", "0.12"))
@@ -616,3 +585,43 @@ async def dispatch_commute_traffic_alerts(request: Request):
         "checked": len(routes),
         "window_minutes_before_leave": window_min,
     }
+
+
+@router.post("/internal/dispatch")
+async def dispatch_commute_alerts(request: Request):
+    """Cron/worker: send push alerts when leave window approaches.
+
+    Auth: HMAC-SHA256 over ``{unix_ts}\\n{raw_body}`` in headers X-Internal-Timestamp + X-Internal-Signature
+    (see services/internal_request_auth), or legacy X-Commute-Dispatch-Secret when allowed.
+    """
+    plain = (request.headers.get("X-Commute-Dispatch-Secret") or "").strip() or None
+    await verify_commute_internal_request(request, plain_secret_header=plain)
+    return run_commute_scan_dispatch_tick()
+
+
+@router.post("/internal/dispatch-traffic")
+async def dispatch_commute_traffic_alerts(request: Request):
+    """
+    Cron/worker: poll Mapbox driving-traffic alternatives for each qualifying commute
+    and push when delay exceeds COMMUTE_TRAFFIC_* thresholds.
+
+    Auth: same HMAC / legacy headers as POST /internal/dispatch. Legacy plain header must match
+    COMMUTE_TRAFFIC_DISPATCH_SECRET if set, else COMMUTE_DISPATCH_SECRET.
+
+    Suggested schedule: every 10 minutes (overlap with leave window is filtered per route).
+
+    Env:
+      COMMUTE_TRAFFIC_DISPATCH_SECRET — optional; falls back to COMMUTE_DISPATCH_SECRET (legacy header only)
+      COMMUTE_TRAFFIC_WINDOW_START_BEFORE_LEAVE_MIN — default 120 (first poll starts this many minutes before leave_by)
+      COMMUTE_TRAFFIC_MIN_EXTRA_SEC — default 300 (absolute delay vs non-traffic baseline)
+      COMMUTE_TRAFFIC_EXTRA_RATIO — default 0.12 (delay must also exceed ratio * baseline when combined with min via max())
+      COMMUTE_TRAFFIC_PUSH_COOLDOWN_SEC — default 2700 (per-route minimum gap between traffic pushes)
+    """
+    plain = (request.headers.get("X-Commute-Dispatch-Secret") or "").strip() or None
+    legacy_secret = (os.getenv("COMMUTE_TRAFFIC_DISPATCH_SECRET") or os.getenv("COMMUTE_DISPATCH_SECRET") or "").strip()
+    await verify_commute_internal_request(
+        request,
+        plain_secret_header=plain,
+        legacy_plain_secret_expected=legacy_secret or None,
+    )
+    return run_commute_traffic_dispatch_tick()

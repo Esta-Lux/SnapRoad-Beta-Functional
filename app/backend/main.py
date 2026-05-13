@@ -5,7 +5,9 @@ Mock data is used as fallback; Supabase is the target database.
 """
 import os
 import logging
+import asyncio
 import traceback
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -349,6 +351,72 @@ def _build_env_check_response() -> dict:
     }
 
 
+def _truthy_env(name: str) -> bool:
+    return (os.getenv(name) or "").strip().lower() in ("1", "true", "yes")
+
+
+def _non_negative_int_env(name: str, default: int = 0) -> int:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return default
+
+
+@asynccontextmanager
+async def _commute_embedded_lifespan(app: FastAPI):
+    tasks: list[asyncio.Task] = []
+    try:
+        scan_iv = _non_negative_int_env("COMMUTE_EMBEDDED_SCAN_INTERVAL_SEC", 0)
+        traffic_iv = _non_negative_int_env("COMMUTE_EMBEDDED_TRAFFIC_INTERVAL_SEC", 0)
+        if _truthy_env("COMMUTE_EMBEDDED_DISPATCH"):
+            if scan_iv <= 0:
+                scan_iv = 180
+            if traffic_iv <= 0:
+                traffic_iv = 600
+
+        if scan_iv <= 0 and traffic_iv <= 0:
+            yield
+            return
+
+        from routes.commute_routes import run_commute_scan_dispatch_tick
+        from routes.commute_routes import run_commute_traffic_dispatch_tick
+
+        async def _tick_loop(label: str, interval_sec: int, fn):
+            await asyncio.sleep(min(12, max(1, interval_sec)))
+            while True:
+                try:
+                    await asyncio.to_thread(fn)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    logger.warning("commute embedded %s dispatch failed: %s", label, exc)
+                await asyncio.sleep(interval_sec)
+
+        if scan_iv > 0:
+            tasks.append(asyncio.create_task(_tick_loop("scan", scan_iv, run_commute_scan_dispatch_tick)))
+        if traffic_iv > 0:
+            tasks.append(asyncio.create_task(_tick_loop("traffic", traffic_iv, run_commute_traffic_dispatch_tick)))
+
+        logger.info(
+            "commute embedded ticker enabled (scan every %ss, traffic every %ss)",
+            scan_iv if scan_iv > 0 else "off",
+            traffic_iv if traffic_iv > 0 else "off",
+        )
+        yield
+    finally:
+        for t in tasks:
+            t.cancel()
+            try:
+                await t
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:
+                logger.debug("commute embedded task cancel: %s", exc)
+
+
 def create_app() -> FastAPI:
     env = os.getenv("ENVIRONMENT", "development")
     is_prod = env.strip().lower() == "production"
@@ -358,6 +426,7 @@ def create_app() -> FastAPI:
         docs_url=None if is_prod else "/docs",
         redoc_url=None if is_prod else "/redoc",
         openapi_url=None if is_prod else "/openapi.json",
+        lifespan=_commute_embedded_lifespan,
     )
 
     app.add_middleware(SecurityHeadersMiddleware)
