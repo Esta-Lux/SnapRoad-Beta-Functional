@@ -104,12 +104,82 @@ def is_apple_iap_configured() -> bool:
             and APPLE_IAP_KEY_ID
             and APPLE_IAP_ISSUER_ID
             and APPLE_IAP_BUNDLE_ID
+            and (APPLE_IAP_PREMIUM_PRODUCT_ID or "").strip()
         ):
             return False
         _load_root_certificates()
         return True
     except Exception:
         return False
+
+
+def apple_iap_env_diagnostics() -> dict[str, Any]:
+    """
+    Safe-for-clients diagnostics (names only — no secrets) for fixing 503 “not configured” on /api/payments/apple/sync.
+    """
+    missing: list[str] = []
+    warnings: list[str] = []
+    library_ok = bool(AppStoreServerAPIClient and SignedDataVerifier)
+
+    try:
+        _load_root_certificates()
+    except Exception:
+        missing.append("APPLE_IAP_ROOT_CA_FILE")
+
+    if not library_ok:
+        missing.append("APP_STORE_SERVER_LIBRARY")
+
+    if not (APPLE_IAP_PRIVATE_KEY_PEM or "").strip():
+        missing.append("APPLE_IAP_PRIVATE_KEY_PEM")
+    if not (APPLE_IAP_KEY_ID or "").strip():
+        missing.append("APPLE_IAP_KEY_ID")
+    if not (APPLE_IAP_ISSUER_ID or "").strip():
+        missing.append("APPLE_IAP_ISSUER_ID")
+    if not (APPLE_IAP_BUNDLE_ID or "").strip():
+        missing.append("APPLE_IAP_BUNDLE_ID")
+
+    prem = (APPLE_IAP_PREMIUM_PRODUCT_ID or "").strip()
+    fam = (APPLE_IAP_FAMILY_PRODUCT_ID or "").strip()
+    if not prem:
+        missing.append("APPLE_IAP_PREMIUM_PRODUCT_ID")
+
+    if APPLE_APP_APPLE_ID is None:
+        warnings.append("APPLE_APP_APPLE_ID")
+
+    hints: list[str] = []
+    if not library_ok:
+        hints.append("Deploy must install Python deps from app/backend/requirements.txt including app-store-server-library.")
+    if "APPLE_IAP_PRIVATE_KEY_PEM" in missing:
+        hints.append(
+            "Create an In-App Purchase key (App Store Connect → Users and Access → Integrations → In-App Purchase). "
+            "Set APPLE_IAP_PRIVATE_KEY_PEM (.p8 PEM), APPLE_IAP_KEY_ID, and APPLE_IAP_ISSUER_ID on the API host.",
+        )
+    if warnings:
+        hints.append(
+            "Set APPLE_APP_APPLE_ID to the numeric App Id from App Store Connect → App → App Information "
+            "(needed to verify production-signed JWS payloads).",
+        )
+    if prem and fam and prem == fam:
+        hints.append("APPLE_IAP_PREMIUM_PRODUCT_ID and APPLE_IAP_FAMILY_PRODUCT_ID must be different SKUs.")
+
+    configured = is_apple_iap_configured()
+
+    if not configured:
+        hints.append(
+            "This backend uses POST /api/payments/apple/sync (StoreKit transaction id → App Store Server API). "
+            "Filling the env vars above fixes the common “not configured on the server” error. "
+            "App Store Server Notifications (webhook URL in ASC) are optional for that path.",
+        )
+
+    return {
+        "configured": configured,
+        "missing_environment_variables": missing,
+        "warnings": warnings,
+        "hints": hints,
+        "has_premium_product_id": bool(prem),
+        "has_family_product_id": bool(fam),
+        "documentation": "https://developer.apple.com/documentation/appstoreserverapi",
+    }
 
 
 def _plan_for_product(product_id: str | None) -> str | None:

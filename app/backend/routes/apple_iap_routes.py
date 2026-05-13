@@ -12,6 +12,7 @@ from limiter import limiter
 from middleware.auth import get_current_user
 from services.apple_iap_verify import (
     AppleIapConfigError,
+    apple_iap_env_diagnostics,
     apply_profile_patch_for_apple,
     is_apple_iap_configured,
     verify_transaction,
@@ -42,8 +43,24 @@ class AppleSyncBody(BaseModel):
 
 @router.get("/apple/status")
 def apple_iap_status():
-    """Whether the API can verify App Store transactions (no secrets in response)."""
-    return {"success": True, "data": {"configured": is_apple_iap_configured()}}
+    """
+    Whether the API can verify App Store transactions (no secrets in response).
+
+    The iOS app reads `data.configured`. If false, set the listed env vars on api.snaproad.app — this is different
+    from App Store Server Notifications (webhook URL); those are optional for client-driven /apple/sync.
+    """
+    diag = apple_iap_env_diagnostics()
+    return {
+        "success": True,
+        "data": {
+            "configured": diag["configured"],
+            "missing_environment_variables": diag["missing_environment_variables"],
+            "warnings": diag["warnings"],
+            "hints": diag["hints"],
+            "has_premium_product_id": diag["has_premium_product_id"],
+            "has_family_product_id": diag["has_family_product_id"],
+        },
+    }
 
 
 @router.post("/apple/sync")

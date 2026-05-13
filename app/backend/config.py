@@ -109,7 +109,11 @@ TOMTOM_API_KEY = (os.environ.get("TOMTOM_API_KEY") or "").strip().strip("\"'")
 TOMTOM_CLIENT_ID = (os.environ.get("TOMTOM_CLIENT_ID") or "").strip()
 
 # Apple In-App Purchase — consumer subscriptions on iOS (App Store Connect → Users and Access → Integrations → In-App Purchase).
-# APPLE_IAP_PRIVATE_KEY_PEM: full contents of the .p8 key (use \\n for newlines in one-line env values).
+# Required on the API host for POST /api/payments/apple/sync: APPLE_IAP_PRIVATE_KEY_PEM (.p8 contents; use \\n in one-line env),
+# APPLE_IAP_KEY_ID, APPLE_IAP_ISSUER_ID, APPLE_IAP_PREMIUM_PRODUCT_ID, APPLE_IAP_BUNDLE_ID (defaults com.snaproad.app).
+# Strongly set APPLE_APP_APPLE_ID (numeric ASC App Id) for production JWS verification. Optional: APPLE_IAP_FAMILY_PRODUCT_ID.
+# GET /api/payments/apple/status returns which pieces are missing (no secrets).
+# App Store Server Notifications URL in ASC is optional for /apple/sync until you add a webhook receiver.
 APPLE_IAP_PRIVATE_KEY_PEM = (os.environ.get("APPLE_IAP_PRIVATE_KEY_PEM") or "").strip()
 APPLE_IAP_KEY_ID = (os.environ.get("APPLE_IAP_KEY_ID") or "").strip()
 APPLE_IAP_ISSUER_ID = (os.environ.get("APPLE_IAP_ISSUER_ID") or "").strip()
