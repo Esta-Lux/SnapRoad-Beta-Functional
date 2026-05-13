@@ -257,9 +257,8 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
       ),
       supabaseUrl: envAny(["EXPO_PUBLIC_SUPABASE_URL", "SUPABASE_URL"]),
       supabaseAnonKey: envAny(["EXPO_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_ANON_KEY"]),
-      /** App Store subscription product IDs (Premium / Family). Must match App Store Connect. */
+      /** App Store premium subscription Product ID — must match App Store Connect + backend APPLE_IAP_PREMIUM_PRODUCT_ID. */
       appleIapPremiumProductId: envAny(["EXPO_PUBLIC_APPLE_IAP_PREMIUM", "APPLE_IAP_PREMIUM_PRODUCT_ID"], ""),
-      appleIapFamilyProductId: envAny(["EXPO_PUBLIC_APPLE_IAP_FAMILY", "APPLE_IAP_FAMILY_PRODUCT_ID"], ""),
       sentryDsn: envAny(["EXPO_PUBLIC_SENTRY_DSN", "SENTRY_DSN"]),
       /** Expo dashboard / project page (overridable via EXPO_PUBLIC_EXPO_PROJECT_URL in eas.json). */
       expoProjectUrl: envAny(

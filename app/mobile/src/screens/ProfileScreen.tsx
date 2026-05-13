@@ -618,8 +618,15 @@ export default function ProfileScreen() {
         navigation.navigate('Auth', { mode: 'signup' });
         return;
       }
+      if (plan === 'family') {
+        Alert.alert(
+          'Family plan',
+          'Only Premium is sold on the App Store. Choose Premium to subscribe with Apple.',
+        );
+        return;
+      }
       try {
-        await startAppleSubscriptionPurchase(plan === 'family' ? 'family' : 'premium', uid);
+        await startAppleSubscriptionPurchase(uid);
         setShowPlanModal(false);
         await loadData('silent');
         Alert.alert('Subscription active', 'Your plan has been updated.');

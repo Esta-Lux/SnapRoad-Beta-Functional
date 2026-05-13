@@ -5,7 +5,9 @@ Admin creates/updates docs via /api/admin/legal-documents; this route is read-on
 """
 import logging
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
+
+from limiter import limiter
 
 from database import get_supabase
 from services.legal_text import html_to_plain_text
@@ -52,7 +54,8 @@ def _augment_with_plain_text(row: dict) -> dict:
 
 
 @router.get("/documents")
-def list_legal_documents(required_only: bool = Query(default=False)):
+@limiter.limit("120/minute")
+def list_legal_documents(request: Request, required_only: bool = Query(default=False)):
     """Return all published legal documents (summary, no full content)."""
     try:
         sb = get_supabase()
@@ -72,7 +75,8 @@ def list_legal_documents(required_only: bool = Query(default=False)):
 
 
 @router.get("/documents/by-slug/{slug}")
-def get_legal_document_by_slug(slug: str):
+@limiter.limit("120/minute")
+def get_legal_document_by_slug(request: Request, slug: str):
     """
     Return the published doc whose stable slug matches (e.g. `terms-of-service`,
     `privacy-policy`). Powers the public `/terms` and `/privacy` web pages and
@@ -110,7 +114,8 @@ def get_legal_document_by_slug(slug: str):
 
 
 @router.get("/documents/{doc_id}")
-def get_legal_document(doc_id: str):
+@limiter.limit("120/minute")
+def get_legal_document(request: Request, doc_id: str):
     """Return full content of a single published legal document."""
     try:
         sb = get_supabase()

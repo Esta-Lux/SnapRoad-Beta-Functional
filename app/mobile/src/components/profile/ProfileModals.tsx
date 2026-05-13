@@ -139,8 +139,7 @@ export function PlanModal(props: {
 
   const PLAN_ICONS: Record<PlanTier, string> = { basic: 'shield-outline', premium: 'flash-outline', family: 'people-outline' };
   const PLAN_COLORS: Record<PlanTier, string> = { basic: '#007AFF', premium: '#FF9500', family: '#7C3AED' };
-  const isIosPaidSelected =
-    Platform.OS === 'ios' && (selected === 'premium' || selected === 'family');
+  const isIosPaidSelected = Platform.OS === 'ios' && selected === 'premium';
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -252,22 +251,15 @@ export function PlanModal(props: {
                     },
                   ]}
                 >
-                  <Text style={[styles.iapSubscriptionTitle, { color: text }]}>
-                    {selected === 'family' ? 'SnapRoad Family' : 'SnapRoad Premium'}
-                  </Text>
+                  <Text style={[styles.iapSubscriptionTitle, { color: text }]}>SnapRoad Premium</Text>
                   {(() => {
-                    const tier = selected === 'family' ? 'family' : 'premium';
-                    const line =
-                      tier === 'family'
-                        ? iosSubscriptionStoreLines?.family
-                        : iosSubscriptionStoreLines?.premium;
-                    const catalog = PLANS[tier];
+                    const line = iosSubscriptionStoreLines?.premium;
+                    const catalog = PLANS.premium;
                     const period = line?.periodLabel ?? null;
                     const storePrice = line?.displayPrice ?? null;
                     const fallbackPrice =
                       catalog?.price && catalog.price !== 'Free' ? catalog.price : null;
-                    const priceLabel =
-                      tier === 'premium' ? fallbackPrice ?? storePrice : storePrice ?? fallbackPrice;
+                    const priceLabel = fallbackPrice ?? storePrice;
                     return (
                       <>
                         <Text style={[styles.iapSubscriptionMeta, { color: sub }]}>

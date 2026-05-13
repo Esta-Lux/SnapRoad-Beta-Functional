@@ -3,23 +3,25 @@ import assert from 'node:assert/strict';
 
 import { buildConfiguredSkuSet, pickPurchasesToRestore } from './appleIapSkus';
 
-test('buildConfiguredSkuSet collects the configured premium + family SKUs', () => {
+const PREMIUM_ASC_ID = 'com.snaproad.app.premium.monthly.plan';
+
+test('buildConfiguredSkuSet collects premium SKU (and optional legacy family when set)', () => {
   const skus = buildConfiguredSkuSet({
-    appleIapPremiumProductId: 'com.snaproad.premium.monthly',
-    appleIapFamilyProductId: 'com.snaproad.family.monthly',
+    appleIapPremiumProductId: PREMIUM_ASC_ID,
+    appleIapFamilyProductId: 'com.legacy.family',
   });
   assert.equal(skus.size, 2);
-  assert.ok(skus.has('com.snaproad.premium.monthly'));
-  assert.ok(skus.has('com.snaproad.family.monthly'));
+  assert.ok(skus.has(PREMIUM_ASC_ID));
+  assert.ok(skus.has('com.legacy.family'));
 });
 
-test('buildConfiguredSkuSet trims whitespace and ignores blank entries', () => {
+test('buildConfiguredSkuSet is premium-only when family is blank', () => {
   const skus = buildConfiguredSkuSet({
-    appleIapPremiumProductId: '   com.snaproad.premium.monthly   ',
+    appleIapPremiumProductId: `   ${PREMIUM_ASC_ID}   `,
     appleIapFamilyProductId: '',
   });
   assert.equal(skus.size, 1);
-  assert.ok(skus.has('com.snaproad.premium.monthly'));
+  assert.ok(skus.has(PREMIUM_ASC_ID));
 });
 
 test('buildConfiguredSkuSet returns an empty set when nothing is configured', () => {
@@ -35,11 +37,11 @@ test('buildConfiguredSkuSet returns an empty set when nothing is configured', ()
 
 test('pickPurchasesToRestore keeps only purchases whose productId is in the allow-list', () => {
   const purchases = [
-    { productId: 'com.snaproad.premium.monthly', transactionId: 't1' },
+    { productId: PREMIUM_ASC_ID, transactionId: 't1' },
     { productId: 'com.othersapp.pro', transactionId: 't2' },
-    { productId: 'com.snaproad.family.monthly', transactionId: 't3' },
+    { productId: 'com.legacy.family', transactionId: 't3' },
   ];
-  const skus = new Set(['com.snaproad.premium.monthly', 'com.snaproad.family.monthly']);
+  const skus = new Set([PREMIUM_ASC_ID, 'com.legacy.family']);
   const out = pickPurchasesToRestore(purchases, skus);
   assert.equal(out.length, 2);
   assert.deepEqual(
@@ -50,11 +52,11 @@ test('pickPurchasesToRestore keeps only purchases whose productId is in the allo
 
 test('pickPurchasesToRestore returns an empty array when no purchase matches', () => {
   const purchases = [{ productId: 'com.othersapp.pro' }];
-  const skus = new Set(['com.snaproad.premium.monthly']);
+  const skus = new Set([PREMIUM_ASC_ID]);
   assert.deepEqual(pickPurchasesToRestore(purchases, skus), []);
 });
 
 test('pickPurchasesToRestore returns an empty array when the allow-list is empty', () => {
-  const purchases = [{ productId: 'com.snaproad.premium.monthly' }];
+  const purchases = [{ productId: PREMIUM_ASC_ID }];
   assert.deepEqual(pickPurchasesToRestore(purchases, new Set()), []);
 });

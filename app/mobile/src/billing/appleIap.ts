@@ -110,25 +110,20 @@ export async function fetchAppleSubscriptionPaywallLines(): Promise<{
   }
 
   const extra = Constants.expoConfig?.extra as
-    | { appleIapPremiumProductId?: string; appleIapFamilyProductId?: string }
+    | { appleIapPremiumProductId?: string }
     | undefined;
   const premiumSku = extra?.appleIapPremiumProductId?.trim();
-  const familySku = extra?.appleIapFamilyProductId?.trim();
-  const skus = [premiumSku, familySku].filter(Boolean) as string[];
-  if (skus.length === 0) {
+  if (!premiumSku) {
     return { premium: null, family: null };
   }
 
   try {
     await bootstrapAppleIap();
-    const products = await fetchProducts({ skus, type: 'subs' });
+    const products = await fetchProducts({ skus: [premiumSku], type: 'subs' });
     const list = Array.isArray(products) ? products : [];
-    const find = (sku: string | undefined): AppleSubscriptionPaywallLine | null => {
-      if (!sku) return null;
-      const row = list.find((item) => productIdFromStoreRow(item) === sku);
-      return row ? storeRowToPaywallLine(row) : null;
-    };
-    return { premium: find(premiumSku), family: find(familySku) };
+    const row = list.find((item) => productIdFromStoreRow(item) === premiumSku);
+    const premiumLine = row ? storeRowToPaywallLine(row) : null;
+    return { premium: premiumLine, family: null };
   } catch {
     return { premium: null, family: null };
   }
@@ -143,7 +138,7 @@ let pending: Pending | null = null;
 
 function configuredSkus(): Set<string> {
   const extra = Constants.expoConfig?.extra as
-    | { appleIapPremiumProductId?: string; appleIapFamilyProductId?: string }
+    | { appleIapPremiumProductId?: string }
     | undefined;
   return buildConfiguredSkuSet(extra ?? {});
 }
@@ -241,28 +236,21 @@ export async function shutdownAppleIap(): Promise<void> {
  * Start an auto-renewable subscription purchase. Completes when Apple reports a transaction
  * and the server accepts `/api/payments/apple/sync`.
  */
-export function startAppleSubscriptionPurchase(
-  plan: 'premium' | 'family',
-  appAccountToken: string,
-): Promise<void> {
+/** Start Premium auto-renewable subscription purchase (SnapRoad sells only Premium on the App Store). */
+export function startAppleSubscriptionPurchase(appAccountToken: string): Promise<void> {
   if (Platform.OS !== 'ios') {
     return Promise.reject(new Error('Apple In-App Purchases are only available on iOS.'));
   }
 
   const extra = Constants.expoConfig?.extra as
-    | { appleIapPremiumProductId?: string; appleIapFamilyProductId?: string }
+    | { appleIapPremiumProductId?: string }
     | undefined;
-  const sku =
-    plan === 'family'
-      ? extra?.appleIapFamilyProductId?.trim()
-      : extra?.appleIapPremiumProductId?.trim();
+  const sku = extra?.appleIapPremiumProductId?.trim();
 
   if (!sku) {
     return Promise.reject(
       new Error(
-        plan === 'family'
-          ? 'Family subscription is not configured. Set EXPO_PUBLIC_APPLE_IAP_FAMILY for this build.'
-          : 'Premium subscription is not configured. Set EXPO_PUBLIC_APPLE_IAP_PREMIUM for this build.',
+        'Premium subscription is not configured. Set EXPO_PUBLIC_APPLE_IAP_PREMIUM for this build.',
       ),
     );
   }
@@ -272,7 +260,9 @@ export function startAppleSubscriptionPurchase(
     await assertAppleIapServerReady();
     const products = await fetchProducts({ skus: [sku], type: 'subs' });
     if (!hasStoreProduct(products, sku)) {
-      throw new Error(`Apple could not find the ${plan} subscription product (${sku}) for this app build.`);
+      throw new Error(
+        `Apple could not find the Premium subscription product (${sku}) for this app build.`,
+      );
     }
 
     await new Promise<void>((resolve, reject) => {

@@ -19,6 +19,9 @@
  * Security:
  * - Backend secrets (JWT, service role, Stripe secret, etc.) are stored in EAS as --visibility secret.
  *   They are NOT used by the FastAPI/Railway runtime — set those on Railway separately.
+ * - Apple IAP **JWT private key + Key ID + Issuer** belong only on the API host (Railway).
+ *   This script skips `APPLE_*` App Store Server API vars so merging `app/backend/.env`
+ *   does not upload `.p8` material to Expo. Mobile uses only `EXPO_PUBLIC_APPLE_IAP_*` SKUs from `app/mobile/.env`.
  * - EXPO_PUBLIC_* values are still embedded in the app JS bundle at build time (expected for client keys).
  * - Do not commit real .env files; this script only reads them locally.
  */
@@ -101,6 +104,14 @@ function visibilityFor(name) {
   return "plaintext";
 }
 
+/** Vars from Railway/backend that must never be uploaded to Expo (wrong runtime + IAP .p8). */
+function skipKeyForEas(key) {
+  const ku = key.toUpperCase();
+  if (key.startsWith("APPLE_IAP_") || key.startsWith("APPLE_APP_")) return true;
+  if (ku === "SNAPROAD_PUBLIC_API_BASE") return true;
+  return false;
+}
+
 function main() {
   const merged = {
     ...loadEnvFile(join(ROOT, "app", "backend", ".env")),
@@ -143,6 +154,7 @@ function main() {
 
   const keys = Object.keys(merged).filter((k) => {
     if (skipKeys.has(k)) return false;
+    if (skipKeyForEas(k)) return false;
     const v = merged[k];
     return v != null && String(v).trim() !== "";
   });

@@ -419,6 +419,20 @@ def sb_get_profile_raw(profile_id: str) -> Optional[dict]:
         return None
 
 
+def sb_find_profile_ids_by_apple_original_transaction(original_transaction_id: str) -> list[str]:
+    """Profiles linked to an Apple subscription group (same id across renewals)."""
+    oid = (original_transaction_id or "").strip()
+    if not oid:
+        return []
+    try:
+        result = _sb().table("profiles").select("id").eq("apple_original_transaction_id", oid).execute()
+        rows = result.data or []
+        return [str(r["id"]) for r in rows if r.get("id")]
+    except Exception as e:
+        logger.warning("sb_find_profile_ids_by_apple_original_transaction: %s", e)
+        return []
+
+
 def sb_get_profile_by_email(email: str) -> Optional[dict]:
     try:
         result = _sb().table("profiles").select("*").eq("email", email).single().execute()
