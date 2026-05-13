@@ -98,14 +98,25 @@ export default function PartnerWelcomePage() {
         </div>
 
         <div className="border-t border-white/5 bg-slate-900/80 backdrop-blur-sm">
-          <div className="max-w-6xl mx-auto px-6 py-6">
-            <div className="flex flex-col items-center justify-center gap-3 text-center sm:flex-row sm:gap-6">
-              <p className="text-slate-500 text-sm">© {new Date().getFullYear()} SnapRoad. Partner portal.</p>
-              <div className="flex items-center gap-4 text-sm text-slate-400">
-                <Link to="/privacy" className="hover:text-white transition-colors">Privacy</Link>
-                <Link to="/terms" className="hover:text-white transition-colors">Terms</Link>
-                <Link to="/community-guidelines" className="hover:text-white transition-colors">Community Guidelines</Link>
-              </div>
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+            <div className="flex flex-col gap-4 items-center text-center">
+              <p className="text-slate-500 text-sm leading-relaxed px-1">
+                © {new Date().getFullYear()} SnapRoad. Partner portal.
+              </p>
+              <nav
+                className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2.5 text-sm text-slate-400 max-w-md w-full px-2"
+                aria-label="Legal and policies"
+              >
+                <Link to="/privacy" className="hover:text-white transition-colors py-1 px-0.5 shrink-0">
+                  Privacy
+                </Link>
+                <Link to="/terms" className="hover:text-white transition-colors py-1 px-0.5 shrink-0">
+                  Terms
+                </Link>
+                <Link to="/community-guidelines" className="hover:text-white transition-colors py-1 px-0.5 shrink-0 text-center">
+                  Community Guidelines
+                </Link>
+              </nav>
             </div>
           </div>
         </div>

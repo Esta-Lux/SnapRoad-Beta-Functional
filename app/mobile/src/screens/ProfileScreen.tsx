@@ -59,7 +59,6 @@ import {
   startAppleSubscriptionPurchase,
   type AppleSubscriptionPaywallLine,
 } from '../billing/appleIap';
-import { openLegalDocumentExternally } from '../utils/openLegalDocument';
 import { registerCommutePushToken } from '../utils/pushNotifications';
 import { mapProfileTripHistoryItem, recentTripsListFromPayload } from '../components/profile/tripHistoryMapping';
 import { sanitizeTripSpeedMph } from '../utils/driveMetrics';
@@ -700,13 +699,6 @@ export default function ProfileScreen() {
     }
   }, [loadData]);
 
-  const handleOpenTerms = useCallback(() => {
-    void openLegalDocumentExternally('terms-of-service');
-  }, []);
-  const handleOpenPrivacy = useCallback(() => {
-    void openLegalDocumentExternally('privacy-policy');
-  }, []);
-
   useEffect(() => {
     const status = typeof route.params?.status === 'string' ? route.params.status : '';
     const sessionId = typeof route.params?.session_id === 'string' ? route.params.session_id : '';
@@ -1060,7 +1052,9 @@ export default function ProfileScreen() {
                   {(Platform.OS === 'ios' && (user?.plan_entitlement_source || '').toLowerCase() === 'apple')
                     ? 'Premium is managed with Apple in iPhone Settings → Apple ID → Subscriptions.'
                     : currentPlan === 'basic'
-                      ? `${PLANS.premium.price} founders · reg. $${PREMIUM_PUBLIC_MONTHLY.toFixed(2)}/mo · ~${premiumSavingsPercent()}% off`
+                      ? premiumSavingsPercent() > 0
+                        ? `${PLANS.premium.price} · reg. $${PREMIUM_PUBLIC_MONTHLY.toFixed(2)}/mo · ~${premiumSavingsPercent()}% off`
+                        : `${PLANS.premium.price} · Upgrade anytime`
                       : 'View plans, compare features, or change subscription'}
                 </Text>
               </View>
@@ -1244,8 +1238,6 @@ export default function ProfileScreen() {
         onSelectPlan={handleSelectPlan}
         isLight={isLight}
         onRestorePurchases={handleRestorePurchases}
-        onOpenTerms={handleOpenTerms}
-        onOpenPrivacy={handleOpenPrivacy}
         restoreInFlight={restoringPurchases}
         iosSubscriptionStoreLines={iosSubscriptionStoreLines}
       />

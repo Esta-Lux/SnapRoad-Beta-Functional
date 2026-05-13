@@ -33,7 +33,7 @@ class TestPaymentsAPI:
         
         # Validate premium plan
         premium = plans["premium"]
-        assert premium["price"] == 10.99, f"Premium should be $10.99, got {premium['price']}"
+        assert premium["price"] == 7.99, f"Premium should be $7.99, got {premium['price']}"
         assert premium["period"] == "month"
         
         # Validate family plan
@@ -41,7 +41,7 @@ class TestPaymentsAPI:
         assert family["price"] == 14.99, f"Family should be $14.99, got {family['price']}"
         assert family["period"] == "month"
         
-        print(f"✓ GET /api/payments/plans - Found all 3 plans: basic (free), premium ($10.99), family ($14.99)")
+        print(f"✓ GET /api/payments/plans - Found all 3 plans: basic (free), premium ($7.99), family ($14.99)")
     
     def test_create_checkout_session_premium(self):
         """POST /api/payments/checkout/session creates Stripe checkout for premium"""

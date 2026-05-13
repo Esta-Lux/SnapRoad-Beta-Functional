@@ -6,9 +6,10 @@
  * built-in test runner).
  */
 
-export type LegalDocSlug = 'terms-of-service' | 'privacy-policy';
+export type LegalDocSlug = 'terms-of-service' | 'privacy-policy' | 'community-guidelines';
 
-export const DEFAULT_LEGAL_WEBSITE_BASE = 'https://snaproad.app';
+/** Production SPA host (same routes as partner dashboard: `/privacy`, `/terms`, `/community-guidelines`). */
+export const DEFAULT_LEGAL_WEBSITE_BASE = 'https://app.snaproad.app';
 
 /**
  * Convert a configured API URL into the public-website base URL.
@@ -16,7 +17,7 @@ export const DEFAULT_LEGAL_WEBSITE_BASE = 'https://snaproad.app';
  *   `https://api.snaproad.app`         → `https://app.snaproad.app`
  *   `https://api.staging.snaproad.app` → `https://app.staging.snaproad.app`
  *   `http://localhost:8001`            → `http://localhost:8001` (dev)
- *   `garbage` / undefined / empty      → `https://snaproad.app` (fallback)
+ *   `garbage` / undefined / empty      → DEFAULT_LEGAL_WEBSITE_BASE (fallback)
  *
  * The transform is intentionally narrow — only swap a leading `api.`
  * subdomain — so non-standard hosts (custom dev tunnels, IP addresses)
@@ -37,7 +38,9 @@ export function transformApiUrlToWebsiteBase(apiUrl: string | undefined | null):
   }
 }
 
-/** Slug → website path. */
+/** Slug → website path (matches `app/frontend` public legal routes). */
 export function legalDocumentPath(slug: LegalDocSlug): string {
-  return slug === 'terms-of-service' ? '/terms' : '/privacy';
+  if (slug === 'terms-of-service') return '/terms';
+  if (slug === 'community-guidelines') return '/community-guidelines';
+  return '/privacy';
 }

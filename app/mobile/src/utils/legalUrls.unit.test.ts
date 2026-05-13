@@ -45,4 +45,5 @@ test('transformApiUrlToWebsiteBase falls back when the input is missing or unpar
 test('legalDocumentPath maps slugs to the public website paths', () => {
   assert.equal(legalDocumentPath('terms-of-service'), '/terms');
   assert.equal(legalDocumentPath('privacy-policy'), '/privacy');
+  assert.equal(legalDocumentPath('community-guidelines'), '/community-guidelines');
 });

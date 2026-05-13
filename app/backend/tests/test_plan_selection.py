@@ -32,8 +32,8 @@ class TestPricingEndpoints:
         assert "is_founders_active" in pricing
         
         # Verify expected values
-        assert pricing["founders_price"] == 10.99
-        assert pricing["public_price"] == 16.99
+        assert pricing["founders_price"] == 7.99
+        assert pricing["public_price"] == 7.99
         assert pricing["is_founders_active"] == True
         print(f"✓ Pricing config: founders=${pricing['founders_price']}, public=${pricing['public_price']}, founders_active={pricing['is_founders_active']}")
     
@@ -52,7 +52,7 @@ class TestPricingEndpoints:
         print(f"✓ Updated founders price to ${data['data']['founders_price']}")
         
         # Reset to original
-        requests.put(f"{BASE_URL}/api/admin/pricing", json={"founders_price": 10.99})
+        requests.put(f"{BASE_URL}/api/admin/pricing", json={"founders_price": 7.99})
     
     def test_admin_update_pricing_public_price(self):
         """PUT /api/admin/pricing - Admin can update public price"""
@@ -68,7 +68,7 @@ class TestPricingEndpoints:
         print(f"✓ Updated public price to ${data['data']['public_price']}")
         
         # Reset to original
-        requests.put(f"{BASE_URL}/api/admin/pricing", json={"public_price": 16.99})
+        requests.put(f"{BASE_URL}/api/admin/pricing", json={"public_price": 7.99})
     
     def test_admin_toggle_founders_pricing(self):
         """PUT /api/admin/pricing - Admin can toggle founders pricing"""
@@ -141,7 +141,7 @@ class TestUserPlanEndpoints:
         assert data["data"]["is_premium"] == True
         assert data["data"]["gem_multiplier"] == 2
         # Should use founders price since is_founders_active is True
-        assert data["data"]["price"] == 10.99
+        assert data["data"]["price"] == 7.99
         print(f"✓ Selected premium plan: multiplier={data['data']['gem_multiplier']}x, price=${data['data']['price']}")
     
     def test_invalid_plan_rejected(self):
@@ -231,20 +231,19 @@ class TestDiscountCalculation:
     """Test discount percentage calculation"""
     
     def test_discount_percentage_calculation(self):
-        """Verify 35% discount from $16.99 to $10.99"""
+        """Verify 0% discount when founders and public price match ($7.99)"""
         response = requests.get(f"{BASE_URL}/api/pricing")
         pricing = response.json()["data"]
         
         founders_price = pricing["founders_price"]
         public_price = pricing["public_price"]
         
-        # Calculate discount percentage
-        discount_percent = round(((public_price - founders_price) / public_price) * 100)
+        discount_percent = round(((public_price - founders_price) / public_price) * 100) if public_price else 0
         
-        assert founders_price == 10.99
-        assert public_price == 16.99
-        assert discount_percent == 35
-        print(f"✓ Discount calculation: ${public_price} → ${founders_price} = {discount_percent}% off")
+        assert founders_price == 7.99
+        assert public_price == 7.99
+        assert discount_percent == 0
+        print(f"✓ Discount calculation: ${public_price}/mo (no uplift vs founders)")
 
 
 class TestUserProfilePlanIntegration:

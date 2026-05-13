@@ -1,8 +1,8 @@
 import type { PlanTier } from '../types';
 
-/** Match founders `price` and public list price in `/api/payments/plans` (premium). */
-export const PREMIUM_FOUNDERS_MONTHLY = 4.99;
-export const PREMIUM_PUBLIC_MONTHLY = 16.99;
+/** Match Stripe/list pricing in `/api/payments/plans` (premium). */
+export const PREMIUM_FOUNDERS_MONTHLY = 7.99;
+export const PREMIUM_PUBLIC_MONTHLY = 7.99;
 
 export function premiumSavingsPercent(): number {
   if (PREMIUM_PUBLIC_MONTHLY <= 0) return 0;
@@ -23,6 +23,39 @@ export interface PlanConfig {
   foundersNote?: string;
 }
 
+const premiumFeatures: PlanConfig['features'] = [
+  'Everything in Basic',
+  'Share location & track friends',
+  'Traffic cameras on map',
+  'Delay alerts (2 hr ahead)',
+  '20 saved routes',
+  'Advanced local offers',
+  '2x Gem multiplier',
+  'Smart commute analytics',
+  'Driving Score & insights',
+  'Orion voice assistant',
+  'Priority support',
+];
+
+function premiumPlanConfig(): PlanConfig {
+  const base: PlanConfig = {
+    name: 'Premium',
+    price: `$${PREMIUM_FOUNDERS_MONTHLY.toFixed(2)}/mo`,
+    routeLimit: 20,
+    popular: true,
+    features: premiumFeatures,
+  };
+  if (PREMIUM_PUBLIC_MONTHLY > PREMIUM_FOUNDERS_MONTHLY + 0.001) {
+    return {
+      ...base,
+      compareAtPrice: `$${PREMIUM_PUBLIC_MONTHLY.toFixed(2)}/mo`,
+      savingsHint: `Save about ${premiumSavingsPercent()}% vs regular price ($${PREMIUM_PUBLIC_MONTHLY.toFixed(2)}/mo)`,
+      foundersNote: 'Founders pricing — lock in this rate',
+    };
+  }
+  return base;
+}
+
 export const PLANS: Record<PlanTier, PlanConfig> = {
   basic: {
     name: 'Basic',
@@ -36,28 +69,7 @@ export const PLANS: Record<PlanTier, PlanConfig> = {
       'Up to 5 saved routes',
     ],
   },
-  premium: {
-    name: 'Premium',
-    price: `$${PREMIUM_FOUNDERS_MONTHLY.toFixed(2)}/mo`,
-    compareAtPrice: `$${PREMIUM_PUBLIC_MONTHLY.toFixed(2)}/mo`,
-    savingsHint: `Save about ${premiumSavingsPercent()}% vs regular price ($${PREMIUM_PUBLIC_MONTHLY.toFixed(2)}/mo)`,
-    routeLimit: 20,
-    popular: true,
-    foundersNote: 'Founders pricing — lock in this rate',
-    features: [
-      'Everything in Basic',
-      'Share location & track friends',
-      'Traffic cameras on map',
-      'Delay alerts (2 hr ahead)',
-      '20 saved routes',
-      'Advanced local offers',
-      '2x Gem multiplier',
-      'Smart commute analytics',
-      'Driving Score & insights',
-      'Orion voice assistant',
-      'Priority support',
-    ],
-  },
+  premium: premiumPlanConfig(),
   family: {
     name: 'Family',
     price: '$19.99/mo',

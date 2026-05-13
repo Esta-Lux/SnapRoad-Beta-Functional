@@ -39,8 +39,8 @@ class TestPlanSelection:
         assert "founders_price" in pricing
         assert "public_price" in pricing
         assert "is_founders_active" in pricing
-        assert pricing["founders_price"] == 10.99
-        assert pricing["public_price"] == 16.99
+        assert pricing["founders_price"] == 7.99
+        assert pricing["public_price"] == 7.99
         print(f"✓ Pricing config: Founders ${pricing['founders_price']}, Public ${pricing['public_price']}")
     
     def test_get_onboarding_status(self):

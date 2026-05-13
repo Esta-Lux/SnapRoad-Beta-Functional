@@ -1,5 +1,5 @@
 # SnapRoad - Stripe Payments Integration (Portable)
-# Handles subscription plans: Basic (free), Premium ($10.99/mo), Family ($14.99/mo)
+# Handles subscription plans: Basic (free), Premium ($7.99/mo), Family ($14.99/mo)
 # Uses standard Stripe SDK - no platform-specific dependencies
 
 import logging
@@ -38,8 +38,8 @@ SUBSCRIPTION_PLANS = {
     "premium": {
         "name": "Premium",
         # `price` is charged (founders / beta). `public_price` is list price shown for savings UX only.
-        "price": 4.99,
-        "public_price": 16.99,
+        "price": 7.99,
+        "public_price": 7.99,
         "period": "month",
         "features": ["All Basic features", "2x gem multiplier", "Premium offers", "Advanced analytics", "Fuel tracking", "Ad-free", "Priority support"],
     },

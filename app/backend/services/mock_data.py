@@ -23,8 +23,8 @@ XP_CONFIG = {
 
 # ==================== PRICING ====================
 pricing_config = {
-    "founders_price": 10.99,
-    "public_price": 16.99,
+    "founders_price": 7.99,
+    "public_price": 7.99,
     "is_founders_active": True,
 }
 

@@ -37,8 +37,8 @@ export default function PlanSelection({ onSelectPlan }: PlanSelectionProps) {
   const isLight = theme === 'light'
   const [selectedPlan, setSelectedPlan] = useState<'basic' | 'premium' | 'family' | null>(null)
   const [pricing, setPricing] = useState<PricingConfig>({
-    founders_price: 10.99,
-    public_price: 16.99,
+    founders_price: 7.99,
+    public_price: 7.99,
     is_founders_active: true
   })
   const [loading, setLoading] = useState(true)
@@ -191,7 +191,7 @@ export default function PlanSelection({ onSelectPlan }: PlanSelectionProps) {
                     </>
                   )}
                 </div>
-                {pricing.is_founders_active && (
+                {pricing.is_founders_active && discountPercent > 0 && (
                   <p className="text-amber-500/90 text-[10px] mt-1 flex items-center gap-1">
                     <Star size={10} className="fill-amber-500" />
                     Founders pricing
@@ -204,7 +204,7 @@ export default function PlanSelection({ onSelectPlan }: PlanSelectionProps) {
                 {selectedPlan === 'premium' && <Check size={12} className="text-white" />}
               </div>
             </div>
-            {pricing.is_founders_active && (
+            {pricing.is_founders_active && discountPercent > 0 && (
               <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-2.5 py-1.5 mb-2">
                 <p className="text-amber-400 text-[10px] font-medium">Lock in ${pricing.founders_price.toFixed(2)}/mo for life</p>
               </div>

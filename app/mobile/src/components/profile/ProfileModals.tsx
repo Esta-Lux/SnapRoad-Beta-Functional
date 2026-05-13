@@ -1,18 +1,14 @@
 import React, { useState } from 'react';
-import { Linking, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import SheetModal from '../common/Modal';
 import { PLANS } from '../../constants/plans';
-import { fetchPublicLegalDocument } from '../../api/legalDocuments';
-import type { PublicLegalSlug } from '../../api/dto/legal';
 import type { PlanTier } from '../../types';
 import { FAMILY_MODE_LAUNCH_ENABLED } from '../../config/launchFlags';
 import type { AppleSubscriptionPaywallLine } from '../../billing/appleIap';
+import { openLegalDocumentExternally } from '../../utils/openLegalDocument';
 
-/** Required subscription legal URLs (App Store Review 3.1.2). */
-const SNAPROAD_TERMS_URL = 'https://snaproad.app/terms';
-const SNAPROAD_PRIVACY_URL = 'https://snaproad.app/privacy';
 export function LevelProgressModal({
   visible,
   onClose,
@@ -114,9 +110,6 @@ export function PlanModal(props: {
   isLight?: boolean;
   /** Required by Apple; wired by ProfileScreen to call `restoreApplePurchases`. */
   onRestorePurchases?: () => void;
-  /** Tapping these opens the public legal pages (web URL or in-app sheet). */
-  onOpenTerms?: () => void;
-  onOpenPrivacy?: () => void;
   /** True while a restore is in flight so the link can show a spinner state. */
   restoreInFlight?: boolean;
   /** Localized App Store subscription metadata for iOS paywall (price + period). */
@@ -135,29 +128,13 @@ export function PlanModal(props: {
     onSelectPlan,
     isLight,
     onRestorePurchases,
-    onOpenTerms,
-    onOpenPrivacy,
     restoreInFlight,
     iosSubscriptionStoreLines,
   } = props;
   const [selected, setSelected] = useState<PlanTier | null>(null);
-  const [legalModal, setLegalModal] = useState<{ title: string; body: string } | null>(null);
-  const [legalLoading, setLegalLoading] = useState<PublicLegalSlug | null>(null);
 
   const handleContinue = () => {
     if (selected) { onSelectPlan(selected); }
-  };
-
-  const openLegal = async (slug: PublicLegalSlug, fallback?: () => void) => {
-    setLegalLoading(slug);
-    try {
-      const doc = await fetchPublicLegalDocument(slug);
-      setLegalModal({ title: doc.title, body: doc.body });
-    } catch {
-      fallback?.();
-    } finally {
-      setLegalLoading(null);
-    }
   };
 
   const PLAN_ICONS: Record<PlanTier, string> = { basic: 'shield-outline', premium: 'flash-outline', family: 'people-outline' };
@@ -289,7 +266,8 @@ export function PlanModal(props: {
                     const storePrice = line?.displayPrice ?? null;
                     const fallbackPrice =
                       catalog?.price && catalog.price !== 'Free' ? catalog.price : null;
-                    const priceLabel = storePrice ?? fallbackPrice;
+                    const priceLabel =
+                      tier === 'premium' ? fallbackPrice ?? storePrice : storePrice ?? fallbackPrice;
                     return (
                       <>
                         <Text style={[styles.iapSubscriptionMeta, { color: sub }]}>
@@ -297,7 +275,7 @@ export function PlanModal(props: {
                         </Text>
                         {priceLabel ? (
                           <Text style={[styles.iapSubscriptionPrice, { color: text }]}>
-                            {storePrice ? `Price: ${storePrice}` : `Price: ${priceLabel}`}
+                            Price: {priceLabel}
                           </Text>
                         ) : null}
                       </>
@@ -311,27 +289,32 @@ export function PlanModal(props: {
                   current period. You can manage or cancel your subscription in Apple ID subscription settings.
                 </Text>
 
-                <View style={[styles.iapLinkRow, { marginTop: 6 }]}>
+                <View style={[styles.iapLinkRow, styles.iapLegalLinks, { marginTop: 10 }]}>
                   <TouchableOpacity
-                    onPress={() => {
-                      void Linking.openURL(SNAPROAD_TERMS_URL);
-                    }}
+                    onPress={() => void openLegalDocumentExternally('terms-of-service')}
                     accessibilityRole="link"
                     accessibilityLabel="Terms of Service"
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Text style={[styles.iapLinkText, { color: text }]}>Terms of Service</Text>
+                    <Text style={[styles.iapLinkText, { color: text }]}>Terms</Text>
                   </TouchableOpacity>
                   <Text style={[styles.iapLinkSep, { color: sub }]}>·</Text>
                   <TouchableOpacity
-                    onPress={() => {
-                      void Linking.openURL(SNAPROAD_PRIVACY_URL);
-                    }}
+                    onPress={() => void openLegalDocumentExternally('privacy-policy')}
                     accessibilityRole="link"
                     accessibilityLabel="Privacy Policy"
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Text style={[styles.iapLinkText, { color: text }]}>Privacy Policy</Text>
+                    <Text style={[styles.iapLinkText, { color: text }]}>Privacy</Text>
+                  </TouchableOpacity>
+                  <Text style={[styles.iapLinkSep, { color: sub }]}>·</Text>
+                  <TouchableOpacity
+                    onPress={() => void openLegalDocumentExternally('community-guidelines')}
+                    accessibilityRole="link"
+                    accessibilityLabel="Community Guidelines"
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={[styles.iapLinkText, { color: text }]}>Community</Text>
                   </TouchableOpacity>
                 </View>
 
@@ -384,7 +367,7 @@ export function PlanModal(props: {
             ) : null}
 
             {!isIosPaidSelected ? (
-              <View style={styles.iapLinkRow}>
+              <View style={[styles.iapLinkRow, styles.iapLegalLinks]}>
                 {Platform.OS === 'ios' && onRestorePurchases ? (
                   <TouchableOpacity
                     onPress={onRestorePurchases}
@@ -398,54 +381,38 @@ export function PlanModal(props: {
                     </Text>
                   </TouchableOpacity>
                 ) : null}
-                {Platform.OS === 'ios' && onRestorePurchases && (onOpenTerms || onOpenPrivacy) ? (
+                {Platform.OS === 'ios' && onRestorePurchases ? (
                   <Text style={[styles.iapLinkSep, { color: sub }]}>·</Text>
                 ) : null}
-                {onOpenTerms ? (
-                  <TouchableOpacity
-                    onPress={() => void openLegal('terms-of-service', onOpenTerms)}
-                    accessibilityRole="link"
-                    accessibilityLabel="Terms of Service"
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Text style={[styles.iapLinkText, { color: sub }]}>Terms</Text>
-                  </TouchableOpacity>
-                ) : null}
-                {onOpenTerms && onOpenPrivacy ? (
-                  <Text style={[styles.iapLinkSep, { color: sub }]}>·</Text>
-                ) : null}
-                {onOpenPrivacy ? (
-                  <TouchableOpacity
-                    onPress={() => void openLegal('privacy-policy', onOpenPrivacy)}
-                    accessibilityRole="link"
-                    accessibilityLabel="Privacy Policy"
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Text style={[styles.iapLinkText, { color: sub }]}>Privacy</Text>
-                  </TouchableOpacity>
-                ) : null}
+                <TouchableOpacity
+                  onPress={() => void openLegalDocumentExternally('terms-of-service')}
+                  accessibilityRole="link"
+                  accessibilityLabel="Terms of Service"
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={[styles.iapLinkText, { color: sub }]}>Terms</Text>
+                </TouchableOpacity>
+                <Text style={[styles.iapLinkSep, { color: sub }]}>·</Text>
+                <TouchableOpacity
+                  onPress={() => void openLegalDocumentExternally('privacy-policy')}
+                  accessibilityRole="link"
+                  accessibilityLabel="Privacy Policy"
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={[styles.iapLinkText, { color: sub }]}>Privacy</Text>
+                </TouchableOpacity>
+                <Text style={[styles.iapLinkSep, { color: sub }]}>·</Text>
+                <TouchableOpacity
+                  onPress={() => void openLegalDocumentExternally('community-guidelines')}
+                  accessibilityRole="link"
+                  accessibilityLabel="Community Guidelines"
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={[styles.iapLinkText, { color: sub }]}>Community</Text>
+                </TouchableOpacity>
               </View>
             ) : null}
           </View>
-          <Modal visible={!!legalModal || !!legalLoading} transparent animationType="fade" onRequestClose={() => setLegalModal(null)}>
-            <View style={styles.legalOverlay}>
-              <View style={[styles.legalCard, { backgroundColor: cardBg }]}>
-                <View style={styles.legalHeader}>
-                  <Text style={[styles.legalTitle, { color: text }]}>
-                    {legalModal?.title || (legalLoading === 'privacy-policy' ? 'Privacy Policy' : 'Terms of Service')}
-                  </Text>
-                  <TouchableOpacity onPress={() => setLegalModal(null)} accessibilityRole="button" accessibilityLabel="Close legal document">
-                    <Ionicons name="close" size={20} color={sub} />
-                  </TouchableOpacity>
-                </View>
-                <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator>
-                  <Text style={[styles.legalBody, { color: sub }]}>
-                    {legalModal?.body || 'Loading...'}
-                  </Text>
-                </ScrollView>
-              </View>
-            </View>
-          </Modal>
         </View>
       </TouchableOpacity>
     </Modal>
@@ -490,17 +457,13 @@ const styles = StyleSheet.create({
   iapSubscriptionMeta: { fontSize: 13, textAlign: 'center', fontWeight: '600', marginBottom: 4 },
   iapSubscriptionPrice: { fontSize: 18, fontWeight: '900', textAlign: 'center' },
   /** Apple-mandated auto-renewal disclosure copy (full). */
-  iapDisclosureLong: { fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: 4, paddingHorizontal: 2 },
+  iapDisclosureLong: { fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: 4, paddingHorizontal: 14 },
   /** @deprecated shorter copy — prefer iapDisclosureLong on iOS paid tier. */
   iapDisclosure: { fontSize: 11, lineHeight: 15, textAlign: 'center', marginTop: 10, paddingHorizontal: 4 },
   iapLinkRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' },
+  iapLegalLinks: { paddingHorizontal: 12, alignSelf: 'stretch' },
   iapLinkText: { fontSize: 12, fontWeight: '700', textDecorationLine: 'underline' },
   iapLinkSep: { fontSize: 12 },
-  legalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: 20 },
-  legalCard: { width: '100%', maxHeight: '72%', borderRadius: 20, padding: 16 },
-  legalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 },
-  legalTitle: { flex: 1, fontSize: 18, fontWeight: '900' },
-  legalBody: { fontSize: 13, lineHeight: 20 },
   upgradeBtn: { backgroundColor: '#3B82F6', borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 12 },
   upgradeBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   modalInput: { borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, marginBottom: 12 },

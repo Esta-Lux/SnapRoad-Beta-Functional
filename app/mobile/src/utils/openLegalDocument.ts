@@ -19,7 +19,7 @@ import {
  *
  * URL is derived from the configured API base host: replace `api.` with
  * `app.` so `https://api.snaproad.app` → `https://app.snaproad.app/terms`.
- * Falls back to `https://snaproad.app/<slug>` when the host can't be
+ * Falls back to DEFAULT_LEGAL_WEBSITE_BASE when the host can't be
  * confidently transformed (see `transformApiUrlToWebsiteBase` in
  * `./legalUrls.ts`).
  */
@@ -56,10 +56,12 @@ export async function openLegalDocumentExternally(slug: LegalDocSlug): Promise<v
     try {
       await Linking.openURL(url);
     } catch {
-      Alert.alert(
-        slug === 'terms-of-service' ? 'Terms of Service' : 'Privacy Policy',
-        `Could not open ${url}. Please try again later.`,
-      );
+      const titles: Record<LegalDocSlug, string> = {
+        'terms-of-service': 'Terms of Service',
+        'privacy-policy': 'Privacy Policy',
+        'community-guidelines': 'Community Guidelines',
+      };
+      Alert.alert(titles[slug], `Could not open ${url}. Please try again later.`);
       console.warn('[Legal] open failed', e);
     }
   }

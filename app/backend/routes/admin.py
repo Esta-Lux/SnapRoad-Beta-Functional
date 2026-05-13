@@ -1603,8 +1603,8 @@ def grant_promotions(body: GrantPromotionBody, admin: AdminUser):
 def get_admin_pricing():
     settings = sb_get_settings()
     pricing = settings.get("pricing", {
-        "founders_price": 4.99,
-        "public_price": 9.99,
+        "founders_price": 7.99,
+        "public_price": 7.99,
         "is_founders_active": True,
     })
     return {"success": True, "data": pricing}
