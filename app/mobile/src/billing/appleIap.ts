@@ -17,6 +17,123 @@ import { buildConfiguredSkuSet, pickPurchasesToRestore } from './appleIapSkus';
 
 export { buildConfiguredSkuSet, pickPurchasesToRestore };
 
+/** StoreKit-backed strings for App Store subscription disclosure (Guideline 3.1.2). */
+export type AppleSubscriptionPaywallLine = {
+  displayPrice: string | null;
+  periodLabel: string | null;
+};
+
+function productIdFromStoreRow(p: unknown): string {
+  const o = p as { id?: unknown; productId?: unknown };
+  return String(o.id ?? o.productId ?? '').trim();
+}
+
+function displayPriceFromStoreRow(p: unknown): string | null {
+  const o = p as {
+    displayPrice?: unknown;
+    localizedPrice?: unknown;
+    priceString?: unknown;
+  };
+  const raw = o.displayPrice ?? o.localizedPrice ?? o.priceString;
+  const s = typeof raw === 'string' ? raw.trim() : '';
+  return s || null;
+}
+
+function labelFromPeriodUnit(unitRaw: string, numberRaw: unknown): string | null {
+  const unit = unitRaw.trim().toLowerCase();
+  const n = Math.max(1, Math.floor(Number(numberRaw) || 1));
+  if (!unit) return null;
+  if (unit === 'day' && n === 1) return 'Daily';
+  if (unit === 'day' && n === 7) return 'Weekly';
+  if (unit === 'week' && n === 1) return 'Weekly';
+  if (unit === 'month' && n === 1) return 'Monthly';
+  if (unit === 'month' && n === 3) return 'Every 3 months';
+  if (unit === 'month' && n === 6) return 'Every 6 months';
+  if (unit === 'year' && n === 1) return 'Yearly';
+  if (n === 1) return `${unit.charAt(0).toUpperCase()}${unit.slice(1)}`;
+  return `Every ${n} ${unit}s`;
+}
+
+function iso8601DurationToLabel(iso: string): string | null {
+  const s = iso.trim().toUpperCase();
+  const inner = s.startsWith('P') ? s.slice(1) : s;
+  const y = /(\d+)Y/i.exec(inner)?.[1];
+  const mo = /(\d+)M/i.exec(inner)?.[1];
+  const w = /(\d+)W/i.exec(inner)?.[1];
+  const d = /(\d+)D/i.exec(inner)?.[1];
+  if (y && !mo && !w && !d) return Number(y) === 1 ? 'Yearly' : `Every ${y} years`;
+  if (mo && !y && !w && !d) return Number(mo) === 1 ? 'Monthly' : `Every ${mo} months`;
+  if (w && !y && !mo && !d) return Number(w) === 1 ? 'Weekly' : `Every ${w} weeks`;
+  if (d && !y && !mo && !w) return Number(d) === 1 ? 'Daily' : `Every ${d} days`;
+  return null;
+}
+
+function subscriptionPeriodLabelFromStoreRow(p: unknown): string | null {
+  const o = p as Record<string, unknown>;
+  const unit = String(
+    o.subscriptionPeriodUnitIOS ?? o.subscriptionPeriodUnit ?? '',
+  ).trim();
+  const num = o.subscriptionPeriodNumberIOS ?? o.subscriptionPeriodNumber;
+  if (unit) {
+    return labelFromPeriodUnit(unit, num);
+  }
+  const sub = o.subscription as Record<string, unknown> | undefined;
+  const iso = sub?.subscriptionPeriod;
+  if (typeof iso === 'string' && iso.trim()) {
+    return iso8601DurationToLabel(iso);
+  }
+  const iosSub = o.subscriptionInfoIOS as Record<string, unknown> | undefined;
+  const iso2 = iosSub?.subscriptionPeriod;
+  if (typeof iso2 === 'string' && iso2.trim()) {
+    return iso8601DurationToLabel(iso2);
+  }
+  return null;
+}
+
+function storeRowToPaywallLine(row: unknown): AppleSubscriptionPaywallLine {
+  return {
+    displayPrice: displayPriceFromStoreRow(row),
+    periodLabel: subscriptionPeriodLabelFromStoreRow(row),
+  };
+}
+
+/**
+ * Fetches localized subscription price and period from the App Store for paywall copy.
+ * Safe to call on every modal open; returns null entries when StoreKit is unavailable.
+ */
+export async function fetchAppleSubscriptionPaywallLines(): Promise<{
+  premium: AppleSubscriptionPaywallLine | null;
+  family: AppleSubscriptionPaywallLine | null;
+}> {
+  if (Platform.OS !== 'ios') {
+    return { premium: null, family: null };
+  }
+
+  const extra = Constants.expoConfig?.extra as
+    | { appleIapPremiumProductId?: string; appleIapFamilyProductId?: string }
+    | undefined;
+  const premiumSku = extra?.appleIapPremiumProductId?.trim();
+  const familySku = extra?.appleIapFamilyProductId?.trim();
+  const skus = [premiumSku, familySku].filter(Boolean) as string[];
+  if (skus.length === 0) {
+    return { premium: null, family: null };
+  }
+
+  try {
+    await bootstrapAppleIap();
+    const products = await fetchProducts({ skus, type: 'subs' });
+    const list = Array.isArray(products) ? products : [];
+    const find = (sku: string | undefined): AppleSubscriptionPaywallLine | null => {
+      if (!sku) return null;
+      const row = list.find((item) => productIdFromStoreRow(item) === sku);
+      return row ? storeRowToPaywallLine(row) : null;
+    };
+    return { premium: find(premiumSku), family: find(familySku) };
+  } catch {
+    return { premium: null, family: null };
+  }
+}
+
 let bootstrapped = false;
 let purchaseSub: { remove: () => void } | null = null;
 let errorSub: { remove: () => void } | null = null;

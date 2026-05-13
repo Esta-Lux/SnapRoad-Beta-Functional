@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Linking, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import SheetModal from '../common/Modal';
@@ -8,6 +8,11 @@ import { fetchPublicLegalDocument } from '../../api/legalDocuments';
 import type { PublicLegalSlug } from '../../api/dto/legal';
 import type { PlanTier } from '../../types';
 import { FAMILY_MODE_LAUNCH_ENABLED } from '../../config/launchFlags';
+import type { AppleSubscriptionPaywallLine } from '../../billing/appleIap';
+
+/** Required subscription legal URLs (App Store Review 3.1.2). */
+const SNAPROAD_TERMS_URL = 'https://snaproad.app/terms';
+const SNAPROAD_PRIVACY_URL = 'https://snaproad.app/privacy';
 export function LevelProgressModal({
   visible,
   onClose,
@@ -114,6 +119,11 @@ export function PlanModal(props: {
   onOpenPrivacy?: () => void;
   /** True while a restore is in flight so the link can show a spinner state. */
   restoreInFlight?: boolean;
+  /** Localized App Store subscription metadata for iOS paywall (price + period). */
+  iosSubscriptionStoreLines?: {
+    premium: AppleSubscriptionPaywallLine | null;
+    family: AppleSubscriptionPaywallLine | null;
+  } | null;
 }) {
   const {
     visible,
@@ -128,6 +138,7 @@ export function PlanModal(props: {
     onOpenTerms,
     onOpenPrivacy,
     restoreInFlight,
+    iosSubscriptionStoreLines,
   } = props;
   const [selected, setSelected] = useState<PlanTier | null>(null);
   const [legalModal, setLegalModal] = useState<{ title: string; body: string } | null>(null);
@@ -253,13 +264,107 @@ export function PlanModal(props: {
           </ScrollView>
 
           <View style={{ paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)' }}>
+            {isIosPaidSelected ? (
+              <>
+                <View
+                  style={[
+                    styles.iapSubscriptionCard,
+                    {
+                      borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)',
+                      backgroundColor: isLight ? 'rgba(255,149,0,0.06)' : 'rgba(255,149,0,0.1)',
+                    },
+                  ]}
+                >
+                  <Text style={[styles.iapSubscriptionTitle, { color: text }]}>
+                    {selected === 'family' ? 'SnapRoad Family' : 'SnapRoad Premium'}
+                  </Text>
+                  {(() => {
+                    const tier = selected === 'family' ? 'family' : 'premium';
+                    const line =
+                      tier === 'family'
+                        ? iosSubscriptionStoreLines?.family
+                        : iosSubscriptionStoreLines?.premium;
+                    const catalog = PLANS[tier];
+                    const period = line?.periodLabel ?? null;
+                    const storePrice = line?.displayPrice ?? null;
+                    const fallbackPrice =
+                      catalog?.price && catalog.price !== 'Free' ? catalog.price : null;
+                    const priceLabel = storePrice ?? fallbackPrice;
+                    return (
+                      <>
+                        <Text style={[styles.iapSubscriptionMeta, { color: sub }]}>
+                          {period ? `Length: ${period}` : 'Auto-renewing subscription'}
+                        </Text>
+                        {priceLabel ? (
+                          <Text style={[styles.iapSubscriptionPrice, { color: text }]}>
+                            {storePrice ? `Price: ${storePrice}` : `Price: ${priceLabel}`}
+                          </Text>
+                        ) : null}
+                      </>
+                    );
+                  })()}
+                </View>
+
+                <Text style={[styles.iapDisclosureLong, { color: sub }]}>
+                  Subscription automatically renews unless canceled at least 24 hours before the end of the current
+                  period. Your Apple ID account will be charged for renewal within 24 hours before the end of the
+                  current period. You can manage or cancel your subscription in Apple ID subscription settings.
+                </Text>
+
+                <View style={[styles.iapLinkRow, { marginTop: 6 }]}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      void Linking.openURL(SNAPROAD_TERMS_URL);
+                    }}
+                    accessibilityRole="link"
+                    accessibilityLabel="Terms of Service"
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={[styles.iapLinkText, { color: text }]}>Terms of Service</Text>
+                  </TouchableOpacity>
+                  <Text style={[styles.iapLinkSep, { color: sub }]}>·</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      void Linking.openURL(SNAPROAD_PRIVACY_URL);
+                    }}
+                    accessibilityRole="link"
+                    accessibilityLabel="Privacy Policy"
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={[styles.iapLinkText, { color: text }]}>Privacy Policy</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {Platform.OS === 'ios' && onRestorePurchases ? (
+                  <TouchableOpacity
+                    style={{ alignSelf: 'center', marginTop: 8 }}
+                    onPress={onRestorePurchases}
+                    disabled={!!restoreInFlight}
+                    accessibilityRole="button"
+                    accessibilityLabel="Restore purchases"
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={[styles.iapLinkText, { color: sub, opacity: restoreInFlight ? 0.5 : 1 }]}>
+                      {restoreInFlight ? 'Restoring…' : 'Restore Purchases'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </>
+            ) : null}
+
             <TouchableOpacity
               activeOpacity={selected ? 0.8 : 1}
               onPress={handleContinue}
               disabled={!selected}
-              style={{ opacity: selected ? 1 : 0.4 }}
+              style={{ opacity: selected ? 1 : 0.4, marginTop: isIosPaidSelected ? 12 : 0 }}
               accessibilityRole="button"
-              accessibilityLabel={selected === 'premium' ? 'Continue with Premium' : 'Continue with selected plan'}
+              accessibilityLabel={
+                selected === 'premium'
+                  ? 'Continue with Premium'
+                  : selected === 'family'
+                    ? 'Continue with Family'
+                    : 'Continue with selected plan'
+              }
             >
               <LinearGradient
                 colors={selected === 'premium' ? ['#FF9500', '#FF6B00'] : ['#007AFF', '#0055CC']}
@@ -274,64 +379,53 @@ export function PlanModal(props: {
               </LinearGradient>
             </TouchableOpacity>
 
-            {/* Apple-mandated auto-renewal disclosure within ~50px of the
-                purchase CTA. Shown for paid iOS tiers only (Basic = no
-                purchase, web/Android use Stripe + Play Store boilerplate). */}
-            {isIosPaidSelected ? (
-              <Text style={[styles.iapDisclosure, { color: sub }]}
-                accessibilityLabel="Auto-renewal disclosure"
-              >
-                Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless auto-renew is turned off at least 24 hours before the end of the current period. You can manage subscriptions in Settings.
-              </Text>
-            ) : (
+            {!isIosPaidSelected ? (
               <Text style={{ color: sub, fontSize: 11, textAlign: 'center', marginTop: 8 }}>No contracts · Cancel anytime</Text>
-            )}
+            ) : null}
 
-            {/* Required Apple links: Restore Purchases + Terms + Privacy.
-                Always visible on iOS so reviewers find them on the paywall;
-                shown on Android/web too because pointing users at the
-                published policies is universally good practice. */}
-            <View style={styles.iapLinkRow}>
-              {Platform.OS === 'ios' && onRestorePurchases ? (
-                <TouchableOpacity
-                  onPress={onRestorePurchases}
-                  disabled={!!restoreInFlight}
-                  accessibilityRole="button"
-                  accessibilityLabel="Restore purchases"
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Text style={[styles.iapLinkText, { color: sub, opacity: restoreInFlight ? 0.5 : 1 }]}>
-                    {restoreInFlight ? 'Restoring…' : 'Restore Purchases'}
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
-              {Platform.OS === 'ios' && onRestorePurchases && (onOpenTerms || onOpenPrivacy) ? (
-                <Text style={[styles.iapLinkSep, { color: sub }]}>·</Text>
-              ) : null}
-              {onOpenTerms ? (
-                <TouchableOpacity
-                  onPress={() => void openLegal('terms-of-service', onOpenTerms)}
-                  accessibilityRole="link"
-                  accessibilityLabel="Terms of Service"
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Text style={[styles.iapLinkText, { color: sub }]}>Terms</Text>
-                </TouchableOpacity>
-              ) : null}
-              {onOpenTerms && onOpenPrivacy ? (
-                <Text style={[styles.iapLinkSep, { color: sub }]}>·</Text>
-              ) : null}
-              {onOpenPrivacy ? (
-                <TouchableOpacity
-                  onPress={() => void openLegal('privacy-policy', onOpenPrivacy)}
-                  accessibilityRole="link"
-                  accessibilityLabel="Privacy Policy"
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Text style={[styles.iapLinkText, { color: sub }]}>Privacy</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
+            {!isIosPaidSelected ? (
+              <View style={styles.iapLinkRow}>
+                {Platform.OS === 'ios' && onRestorePurchases ? (
+                  <TouchableOpacity
+                    onPress={onRestorePurchases}
+                    disabled={!!restoreInFlight}
+                    accessibilityRole="button"
+                    accessibilityLabel="Restore purchases"
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={[styles.iapLinkText, { color: sub, opacity: restoreInFlight ? 0.5 : 1 }]}>
+                      {restoreInFlight ? 'Restoring…' : 'Restore Purchases'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+                {Platform.OS === 'ios' && onRestorePurchases && (onOpenTerms || onOpenPrivacy) ? (
+                  <Text style={[styles.iapLinkSep, { color: sub }]}>·</Text>
+                ) : null}
+                {onOpenTerms ? (
+                  <TouchableOpacity
+                    onPress={() => void openLegal('terms-of-service', onOpenTerms)}
+                    accessibilityRole="link"
+                    accessibilityLabel="Terms of Service"
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={[styles.iapLinkText, { color: sub }]}>Terms</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {onOpenTerms && onOpenPrivacy ? (
+                  <Text style={[styles.iapLinkSep, { color: sub }]}>·</Text>
+                ) : null}
+                {onOpenPrivacy ? (
+                  <TouchableOpacity
+                    onPress={() => void openLegal('privacy-policy', onOpenPrivacy)}
+                    accessibilityRole="link"
+                    accessibilityLabel="Privacy Policy"
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={[styles.iapLinkText, { color: sub }]}>Privacy</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            ) : null}
           </View>
           <Modal visible={!!legalModal || !!legalLoading} transparent animationType="fade" onRequestClose={() => setLegalModal(null)}>
             <View style={styles.legalOverlay}>
@@ -385,7 +479,19 @@ const styles = StyleSheet.create({
   radioCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: 'rgba(128,128,128,0.3)', alignItems: 'center' as const, justifyContent: 'center' as const },
   planContinueBtn: { borderRadius: 16, paddingVertical: 16, flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'center' as const, gap: 6 },
   planContinueBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
-  /** Apple-mandated auto-renewal disclosure copy. Sits within 50px of the CTA. */
+  /** App Store subscription summary card (3.1.2). */
+  iapSubscriptionCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 10,
+  },
+  iapSubscriptionTitle: { fontSize: 17, fontWeight: '900', textAlign: 'center', marginBottom: 6 },
+  iapSubscriptionMeta: { fontSize: 13, textAlign: 'center', fontWeight: '600', marginBottom: 4 },
+  iapSubscriptionPrice: { fontSize: 18, fontWeight: '900', textAlign: 'center' },
+  /** Apple-mandated auto-renewal disclosure copy (full). */
+  iapDisclosureLong: { fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: 4, paddingHorizontal: 2 },
+  /** @deprecated shorter copy — prefer iapDisclosureLong on iOS paid tier. */
   iapDisclosure: { fontSize: 11, lineHeight: 15, textAlign: 'center', marginTop: 10, paddingHorizontal: 4 },
   iapLinkRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' },
   iapLinkText: { fontSize: 12, fontWeight: '700', textDecorationLine: 'underline' },

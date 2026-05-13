@@ -815,9 +815,7 @@ export default function App() {
           <ThemeProvider>
             <AuthProvider>
               <NavigatingProvider>
-                {/* Pre-prompt rationale modal for the system location dialog
-                    (Apple/Google compliance). Mounted near the root so any
-                    screen or background hook can present it imperatively. */}
+                {/* Pre-prompt for system location (App Store 5.1.1(iv): Continue only, then native sheet). */}
                 <LocationPermissionRationaleProvider>
                   <RootNavigator />
                 </LocationPermissionRationaleProvider>

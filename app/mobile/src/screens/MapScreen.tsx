@@ -15,6 +15,7 @@ import {
   Dimensions,
   AppState,
   InteractionManager,
+  Linking,
 } from 'react-native';
 import Animated, {
   FadeIn, FadeOut, SlideInDown, SlideOutDown,
@@ -4762,8 +4763,27 @@ export default function MapScreen() {
       <View style={[s.center, { backgroundColor: colors.background }]}>
         <Ionicons name="location-outline" size={48} color={colors.textTertiary} />
         <Text style={{ color: colors.text, fontSize: 16, textAlign: 'center', paddingHorizontal: 32, marginTop: 16 }}>
-          Location permission is required.{'\n'}Enable it in your device settings.
+          SnapRoad uses your location for navigation, road awareness, driving insights, and location sharing when
+          enabled.{'\n\n'}
+          Location was denied or restricted. You can enable it in Settings when you are ready.
         </Text>
+        <TouchableOpacity
+          style={{
+            marginTop: 24,
+            paddingVertical: 14,
+            paddingHorizontal: 28,
+            borderRadius: 14,
+            backgroundColor: colors.primary,
+          }}
+          onPress={() => {
+            void Linking.openSettings();
+          }}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Open Settings"
+        >
+          <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Open Settings</Text>
+        </TouchableOpacity>
       </View>
     );
   }

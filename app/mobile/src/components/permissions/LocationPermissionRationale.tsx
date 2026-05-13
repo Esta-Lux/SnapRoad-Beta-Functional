@@ -8,21 +8,20 @@ import { storage } from '../../utils/storage';
 /**
  * Pre-prompt rationale for the iOS / Android system location dialog.
  *
- * Apple and Google both recommend (and Apple's review guidelines effectively
- * require) that an app explains *why* it needs location **before** the system
- * permission sheet appears. We can't customise the system sheet itself, so we
- * present this lightweight modal and only call
- * `Location.requestForegroundPermissionsAsync()` after the user taps Continue.
+ * Apple App Store Review Guideline 5.1.1(iv): a custom screen shown *before* the
+ * system location alert must not offer dismiss / “Not now” / close actions that
+ * delay the native permission request. Only a primary action (Continue) may
+ * advance to `requestForegroundPermissionsAsync` / `requestBackgroundPermissionsAsync`.
  *
- * The presentation API is intentionally imperative because the call sites
- * that need it live deep in non-React modules (`hooks/useLocation`,
- * `location/friendLiveShareBackgroundTask`). The provider component
- * registers itself on mount via `__registerLocationRationaleHost`; the
- * helper functions below resolve to a Promise the caller can await.
+ * After the user has denied at the OS level, callers may show settings nudges
+ * or other UX elsewhere — not here.
  *
- * Persistence: once the modal has been *shown and acknowledged* for a given
- * permission kind, we don't show it again on subsequent calls — repeatedly
- * pre-prompting the same user is annoying. The flags are stored in MMKV.
+ * The presentation API is imperative because call sites live in `useLocation`
+ * and `friendLiveShareBackgroundTask`. The provider registers via
+ * `__registerLocationRationaleHost`.
+ *
+ * Persistence: after the user taps Continue once per kind, we skip this sheet on
+ * later calls (MMKV). `cancel` is only used for host races, not a user-facing exit.
  */
 
 export type LocationRationaleKind = 'foreground' | 'background';
@@ -30,8 +29,9 @@ export type LocationRationaleKind = 'foreground' | 'background';
 export type LocationRationaleResult = 'continue' | 'cancel';
 
 const STORAGE_KEYS: Record<LocationRationaleKind, string> = {
-  foreground: 'snaproad_loc_rationale_fg_v1',
-  background: 'snaproad_loc_rationale_bg_v1',
+  /** v2: compliant pre-prompt (no dismiss before system sheet). */
+  foreground: 'snaproad_loc_rationale_fg_v2',
+  background: 'snaproad_loc_rationale_bg_v2',
 };
 
 type Host = {
@@ -46,9 +46,9 @@ export function __registerLocationRationaleHost(host: Host | null): void {
 }
 
 /**
- * Imperatively present the rationale. Resolves once the user taps Continue
- * or Cancel — or `'continue'` immediately if no provider is mounted (so we
- * never block a non-iOS/non-Android build that doesn't need this UX).
+ * Imperatively present the rationale. Resolves with `'continue'` when the user
+ * taps Continue, or `'cancel'` only if the host is missing or a new rationale
+ * replaces an in-flight one (never from a user-facing dismiss button).
  */
 export function presentLocationRationale(
   kind: LocationRationaleKind,
@@ -61,12 +61,10 @@ export function presentLocationRationale(
 
 /**
  * Drop-in replacement for `Location.requestForegroundPermissionsAsync()` that
- * shows the rationale modal first (once per device) before the system sheet.
+ * shows the rationale modal first (once per device, after Continue) before the system sheet.
  *
- * Returns the same shape as the original API so call sites need only swap
- * the function name. If the user cancels the rationale, we synthesise a
- * `denied` response WITHOUT calling the system API — that way the OS-level
- * permission state is preserved and the user can be re-prompted later.
+ * If the rationale host resolves `'cancel'` (race only), we do not persist the
+ * “shown” flag and we do not call the system API, preserving the prior OS state.
  */
 export async function requestForegroundLocationWithRationale(): Promise<Location.LocationPermissionResponse> {
   if (Platform.OS === 'web') return Location.requestForegroundPermissionsAsync();
@@ -77,10 +75,10 @@ export async function requestForegroundLocationWithRationale(): Promise<Location
   const alreadyShown = !!storage.getString(STORAGE_KEYS.foreground);
   if (!alreadyShown) {
     const choice = await presentLocationRationale('foreground');
-    storage.set(STORAGE_KEYS.foreground, new Date().toISOString());
     if (choice === 'cancel') {
       return existing;
     }
+    storage.set(STORAGE_KEYS.foreground, new Date().toISOString());
   }
   return Location.requestForegroundPermissionsAsync();
 }
@@ -99,8 +97,8 @@ export async function requestBackgroundLocationWithRationale(): Promise<Location
   const alreadyShown = !!storage.getString(STORAGE_KEYS.background);
   if (!alreadyShown) {
     const choice = await presentLocationRationale('background');
-    storage.set(STORAGE_KEYS.background, new Date().toISOString());
     if (choice === 'cancel') return existing;
+    storage.set(STORAGE_KEYS.background, new Date().toISOString());
   }
   try {
     return await Location.requestBackgroundPermissionsAsync();
@@ -123,20 +121,19 @@ export function __resetLocationRationaleStateForTests(kind?: LocationRationaleKi
 
 type PendingResolve = (result: LocationRationaleResult) => void;
 
+const LOCATION_USE_COPY =
+  'SnapRoad uses your location for navigation, road awareness, driving insights, and location sharing when enabled.';
+
 const FOREGROUND_COPY = {
-  title: 'Allow location to navigate',
-  body:
-    'SnapRoad needs access to your precise location to provide turn-by-turn navigation, calculate ETAs, and snap your position to the road network. Your location is only used during active navigation and is never sold to third parties.',
+  title: 'Location access',
+  body: LOCATION_USE_COPY,
   primaryCta: 'Continue',
-  secondaryCta: "Not now",
 };
 
 const BACKGROUND_COPY = {
-  title: 'Keep guiding when the screen is off',
-  body:
-    'For turn-by-turn directions to keep working when SnapRoad is in the background or your phone is locked, allow "Always" location access. We only collect background location during active navigation, never when you\'re not driving.',
+  title: 'Location in the background',
+  body: `${LOCATION_USE_COPY} If the system asks, choose Always so guidance can continue when the screen is off.`,
   primaryCta: 'Continue',
-  secondaryCta: 'Not now',
 };
 
 export default function LocationPermissionRationaleProvider({
@@ -184,7 +181,8 @@ export default function LocationPermissionRationaleProvider({
         visible={kind !== null}
         transparent
         animationType="fade"
-        onRequestClose={() => close('cancel')}
+        // Android back: must not dismiss without proceeding to the system prompt (5.1.1(iv)).
+        onRequestClose={() => close('continue')}
       >
         <View style={[styles.backdrop, { backgroundColor: 'rgba(0,0,0,0.55)' }]}>
           <View
@@ -221,17 +219,6 @@ export default function LocationPermissionRationaleProvider({
               accessibilityLabel={copy.primaryCta}
             >
               <Text style={styles.primaryBtnText}>{copy.primaryCta}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={() => close('cancel')}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel={copy.secondaryCta}
-            >
-              <Text style={[styles.secondaryBtnText, { color: colors.textSecondary }]}>
-                {copy.secondaryCta}
-              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -280,19 +267,10 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 14,
     alignItems: 'center',
-    marginBottom: 8,
   },
   primaryBtnText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '800',
-  },
-  secondaryBtn: {
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  secondaryBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
   },
 });

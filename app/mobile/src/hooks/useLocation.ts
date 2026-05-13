@@ -226,7 +226,7 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
   }, []);
 
   const startWatching = useCallback(async () => {
-    // Pre-prompt rationale (Apple/Google guidance) → then the system sheet.
+    // Pre-prompt (Guideline 5.1.1(iv) compliant) → native iOS/Android location sheet.
     const { status } = await requestForegroundLocationWithRationale();
     if (status !== 'granted') {
       setState((prev) => ({ ...prev, isLocating: false, permissionDenied: true }));

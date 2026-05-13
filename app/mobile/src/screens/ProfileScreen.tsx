@@ -53,7 +53,12 @@ import {
 } from '../components/profile/ProfileSections';
 import type { ProfileOverviewActionItem } from '../components/profile/types';
 import { ProfileStatsStrip, ProfileTabBar } from '../components/profile/ProfileScreenBlocks';
-import { restoreApplePurchases, startAppleSubscriptionPurchase } from '../billing/appleIap';
+import {
+  fetchAppleSubscriptionPaywallLines,
+  restoreApplePurchases,
+  startAppleSubscriptionPurchase,
+  type AppleSubscriptionPaywallLine,
+} from '../billing/appleIap';
 import { openLegalDocumentExternally } from '../utils/openLegalDocument';
 import { registerCommutePushToken } from '../utils/pushNotifications';
 import { mapProfileTripHistoryItem, recentTripsListFromPayload } from '../components/profile/tripHistoryMapping';
@@ -108,6 +113,10 @@ export default function ProfileScreen() {
   const [defaultMode, setDefaultMode] = useState<DrivingMode>('adaptive');
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [restoringPurchases, setRestoringPurchases] = useState(false);
+  const [iosSubscriptionStoreLines, setIosSubscriptionStoreLines] = useState<{
+    premium: AppleSubscriptionPaywallLine | null;
+    family: AppleSubscriptionPaywallLine | null;
+  } | null>(null);
   const [showAddPlace, setShowAddPlace] = useState(false);
   const [newPlaceName, setNewPlaceName] = useState('');
   const [newPlaceAddress, setNewPlaceAddress] = useState('');
@@ -129,9 +138,6 @@ export default function ProfileScreen() {
   const scrollRef = useRef<ScrollView | null>(null);
   const commuteSectionY = useRef(0);
 
-  const openPlanOptions = useCallback(() => {
-    setShowPlanModal(true);
-  }, []);
   const [weeklyRecap, setWeeklyRecap] = useState<ProfileWeeklyRecap>({
     totalTrips: 0,
     totalMiles: 0,
@@ -162,6 +168,26 @@ export default function ProfileScreen() {
     lastOdometerMi: null,
     milesSinceLastFill: null,
   });
+
+  const openPlanOptions = useCallback(() => {
+    setShowPlanModal(true);
+  }, []);
+
+  useEffect(() => {
+    if (!showPlanModal || Platform.OS !== 'ios') return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const lines = await fetchAppleSubscriptionPaywallLines();
+        if (!cancelled) setIosSubscriptionStoreLines(lines);
+      } catch {
+        if (!cancelled) setIosSubscriptionStoreLines({ premium: null, family: null });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showPlanModal]);
 
   const handleDeleteAccount = useCallback(async () => {
     setDeletingAccount(true);
@@ -1221,6 +1247,7 @@ export default function ProfileScreen() {
         onOpenTerms={handleOpenTerms}
         onOpenPrivacy={handleOpenPrivacy}
         restoreInFlight={restoringPurchases}
+        iosSubscriptionStoreLines={iosSubscriptionStoreLines}
       />
       <AddPlaceModal
         visible={showAddPlace}
