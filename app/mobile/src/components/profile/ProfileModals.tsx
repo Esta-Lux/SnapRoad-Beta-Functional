@@ -230,8 +230,8 @@ export function PlanModal(props: {
                   </View>
 
                   <View style={styles.planFeatureBlock}>
-                    {plan.features.slice(0, tier === 'premium' ? 4 : 3).map((f, i) => (
-                      <View key={i} style={styles.planFeatureRow}>
+                    {plan.features.map((f, i) => (
+                      <View key={`${tier}-${i}`} style={styles.planFeatureRow}>
                         <Ionicons
                           name={tier === 'premium' ? 'checkmark-circle' : 'checkmark'}
                           size={11}
@@ -455,7 +455,7 @@ const styles = StyleSheet.create({
   planFoundersText: { color: '#FF9500', fontSize: 10, fontWeight: '600' },
   planFeatureBlock: { marginTop: 8, gap: 3 },
   planFeatureRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  planFeatureText: { fontSize: 11, flex: 1 },
+  planFeatureText: { fontSize: 11, flex: 1, lineHeight: 14 },
   planCurrentBadge: { fontSize: 10, fontWeight: '800', marginTop: 6 },
   planFooterDivider: { paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth },
   planFooterCaption: { fontSize: 10, textAlign: 'center', marginTop: 6 },

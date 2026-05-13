@@ -235,9 +235,16 @@ export function PlanCard({
   return (
     <View style={[styles.card, { backgroundColor: cardBg }]}>
       <Text style={[styles.planName, { color: text }]}>{planName} - {planPrice}</Text>
-      {planFeatures.slice(0, 2).map((f, i) => (
-        <Text key={i} style={{ color: sub, fontSize: 11, marginTop: 2 }}>- {f}</Text>
+      {planFeatures.slice(0, 6).map((f, i) => (
+        <Text key={i} style={{ color: sub, fontSize: 11, marginTop: 2, lineHeight: 14 }} numberOfLines={3}>
+          - {f}
+        </Text>
       ))}
+      {planFeatures.length > 6 ? (
+        <Text style={{ color: sub, fontSize: 10, marginTop: 4, fontStyle: 'italic' }}>
+          +{planFeatures.length - 6} more — tap Compare plans below
+        </Text>
+      ) : null}
       {currentPlan === 'basic' && (
         <TouchableOpacity style={styles.upgradeBtn} onPress={onUpgrade}>
           <Text style={styles.upgradeBtnText}>Upgrade</Text>
@@ -263,9 +270,10 @@ export function PremiumUpsellCard({
       </LinearGradient>
       <View style={styles.upsellBody}>
         {[
-          'Detailed driving score breakdown',
-          'Personalized improvement tips',
-          'Voice coaching from Orion',
+          'Insights & Recap — mileage, trips, safety & weekly trends',
+          'Deeper discounts on local & partner offers (many save ~$100–150/mo)',
+          'Detailed driving score breakdown & improvement tips',
+          'Voice coaching & Premium stats from Orion',
           'Track progress over time',
         ].map((feature) => (
           <View key={feature} style={styles.upsellRow}>

@@ -25,15 +25,18 @@ export interface PlanConfig {
 
 const premiumFeatures: PlanConfig['features'] = [
   'Everything in Basic',
-  'Share location & track friends',
-  'Traffic cameras on map',
-  'Delay alerts (2 hr ahead)',
-  '20 saved routes',
-  'Advanced local offers',
-  '2x Gem multiplier',
-  'Smart commute analytics',
-  'Driving Score & insights',
-  'Orion voice assistant',
+  // Profile → Insights & Recap dashboard (weekly recap, trips, mileage, safety KPIs).
+  'Insights & Recap — mileage, trips, safety & weekly trends',
+  // Offers API applies premium_discount_percent for premium accounts (local + catalog / online feeds).
+  'Premium offer tiers — stacked local & online discounts (many members save ~$100–150/mo)',
+  'Live location sharing & friend tracking on the map',
+  'Traffic cameras & speed cameras while browsing the map',
+  'Commute-aware delay alerts — up to 2 hours ahead',
+  'Up to 20 saved routes',
+  // Rewards + profile expose 2× via gem_multiplier when plan is premium.
+  '2× Gem multiplier in Rewards',
+  'Orion — voice assistant with Premium driving insights & coaching',
+  'Driving Score breakdown & improvement tips',
   'Priority support',
 ];
 
