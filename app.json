@@ -4,12 +4,12 @@
     "slug": "beta-pulse",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/app-icon-cvt.png",
+    "icon": "./app/mobile/assets/brand-logo.png",
     "userInterfaceStyle": "automatic",
     "splash": {
-      "image": "./assets/images/app-icon-cvt.png",
+      "image": "./app/mobile/assets/brand-logo.png",
       "resizeMode": "contain",
-      "backgroundColor": "#000000"
+      "backgroundColor": "#0a0a0f"
     },
     "ios": {
       "supportsTablet": true,
@@ -20,13 +20,13 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/app-icon-cvt.png",
-        "backgroundColor": "#000000"
+        "foregroundImage": "./app/mobile/assets/brand-logo.png",
+        "backgroundColor": "#0a0a0f"
       },
       "package": "com.placeholder.app"
     },
     "web": {
-      "favicon": "./assets/images/final_quest_240x240.png",
+      "favicon": "./app/mobile/assets/brand-logo.png",
       "bundler": "metro"
     },
     "plugins": [

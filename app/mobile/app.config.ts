@@ -120,10 +120,11 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
     runtimeVersion: appPkg.version,
     updates: { url: `https://u.expo.dev/${EAS_PROJECT_ID}` },
     orientation: "portrait",
-    icon: "./assets/icon.png",
+    /** Same mark as in-app auth / welcome (`brand-logo.png`); do not swap for generic Expo placeholders. */
+    icon: "./assets/brand-logo.png",
     userInterfaceStyle: "automatic",
     splash: {
-      image: "./assets/splash-icon.png",
+      image: "./assets/brand-logo.png",
       resizeMode: "contain",
       backgroundColor: "#0a0a0f",
     },
@@ -178,9 +179,7 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
       softwareKeyboardLayoutMode: "resize",
       adaptiveIcon: {
         backgroundColor: "#0a0a0f",
-        foregroundImage: "./assets/android-icon-foreground.png",
-        backgroundImage: "./assets/android-icon-background.png",
-        monochromeImage: "./assets/android-icon-monochrome.png",
+        foregroundImage: "./assets/brand-logo.png",
       },
       permissions: [
         "ACCESS_FINE_LOCATION",
@@ -195,7 +194,7 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
       ...(_prod ? {} : { usesCleartextTraffic: true }),
     },
     web: {
-      favicon: "./assets/favicon.png",
+      favicon: "./assets/brand-logo.png",
     },
     plugins: [
       ...(_includeDevClient ? ["expo-dev-client"] : []),
@@ -230,7 +229,7 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
       [
         "expo-notifications",
         {
-          icon: "./assets/icon.png",
+          icon: "./assets/brand-logo.png",
           color: "#FF6B2B",
         },
       ],
