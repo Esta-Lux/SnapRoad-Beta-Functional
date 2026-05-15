@@ -1271,10 +1271,10 @@ export function useDriveNavigation(params: {
     stopSpeaking();
 
     /** Must match backend /api/trips/complete gates (distance + duration + real GPS movement). */
-    const MIN_QUALIFYING_MI = 0.15;
-    const MIN_QUALIFYING_SEC = 45;
-    /** ~200 m of real movement (GPS + route projection) — stops instant-end inflation */
-    const MIN_GPS_METERS = 200;
+    const MIN_QUALIFYING_MI = 0.10;
+    const MIN_QUALIFYING_SEC = 30;
+    /** ~160 m of real movement (GPS + route projection) — stops instant-end inflation */
+    const MIN_GPS_METERS = 160;
 
     const now = Date.now();
     const durationSec = tripStartTimeRef.current

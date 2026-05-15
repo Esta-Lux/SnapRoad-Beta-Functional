@@ -60,10 +60,10 @@ export interface NativeNavTripMetrics {
   endedAtIso: string;
 }
 
-/** Minimum qualifying drive — matches `useDriveNavigation` thresholds so gem/XP rules stay consistent. */
-export const NATIVE_NAV_MIN_QUALIFYING_MI = 0.15;
-export const NATIVE_NAV_MIN_QUALIFYING_SEC = 45;
-export const NATIVE_NAV_MIN_QUALIFYING_METERS = 200;
+/** Minimum qualifying drive — matches backend `/api/trips/complete` gates so gem/XP rules stay consistent. */
+export const NATIVE_NAV_MIN_QUALIFYING_MI = 0.10;
+export const NATIVE_NAV_MIN_QUALIFYING_SEC = 30;
+export const NATIVE_NAV_MIN_QUALIFYING_METERS = 160;
 
 /** Max time we'll wait for `/api/trips/complete` before falling back to the local summary. */
 export const NATIVE_NAV_TRIP_POST_TIMEOUT_MS = 2500;

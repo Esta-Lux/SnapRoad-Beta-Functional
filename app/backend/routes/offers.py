@@ -368,6 +368,7 @@ def _issue_post_redeem_qr(*, offer: dict, user_id: str, redemption_id: str) -> O
         claim_code = rid_clean[-8:].upper() if len(rid_clean) >= 8 else rid_clean.upper()
         return {
             "qr_token": token,
+            "qr_code_value": claim_code,
             "expires_at": expires_at.isoformat(),
             "claim_code": claim_code,
         }
@@ -543,6 +544,7 @@ def complete_offer_redemption(
                 # Keep response aligned with persisted wallet state without mutating balance from stale assumptions.
                 new_total = _next_gem_total(user_id)
             data_out = {
+                "redemption_type": str(offer.get("redemption_type") or "qr_code"),
                 "discount_percent": disc,
                 "gem_cost": gc,
                 "gems_earned": -gc,
@@ -555,6 +557,7 @@ def complete_offer_redemption(
                 "redemption_id": rid,
                 "estimated_savings_usd": estimated_savings,
                 "savings_source": "offer_estimate_v1",
+                "claim_url": offer.get("claim_url") or offer.get("offer_url") or offer.get("affiliate_url"),
             }
             if rid:
                 qr_payload = _issue_post_redeem_qr(offer=offer, user_id=user_id, redemption_id=rid)
@@ -712,6 +715,7 @@ def complete_offer_redemption(
         logger.debug("wallet ledger redeem skipped", exc_info=True)
 
     data_legacy = {
+        "redemption_type": str(offer.get("redemption_type") or "qr_code"),
         "discount_percent": discount,
         "gem_cost": gem_cost,
         "gems_earned": -gem_cost,
@@ -723,6 +727,7 @@ def complete_offer_redemption(
         "redemption_id": redemption_id,
         "estimated_savings_usd": estimated_savings,
         "savings_source": "offer_estimate_v1",
+        "claim_url": offer.get("claim_url") or offer.get("offer_url") or offer.get("affiliate_url"),
     }
     if redemption_id:
         qr_payload = _issue_post_redeem_qr(offer=offer, user_id=user_id, redemption_id=str(redemption_id))

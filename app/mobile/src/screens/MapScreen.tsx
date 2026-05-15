@@ -6223,8 +6223,8 @@ export default function MapScreen() {
             {activeTripSummary.counted === false && (
               <View style={{ backgroundColor: isLight ? 'rgba(245,158,11,0.12)' : 'rgba(245,158,11,0.15)', borderRadius: 12, padding: 12, marginBottom: 12 }}>
                 <Text style={{ color: isLight ? '#92400E' : '#FBBF24', fontSize: 13, fontWeight: '600', textAlign: 'center' }}>
-                  This drive didn’t meet the minimum to count for gems or trip history. You need about 0.15 miles on the route, at
-                  least 45 seconds of driving, and about 200 meters of real GPS movement. Try a slightly longer trip next time.
+                  This drive didn’t meet the minimum to count for gems or trip history. You need about 0.10 miles on the route, at
+                  least 30 seconds of driving, and about 160 meters of real GPS movement. Try a slightly longer trip next time.
                 </Text>
               </View>
             )}

@@ -125,6 +125,23 @@ test('parseRedeemOfferPayload parses important fields', () => {
   assert.equal(parsed.redemption_id, 'abc');
 });
 
+test('parseRedeemOfferPayload accepts QR and online redemption aliases', () => {
+  const parsed = parseRedeemOfferPayload({
+    data: {
+      redemption_type: 'online',
+      qr_code_value: 'SNAP-1234',
+      claim_url: 'https://partner.example/redeem',
+      expires_at: '2026-05-20T12:00:00Z',
+    },
+  });
+  assert.equal(parsed.redemption_type, 'online');
+  assert.equal(parsed.qr_token, 'SNAP-1234');
+  assert.equal(parsed.qr_code_value, 'SNAP-1234');
+  assert.equal(parsed.claim_code, 'SNAP-1234');
+  assert.equal(parsed.claim_url, 'https://partner.example/redeem');
+  assert.equal(parsed.expires_at, '2026-05-20T12:00:00Z');
+});
+
 test('parseProfilePatch maps numeric scalars', () => {
   const patch = parseProfilePatch({
     data: {

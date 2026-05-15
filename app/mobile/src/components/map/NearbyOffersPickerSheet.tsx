@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Platform,
   ScrollView,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +17,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import type { Offer } from '../../types';
 import { haversineMeters } from '../../utils/distance';
 import { displayOfferCategory, offerCategoryFilter, uniqueOfferCategoryFilters } from '../../lib/offerCategories';
+import { offerHeroUri } from '../../lib/offerHeroImage';
 
 type Props = {
   visible: boolean;
@@ -87,7 +89,7 @@ export default function NearbyOffersPickerSheet({
           <Text style={[styles.sub, { color: colors.textSecondary }]}>
             {sorted.length === 0
               ? 'No partner offers within about 20 miles — zoom closer or check back after you move.'
-              : `${sorted.length} partner ${sorted.length === 1 ? 'offer' : 'offers'} within ~20 miles — closest first. Tap a row for details.`}
+              : `${sorted.length} partner ${sorted.length === 1 ? 'offer' : 'offers'} within ~20 miles — closest first.`}
           </Text>
           {categoryFilters.length > 1 ? (
             <ScrollView
@@ -143,7 +145,10 @@ export default function NearbyOffersPickerSheet({
           <FlatList
             data={listData}
             keyExtractor={(item) => String(item.id)}
-            style={{ maxHeight: 360 }}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.cardTrack}
+            style={styles.offerRail}
             keyboardShouldPersistTaps="handled"
             ListEmptyComponent={
               listData.length === 0 && sorted.length > 0 ? (
@@ -157,39 +162,47 @@ export default function NearbyOffersPickerSheet({
               const mi = dM / 1609.34;
               const distLabel = mi < 0.1 ? '< 0.1 mi' : `${mi.toFixed(1)} mi`;
               const gemCost = Number(o.gem_cost ?? o.gems_reward ?? 0);
+              const heroUri = offerHeroUri(o);
               return (
                 <TouchableOpacity
-                  style={[styles.row, { borderColor: border, backgroundColor: colors.surfaceSecondary }]}
+                  style={[styles.offerCard, { borderColor: border, backgroundColor: colors.surfaceSecondary }]}
                   onPress={() => {
                     onSelectOffer(o);
                     onClose();
                   }}
                   activeOpacity={0.85}
                 >
-                  <View style={[styles.iconWrap, { borderColor: border, backgroundColor: cardBg }]}>
-                    <Ionicons name="pricetag-outline" size={20} color={colors.textSecondary} />
+                  <View style={[styles.heroWrap, { borderColor: border, backgroundColor: cardBg }]}>
+                    {heroUri ? (
+                      <Image source={{ uri: heroUri }} style={styles.heroImage} resizeMode="cover" />
+                    ) : (
+                      <View style={[styles.iconWrap, { backgroundColor: `${colors.primary}14` }]}>
+                        <Ionicons name="pricetag-outline" size={24} color={colors.primary} />
+                      </View>
+                    )}
+                    <View style={[styles.distancePill, { backgroundColor: isLight ? 'rgba(255,255,255,0.92)' : 'rgba(2,6,23,0.82)' }]}>
+                      <Ionicons name="location-outline" size={12} color={colors.textSecondary} />
+                      <Text style={[styles.distText, { color: colors.textSecondary }]}>{distLabel}</Text>
+                    </View>
                   </View>
-                  <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={styles.cardBody}>
+                    <View style={styles.metaRow}>
+                      <Text style={[styles.meta, { color: colors.primary }]} numberOfLines={1}>
+                        {displayOfferCategory(o)}
+                      </Text>
+                      {gemCost > 0 ? (
+                        <Text style={[styles.gemPill, { color: colors.textSecondary, backgroundColor: `${colors.textSecondary}10` }]}>
+                          {gemCost} gems
+                        </Text>
+                      ) : null}
+                    </View>
                     <Text style={[styles.biz, { color: colors.text }]} numberOfLines={1}>
                       {o.business_name || o.title || 'Partner offer'}
                     </Text>
-                    {o.title && o.title !== o.business_name ? (
-                      <Text style={[styles.headline, { color: colors.textSecondary }]} numberOfLines={2}>
-                        {o.title}
-                      </Text>
-                    ) : null}
-                    <View style={[styles.distLine, { borderTopColor: border }]}>
-                      <Ionicons name="location-outline" size={13} color={colors.textSecondary} />
-                      <Text style={[styles.distText, { color: colors.textSecondary }]}>{distLabel} away</Text>
-                    </View>
-                    <View style={styles.metaRow}>
-                      <Text style={[styles.meta, { color: colors.textSecondary }]}>{displayOfferCategory(o)}</Text>
-                      {gemCost > 0 ? (
-                        <Text style={[styles.meta, { color: colors.textSecondary }]}> · {gemCost} gems</Text>
-                      ) : null}
-                    </View>
+                    <Text style={[styles.headline, { color: colors.textSecondary }]} numberOfLines={2}>
+                      {o.title && o.title !== o.business_name ? o.title : o.description || 'Tap for redemption details'}
+                    </Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
                 </TouchableOpacity>
               );
             }}
@@ -210,7 +223,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderTopWidth: 1,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingTop: 6,
     ...Platform.select({
       ios: {
@@ -238,35 +251,50 @@ const styles = StyleSheet.create({
   },
   chipLabel: { fontSize: 13, fontWeight: '700', letterSpacing: -0.2 },
   emptyFilter: { fontSize: 13, fontWeight: '600', textAlign: 'center', paddingVertical: 20, lineHeight: 18 },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  offerRail: {
+    marginHorizontal: -14,
+  },
+  cardTrack: {
     gap: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingBottom: 2,
+  },
+  offerCard: {
+    width: 224,
+    borderRadius: 18,
     borderWidth: 1,
-    marginBottom: 10,
+    overflow: 'hidden',
+  },
+  heroWrap: {
+    height: 112,
+    borderBottomWidth: 1,
+    overflow: 'hidden',
+  },
+  heroImage: {
+    width: '100%',
+    height: '100%',
   },
   iconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
   },
-  biz: { fontSize: 15, fontWeight: '800' },
-  headline: { fontSize: 12, marginTop: 3, lineHeight: 16, fontWeight: '600' },
-  distLine: {
+  distancePill: {
+    position: 'absolute',
+    left: 10,
+    bottom: 10,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 4,
   },
-  distText: { fontSize: 12, fontWeight: '700', letterSpacing: -0.2 },
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 6, alignItems: 'center' },
-  meta: { fontSize: 11, fontWeight: '700' },
+  cardBody: { padding: 12, minHeight: 116 },
+  biz: { fontSize: 15, fontWeight: '800' },
+  headline: { fontSize: 12, marginTop: 3, lineHeight: 16, fontWeight: '600' },
+  distText: { fontSize: 11, fontWeight: '800', letterSpacing: -0.2 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 },
+  meta: { flex: 1, fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.3 },
+  gemPill: { overflow: 'hidden', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3, fontSize: 10, fontWeight: '900' },
 });

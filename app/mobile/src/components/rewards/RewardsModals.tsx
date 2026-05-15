@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, View, Text, ScrollView, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { Modal, View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import QRCode from 'react-native-qrcode-svg';
 import Skeleton from '../common/Skeleton';
 import type { Badge, Offer } from '../../types';
 import type { UserOfferRedemption } from './types';
@@ -12,13 +13,6 @@ import { offerHeroUri } from '../../lib/offerHeroImage';
 import { rewardsStyles } from './styles';
 import { badgeCategoryAccent, badgeIoniconsName } from '../../lib/badgeIcons';
 import { BadgeTileIcon } from './BadgeTileIcon';
-
-let QRCode: React.ComponentType<{ value: string; size: number; backgroundColor: string; color: string }> | null = null;
-try {
-  QRCode = require('react-native-qrcode-svg').default;
-} catch {
-  QRCode = null;
-}
 
 type ThemeProps = {
   bg: string;
@@ -105,7 +99,14 @@ export function OfferDetailModal({
   selectedOffer: Offer | null;
   redeemingOfferId: string | null;
   /** QR / claim code returned immediately after POST /offers/:id/redeem */
-  redeemExtras?: { qr_token?: string; claim_code?: string; expires_at?: string } | null;
+  redeemExtras?: {
+    redemption_type?: string;
+    qr_token?: string;
+    qr_code_value?: string;
+    claim_code?: string;
+    claim_url?: string;
+    expires_at?: string;
+  } | null;
   onClose: () => void;
   onRedeem: (offer: Offer) => void;
   primary: string;
@@ -155,6 +156,7 @@ export function OfferDetailModal({
   const titleLine = offer?.title?.trim() || offer?.description?.split(/[.!?]/)[0]?.trim() || `${offer?.discount_percent ?? 0}% off`;
   const mi = offer?.distance_km != null ? (Number(offer.distance_km) * 0.621371).toFixed(1) : null;
   const heroUri = offerHeroUri(offer ?? null);
+  const qrValue = redeemExtras?.qr_token || redeemExtras?.qr_code_value || redeemExtras?.claim_code;
 
   return (
     <Modal visible={!!selectedOffer} transparent animationType="slide" onRequestClose={onClose}>
@@ -262,19 +264,19 @@ export function OfferDetailModal({
                   </View>
                 </View>
 
-                {(redeemExtras?.qr_token || redeemExtras?.claim_code) ? (
+                {qrValue ? (
                   <View style={{ padding: 16, borderRadius: 16, borderWidth: 1, borderColor: `${sub}28`, backgroundColor: isLight ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.04)', alignItems: 'center', gap: 12 }}>
                     <Text style={{ color: text, fontWeight: '900', fontSize: 15 }}>Show at checkout</Text>
                     {redeemExtras?.claim_code ? (
                       <Text style={{ color: text, fontSize: 26, fontWeight: '900', letterSpacing: 3 }}>{redeemExtras.claim_code}</Text>
                     ) : null}
-                    {QRCode && redeemExtras?.qr_token ? (
+                    {QRCode && qrValue ? (
                       <View style={{ padding: 14, borderRadius: 18, backgroundColor: isLight ? '#fff' : 'rgba(255,255,255,0.07)' }}>
-                        <QRCode value={redeemExtras.qr_token} size={200} backgroundColor="transparent" color={text} />
+                        <QRCode value={qrValue} size={200} backgroundColor="transparent" color={text} />
                       </View>
-                    ) : redeemExtras?.qr_token ? (
+                    ) : qrValue ? (
                       <Text style={{ color: sub, fontSize: 11 }} selectable>
-                        {redeemExtras.qr_token}
+                        {qrValue}
                       </Text>
                     ) : null}
                     {redeemExtras?.expires_at ? (
@@ -286,6 +288,29 @@ export function OfferDetailModal({
                     Your redemption is on file. Open My redemptions for the full receipt, or ask staff to scan your code from there.
                   </Text>
                 )}
+
+                {redeemExtras?.claim_url ? (
+                  <TouchableOpacity
+                    onPress={() => {
+                      void Linking.openURL(redeemExtras.claim_url || '');
+                    }}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      paddingVertical: 14,
+                      borderRadius: 16,
+                      backgroundColor: `${success}18`,
+                      borderWidth: 1,
+                      borderColor: `${success}44`,
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="open-outline" size={20} color={success} />
+                    <Text style={{ color: success, fontWeight: '900', fontSize: 16 }}>Open online offer</Text>
+                  </TouchableOpacity>
+                ) : null}
 
                 {offer?.address ? (
                   <TouchableOpacity

@@ -35,6 +35,7 @@ import HighwayShieldBadge from './HighwayShieldBadge';
 const LANE_DEBOUNCE_MS = 300;
 /** Headless native updates each tick; only damp rapid JSON wobble, not step advances. */
 const LANE_FLICKER_SDK_MS = 90;
+const DESTINATION_STYLE_INSTRUCTION_RE = /^(toward|towards|destination)\b/i;
 
 /**
  * React wrapper over `resolveStableText` — prevents single-frame flips when
@@ -203,9 +204,13 @@ export default React.memo(function TurnInstructionCard({
     if (navSdkDrivesContent) {
       return (fromParent || '').replace(/\s+/g, ' ').trim();
     }
-    const raw = fromParent
-      ? fromParent
-      : step?.bannerInstructions?.[0]?.primary?.text?.trim() || '';
+    const stepInstruction =
+      step?.instruction?.trim() ||
+      step?.bannerInstructions?.[0]?.primary?.text?.trim() ||
+      step?.name?.trim() ||
+      '';
+    const parentLooksDestinationOnly = fromParent ? DESTINATION_STYLE_INSTRUCTION_RE.test(fromParent) : false;
+    const raw = fromParent && !(parentLooksDestinationOnly && stepInstruction) ? fromParent : stepInstruction;
     return raw.replace(/\s+/g, ' ').trim();
   }, [navSdkDrivesContent, step, primaryInstruction]);
   const stableTextKey =

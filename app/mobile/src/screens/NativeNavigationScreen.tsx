@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Text,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { MapboxNavigationView, type MapboxNavigationViewRef } from '@badatgil/expo-mapbox-navigation';
 import type { RouteProp } from '@react-navigation/native';
@@ -45,6 +46,10 @@ import { isTrafficSafetyLayerEnabled, trafficSafetyRegionQuery } from '../config
  * (ThemeContext palettes) plus `drivingMode` / `appTheme`. Corner radius lives in the patch.
  */
 const MAPBOX_STANDARD = 'mapbox://styles/mapbox/standard';
+const ARRIVAL_THRESHOLD_METERS = 20;
+const ARRIVAL_CANCEL_METERS = 30;
+const ARRIVAL_DEBOUNCE_MS = 2000;
+const REROUTE_COOLDOWN_MS = 8000;
 
 type NativeNavLocationEvent = {
   latitude: number;
@@ -73,6 +78,10 @@ export default function NativeNavigationScreen() {
   const didExitRef = useRef(false);
   const didHandleInvalidParamsRef = useRef(false);
   const navRef = useRef<MapboxNavigationViewRef | null>(null);
+  const latestProgressRef = useRef<NativeNavProgressEvent | null>(null);
+  const arrivalConfirmedRef = useRef(false);
+  const arrivalDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRerouteTimeRef = useRef(0);
   /** Gated so async fetches that resolve after unmount don't call setState. */
   const isMountedRef = useRef(true);
   const lastIncidentFetchCoordRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -85,6 +94,8 @@ export default function NativeNavigationScreen() {
   const lastCameraFetchCoordRef = useRef<{ lat: number; lng: number } | null>(null);
   /** JSON payload for native map SymbolLayer (OHGO cameras — tappable on the map, not over turn UI). */
   const [trafficCamerasJson, setTrafficCamerasJson] = useState('[]');
+  const [rerouteOrigin, setRerouteOrigin] = useState<{ lat: number; lng: number } | null>(null);
+  const [isRerouting, setIsRerouting] = useState(false);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -117,6 +128,15 @@ export default function NativeNavigationScreen() {
       maneuverBg: c.primary,
       maneuverText: '#FFFFFF',
       maneuverAccent,
+      routeLineColor: drivingMode === 'sport' ? '#60A5FA' : '#2563EB',
+      routeLineCasingColor: drivingMode === 'sport' ? '#FFFFFF' : '#BFDBFE',
+      routeLineWidth: 9,
+      routeLineCasingWidth: 14,
+      trafficUnknown: drivingMode === 'sport' ? '#60A5FA' : '#2563EB',
+      trafficLow: drivingMode === 'sport' ? '#34D399' : '#059669',
+      trafficModerate: drivingMode === 'sport' ? '#FBBF24' : '#D97706',
+      trafficHeavy: drivingMode === 'sport' ? '#F87171' : '#DC2626',
+      trafficSevere: drivingMode === 'sport' ? '#F43F5E' : '#BE123C',
       statsBg: c.card,
       statsText: c.text,
       statsAccent: c.primary,
@@ -142,23 +162,34 @@ export default function NativeNavigationScreen() {
   });
 
   const coordinates = useMemo(() => {
-    if (!origin || !destination) return [];
+    const startLat = rerouteOrigin?.lat ?? origin?.lat;
+    const startLng = rerouteOrigin?.lng ?? origin?.lng;
+    const destLat = destination?.lat;
+    const destLng = destination?.lng;
+    if (
+      !Number.isFinite(startLat) ||
+      !Number.isFinite(startLng) ||
+      !Number.isFinite(destLat) ||
+      !Number.isFinite(destLng)
+    ) {
+      return [];
+    }
     return [
-      { latitude: origin.lat, longitude: origin.lng },
-      { latitude: destination.lat, longitude: destination.lng },
+      { latitude: startLat as number, longitude: startLng as number },
+      { latitude: destLat as number, longitude: destLng as number },
     ];
-  }, [origin?.lat, origin?.lng, destination?.lat, destination?.lng]);
+  }, [origin?.lat, origin?.lng, rerouteOrigin?.lat, rerouteOrigin?.lng, destination?.lat, destination?.lng]);
   const nativeViewKey = useMemo(
     () =>
       [
-        origin?.lat ?? 'na',
-        origin?.lng ?? 'na',
+        rerouteOrigin?.lat ?? origin?.lat ?? 'na',
+        rerouteOrigin?.lng ?? origin?.lng ?? 'na',
         destination?.lat ?? 'na',
         destination?.lng ?? 'na',
         drivingMode,
         resolvedMapStyleUrl,
       ].join(':'),
-    [origin?.lat, origin?.lng, destination?.lat, destination?.lng, drivingMode, resolvedMapStyleUrl],
+    [origin?.lat, origin?.lng, rerouteOrigin?.lat, rerouteOrigin?.lng, destination?.lat, destination?.lng, drivingMode, resolvedMapStyleUrl],
   );
 
   /** Slightly tighter zoom + pitch for a stronger 3D driving perspective (buildings read taller). */
@@ -201,16 +232,69 @@ export default function NativeNavigationScreen() {
     exitWithResult(false);
   }, [exitWithResult]);
 
-  const handleArrival = useCallback(() => {
+  const confirmArrival = useCallback(() => {
+    if (arrivalConfirmedRef.current) return;
+    arrivalConfirmedRef.current = true;
+    if (arrivalDebounceRef.current) {
+      clearTimeout(arrivalDebounceRef.current);
+      arrivalDebounceRef.current = null;
+    }
     bridge.handleArrival();
     exitWithResult(true);
   }, [bridge, exitWithResult]);
 
+  const requestArrivalConfirmation = useCallback(
+    (progress?: NativeNavProgressEvent | null) => {
+      if (arrivalConfirmedRef.current) return;
+      const remaining = Number(progress?.distanceRemaining);
+      const fraction = Number(progress?.fractionTraveled);
+      const closeEnough = Number.isFinite(remaining) && remaining <= ARRIVAL_THRESHOLD_METERS;
+      const terminalProgress = Number.isFinite(fraction) && fraction >= 0.995;
+      if (!closeEnough && !terminalProgress) return;
+      if (arrivalDebounceRef.current) return;
+      arrivalDebounceRef.current = setTimeout(confirmArrival, ARRIVAL_DEBOUNCE_MS);
+    },
+    [confirmArrival],
+  );
+
+  const handleArrival = useCallback(() => {
+    requestArrivalConfirmation(latestProgressRef.current);
+  }, [requestArrivalConfirmation]);
+
   const handleProgressChanged = useCallback(
     (event: { nativeEvent: NativeNavProgressEvent }) => {
+      latestProgressRef.current = event.nativeEvent;
       bridge.handleProgressChanged(event);
+      const remaining = Number(event.nativeEvent?.distanceRemaining);
+      if (Number.isFinite(remaining) && remaining <= ARRIVAL_THRESHOLD_METERS) {
+        requestArrivalConfirmation(event.nativeEvent);
+      } else if (Number.isFinite(remaining) && remaining > ARRIVAL_CANCEL_METERS && arrivalDebounceRef.current) {
+        clearTimeout(arrivalDebounceRef.current);
+        arrivalDebounceRef.current = null;
+      }
     },
-    [bridge],
+    [bridge, requestArrivalConfirmation],
+  );
+
+  const handleUserOffRoute = useCallback(
+    (event: { nativeEvent: Record<string, unknown> }) => {
+      const now = Date.now();
+      if (now - lastRerouteTimeRef.current < REROUTE_COOLDOWN_MS || isRerouting) return;
+      const raw = event.nativeEvent ?? {};
+      const location = raw.location && typeof raw.location === 'object' ? raw.location as Record<string, unknown> : raw;
+      const lat = Number(location.latitude ?? location.lat);
+      const lng = Number(location.longitude ?? location.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || !destination) return;
+      lastRerouteTimeRef.current = now;
+      setIsRerouting(true);
+      setRouteReady(false);
+      setRerouteOrigin({ lat, lng });
+      setOrionQuickReply("Rerouting... I've got a new path for you.");
+      setTimeout(() => {
+        if (isMountedRef.current) setIsRerouting(false);
+      }, 3500);
+    },
+    [destination, isRerouting],
   );
 
   /**
@@ -242,7 +326,7 @@ export default function NativeNavigationScreen() {
         const cameras =
           camRes.success && camRes.data != null ? extractCameraList(camRes.data) : [];
 
-        let photoReports: Array<{ id: string; lat: number; lng: number; description?: string }> = [];
+        let photoReports: { id: string; lat: number; lng: number; description?: string }[] = [];
         if (photoRes.success && photoRes.data != null) {
           const raw = photoRes.data as { photos?: unknown[] };
           const d = raw?.photos;
@@ -261,13 +345,13 @@ export default function NativeNavigationScreen() {
           }
         }
 
-        let trafficZones: Array<{
+        let trafficZones: {
           id: string;
           lat: number;
           lng: number;
           kind?: string;
           maxspeed?: unknown;
-        }> = [];
+        }[] = [];
         if (zoneRes.success && zoneRes.data != null) {
           const raw = zoneRes.data as Record<string, unknown>;
           const payload =
@@ -414,6 +498,15 @@ export default function NativeNavigationScreen() {
   }, [orionQuickReply]);
 
   useEffect(() => {
+    return () => {
+      if (arrivalDebounceRef.current) {
+        clearTimeout(arrivalDebounceRef.current);
+        arrivalDebounceRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (normalizedParams || didHandleInvalidParamsRef.current) return;
     didHandleInvalidParamsRef.current = true;
     rnNav.goBack();
@@ -466,10 +559,16 @@ export default function NativeNavigationScreen() {
         onCancelNavigation={handleCancel}
         onFinalDestinationArrival={handleArrival}
         onRouteChanged={() => {}}
-        onUserOffRoute={() => {}}
+        onUserOffRoute={handleUserOffRoute}
         onRoutesLoaded={handleRoutesLoaded}
         onRouteFailedToLoad={handleRouteFailedToLoad}
       />
+      {isRerouting ? (
+        <View style={[styles.reroutingBanner, { top: insets.top + 76 }]}>
+          <ActivityIndicator size="small" color="#FFFFFF" />
+          <Text style={styles.reroutingText}>Rerouting...</Text>
+        </View>
+      ) : null}
       {activeIncident ? (
         <View
           style={[
@@ -506,7 +605,7 @@ export default function NativeNavigationScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      ) : !!reportHint ? (
+      ) : reportHint ? (
         <View
           style={[
             styles.reportHint,
@@ -655,6 +754,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     flexShrink: 1,
+  },
+  reroutingBanner: {
+    position: 'absolute',
+    left: 18,
+    right: 18,
+    zIndex: 30,
+    minHeight: 46,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(37,99,235,0.92)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.28)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  reroutingText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '800',
   },
   recenterBtn: {
     position: 'absolute',

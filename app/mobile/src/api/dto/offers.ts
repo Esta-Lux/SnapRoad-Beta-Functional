@@ -159,8 +159,11 @@ export type RedeemOfferPayload = {
   new_gem_total?: number;
   redemption_id?: string;
   redeemed_at?: string;
+  redemption_type?: string;
   qr_token?: string;
+  qr_code_value?: string;
   claim_code?: string;
+  claim_url?: string;
   expires_at?: string;
 };
 
@@ -174,8 +177,23 @@ export function parseRedeemOfferPayload(payload: unknown): RedeemOfferPayload {
       root.redemption_id != null ? String(root.redemption_id) : undefined,
     redeemed_at:
       root.redeemed_at != null ? String(root.redeemed_at) : undefined,
-    qr_token: root.qr_token != null ? String(root.qr_token) : undefined,
-    claim_code: root.claim_code != null ? String(root.claim_code) : undefined,
+    redemption_type:
+      root.redemption_type != null ? String(root.redemption_type) : undefined,
+    qr_token:
+      root.qr_token != null
+        ? String(root.qr_token)
+        : root.qr_code_value != null
+          ? String(root.qr_code_value)
+          : undefined,
+    qr_code_value:
+      root.qr_code_value != null ? String(root.qr_code_value) : undefined,
+    claim_code:
+      root.claim_code != null
+        ? String(root.claim_code)
+        : root.qr_code_value != null
+          ? String(root.qr_code_value)
+          : undefined,
+    claim_url: root.claim_url != null ? String(root.claim_url) : undefined,
     expires_at: root.expires_at != null ? String(root.expires_at) : undefined,
   };
 }

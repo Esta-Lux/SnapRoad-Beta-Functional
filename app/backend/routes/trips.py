@@ -588,9 +588,9 @@ class TripCompleteBody(BaseModel):
     incidents_reported: int = 0
     region_state: Optional[str] = None
 
-# Keep in sync with mobile passive + navigation trip gates (~0.15 mi, 45s, real movement).
-_MIN_TRIP_MILES = 0.15
-_MIN_TRIP_SECONDS = 45
+# Keep in sync with mobile passive + navigation trip gates (~0.10 mi, 30s, real movement).
+_MIN_TRIP_MILES = 0.10
+_MIN_TRIP_SECONDS = 30
 
 
 def _trip_gems_today_utc(user_id: str) -> int:
