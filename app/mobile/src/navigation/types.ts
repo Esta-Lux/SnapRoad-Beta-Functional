@@ -19,7 +19,7 @@ export type PublicStackParamList = {
 };
 
 export type DashboardStackParamList = {
-  DashboardMain: undefined;
+  DashboardMain: { section?: 'friends' | 'family' } | undefined;
 };
 
 export type RewardsStackParamList = {

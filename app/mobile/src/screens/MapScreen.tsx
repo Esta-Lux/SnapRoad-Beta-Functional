@@ -6822,17 +6822,10 @@ export default function MapScreen() {
               screen: 'ProfileMain',
               params: { openCommuteReminders: true },
             });
-          } else if (screen === 'Social') {
-            if (!user?.isPremium) {
-              Alert.alert('Premium feature', 'Friends and live location require SnapRoad Premium.', [
-                { text: 'Not now', style: 'cancel' },
-                { text: 'Upgrade', onPress: () => rnNav.navigate('Profile', { screen: 'ProfileMain' }) },
-              ]);
-              return;
-            }
-            rnNav.navigate('Dashboards', { screen: 'DashboardMain' });
-          } else if (screen === 'FamilySoon') {
-            rnNav.navigate('Dashboards', { screen: 'DashboardMain' });
+          } else if (screen === 'Friends') {
+            rnNav.navigate('Dashboards', { screen: 'DashboardMain', params: { section: 'friends' } });
+          } else if (screen === 'Family') {
+            rnNav.navigate('Dashboards', { screen: 'DashboardMain', params: { section: 'family' } });
           }
         }}
       />

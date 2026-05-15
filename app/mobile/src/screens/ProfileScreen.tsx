@@ -811,25 +811,21 @@ export default function ProfileScreen() {
     {
       key: 'dashboards',
       icon: 'people-outline',
-      label: 'Dashboards',
-      value: user?.isPremium
-        ? (FAMILY_MODE_LAUNCH_ENABLED ? 'Friends · Family' : 'Friends hub')
-        : (FAMILY_MODE_LAUNCH_ENABLED ? 'Premium — Friends & family hub' : 'Premium — Friends hub'),
-      badgeText: user?.isPremium ? undefined : 'LOCKED',
+      label: 'Friends preview',
+      value: 'Coming soon — live sharing and meetup dashboard',
+      badgeText: 'SOON',
       onPress: () => {
-        if (user?.isPremium) navigation.getParent()?.navigate('Dashboards');
-        else openPlanOptions();
+        navigation.getParent()?.navigate('Dashboards', { screen: 'DashboardMain', params: { section: 'friends' } });
       },
     },
     {
       key: 'friends',
-      icon: 'people-circle-outline',
-      label: 'Friends',
-      value: user?.isPremium ? 'Manage connections' : 'Live location — Premium',
-      badgeText: user?.isPremium ? undefined : 'LOCKED',
+      icon: 'shield-checkmark-outline',
+      label: 'Family preview',
+      value: 'Coming soon — zones, teen insights, and household safety',
+      badgeText: 'SOON',
       onPress: () => {
-        if (user?.isPremium) navigation.getParent()?.navigate('Dashboards');
-        else openPlanOptions();
+        navigation.getParent()?.navigate('Dashboards', { screen: 'DashboardMain', params: { section: 'family' } });
       },
     },
   ];

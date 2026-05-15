@@ -32,7 +32,7 @@ const FAQ_ITEMS: { q: string; a: string }[] = [
   },
   {
     q: 'How do I add friends?',
-    a: 'Go to the Dashboards tab, tap Add Friend, and enter their SnapRoad username or share your invite link.',
+    a: 'Friends is a coming soon preview in the hamburger menu. Live friend invites will return there when the launch backend is ready.',
   },
   {
     q: 'What are driving modes?',

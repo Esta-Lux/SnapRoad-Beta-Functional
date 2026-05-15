@@ -340,7 +340,8 @@ function MainTabs() {
         name="Dashboards"
         component={DashboardStackScreen}
         options={{
-          tabBarLabel: 'Social',
+          tabBarButton: () => null,
+          tabBarItemStyle: { display: 'none' },
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.tabIconWrap, focused && { backgroundColor: `${colors.primary}18` }]}>
               <Ionicons name={focused ? 'people' : 'people-outline'} size={22} color={color} />
@@ -630,7 +631,7 @@ function RootNavigator() {
         },
         Dashboards: {
           screens: {
-            DashboardMain: 'dashboard',
+            DashboardMain: 'dashboard/:section?',
           },
         },
         Wallet: {

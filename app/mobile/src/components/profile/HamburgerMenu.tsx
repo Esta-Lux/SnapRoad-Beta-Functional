@@ -30,14 +30,14 @@ function runAfterMenuClose(onClose: () => void, action: () => void, delayMs = 22
 
 export type HamburgerMenuTarget =
   | 'Map'
-  | 'Social'
+  | 'Friends'
   | 'Offers'
   | 'CommuteAlerts'
   | 'Wallet'
   | 'Profile'
   | 'Premium'
   | 'Help'
-  | 'FamilySoon';
+  | 'Family';
 
 interface Props {
   visible: boolean;
@@ -86,12 +86,21 @@ export default function HamburgerMenu({ visible, onClose, isLight, onNavigate, o
     },
     {
       icon: actionMeta('social_dashboard')?.icon ?? 'people-outline',
-      label: actionMeta('social_dashboard')?.label ?? 'Social',
-      description: actionMeta('social_dashboard')?.description ?? 'Friends and live sharing.',
-      accent: '#8B5CF6',
-      badge: 'Premium',
+      label: actionMeta('social_dashboard')?.label ?? 'Friends',
+      description: actionMeta('social_dashboard')?.description ?? 'Preview trusted live sharing and meetups.',
+      accent: '#0EA5E9',
+      badge: 'Soon',
       availability: actionMeta('social_dashboard')?.availability,
-      action: () => runAfterMenuClose(onClose, () => onNavigate('Social')),
+      action: () => runAfterMenuClose(onClose, () => onNavigate('Friends')),
+    },
+    {
+      icon: actionMeta('family')?.icon ?? 'shield-checkmark-outline',
+      label: actionMeta('family')?.label ?? 'Family Safety',
+      description: actionMeta('family')?.description ?? 'Preview family zones, teen insights, and SOS.',
+      accent: '#2563EB',
+      badge: 'Soon',
+      availability: actionMeta('family')?.availability,
+      action: () => runAfterMenuClose(onClose, () => onNavigate('Family')),
     },
     {
       icon: actionMeta('commute_alerts')?.icon ?? 'navigate-outline',

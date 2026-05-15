@@ -29,7 +29,7 @@ const ROUTE_CASING_HIGH_VIS = '#FFFFFF';
 const ROUTE_PASSED_HIGH_VIS = 'rgba(180,200,225,0.62)';
 const ROUTE_GLOW_HIGH_VIS = '#5EBBFF';
 
-function useHighVisibilityRouteInk(
+function shouldUseHighVisibilityRouteInk(
   mapLightPreset: MapboxLightPreset,
   isSatellite: boolean,
   drivingMode?: DrivingMode,
@@ -53,7 +53,7 @@ export function effectiveNavRouteColors(
 ): EffectiveRouteColors {
   void options;
 
-  const highVis = useHighVisibilityRouteInk(mapLightPreset, isSatellite, drivingMode);
+  const highVis = shouldUseHighVisibilityRouteInk(mapLightPreset, isSatellite, drivingMode);
 
   /**
    * Glow is the soft outer blur, not the casing. Apple-style dark uses a subdued blue glow
@@ -218,8 +218,6 @@ export function standardBasemapStyleImportConfig(
     showPedestrianRoads: 'true',
     showAdminBoundaries: 'true',
     densityPointOfInterestLabels: '5',
-    /** Circle chips help POIs read atop extruded blocks without flattening meshes. */
-    backgroundPointOfInterestLabels: 'circle',
     showLandmarkIcons: 'true',
     showLandmarkIconLabels: 'true',
     ...poiAndLabelBoostForDarkBasemap(lightPreset),

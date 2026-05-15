@@ -38,12 +38,12 @@ export const APP_ACTION_AUDIT: AppActionContract[] = [
   },
   {
     id: 'social_dashboard',
-    label: 'Social Drive Hub',
-    description: 'Friends, requests, and live sharing.',
+    label: 'Friends',
+    description: 'Preview trusted live sharing, meetups, and friend ETAs.',
     icon: 'people-outline',
     target: 'dashboards',
-    availability: 'gated',
-    premiumRequired: true,
+    availability: 'coming_soon',
+    comingSoon: true,
   },
   {
     id: 'offers_hub',
@@ -80,7 +80,7 @@ export const APP_ACTION_AUDIT: AppActionContract[] = [
   {
     id: 'family',
     label: 'Family Safety',
-    description: 'Polished preview while the backend remains intentionally stubbed.',
+    description: 'Preview household safety, zones, teen insights, and SOS alerts.',
     icon: 'shield-checkmark-outline',
     target: 'family_soon',
     availability: 'coming_soon',
