@@ -213,6 +213,34 @@ export function getCameraPreset({
 export function getLiveNavigationCameraPreset(args: Args): CameraPreset {
   const base = getCameraPreset(args);
   const enh = getCameraConfig(args.mode, args.speedMps);
+  const distance = Number.isFinite(args.nextManeuverDistanceMeters)
+    ? args.nextManeuverDistanceMeters
+    : 400;
+  const mph = mphFromMps(args.speedMps);
+  if (distance < 120) {
+    return {
+      ...base,
+      zoom: Math.max(base.zoom, args.mode === 'sport' ? 18.25 : 18.5),
+      pitch: Math.max(base.pitch, args.mode === 'calm' ? 62 : 65),
+      animationDuration: args.mode === 'sport' ? 620 : 920,
+    };
+  }
+  if (distance < 400) {
+    return {
+      ...base,
+      zoom: Math.max(base.zoom, mph > 55 ? 16.75 : 17),
+      pitch: Math.max(base.pitch, args.mode === 'sport' ? 60 : 55),
+      animationDuration: args.mode === 'sport' ? 520 : 820,
+    };
+  }
+  if (mph > 55) {
+    return {
+      ...base,
+      zoom: Math.min(base.zoom, args.mode === 'sport' ? 13.9 : 14.15),
+      pitch: Math.max(base.pitch, args.mode === 'sport' ? 58 : 52),
+      animationDuration: Math.max(base.animationDuration, args.mode === 'sport' ? 560 : 900),
+    };
+  }
   const minAnim = args.mode === 'sport' ? 180 : args.mode === 'adaptive' ? 260 : 420;
   const maxAnim = args.mode === 'calm' ? 1100 : args.mode === 'adaptive' ? 760 : 480;
   const animationDuration = Math.round(

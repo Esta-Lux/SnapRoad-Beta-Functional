@@ -127,6 +127,14 @@ import { projectAhead, getCameraConfig, getLookAheadMeters } from '../navigation
 import { getDistanceToUpcomingManeuverMeters, getUpcomingManeuverStep } from '../navigation/routeGeometry';
 import { useNavigationSpeech } from '../hooks/useNavigationSpeech';
 import { repeatLastTurnByTurn } from '../navigation/navigationGuidanceMemory';
+import {
+  hapticArrival,
+  hapticHazardAhead,
+  hapticManeuverComplete,
+  hapticOfferNearby,
+  hapticSpeedAlert,
+  hapticTurnWarning,
+} from '../utils/navigationHaptics';
 import TurnInstructionCard from '../components/navigation/TurnInstructionCard';
 import NavigationStatusStrip, { MAP_NAV_BOTTOM_INSET } from '../components/navigation/NavigationStatusStrip';
 import { labelAnchorLayerIdForStyleUrl } from '../map/mapLayerRegistry';
@@ -2297,6 +2305,19 @@ export default function MapScreen() {
     requestAnimationFrame(() => setShowTripShare(true));
   }, [activeTripSummary, dismissActiveTripSummary]);
 
+  useEffect(() => {
+    if (!activeTripSummary?.arrivedAtDestination) return;
+    const key = `${activeTripSummary.date}:${activeTripSummary.distance}:${activeTripSummary.duration}`;
+    if (lastArrivalHapticKeyRef.current === key) return;
+    lastArrivalHapticKeyRef.current = key;
+    void hapticArrival();
+  }, [
+    activeTripSummary?.arrivedAtDestination,
+    activeTripSummary?.date,
+    activeTripSummary?.distance,
+    activeTripSummary?.duration,
+  ]);
+
   // ─── Derived values ────────────────────────────────────────────────────────
 
   const mapStyleIndex = Math.min(styleOverride, MAP_STYLES.length - 1);
@@ -2452,10 +2473,31 @@ export default function MapScreen() {
     () => getUpcomingManeuverStep(nav.navigationData?.steps, nav.currentStepIndex),
     [nav.navigationData?.steps, nav.currentStepIndex],
   );
+  const lastHapticStepIndexRef = useRef<number | null>(null);
+  const lastArrivalHapticKeyRef = useRef<string | null>(null);
+  const speedAlertAnim = useSharedValue(0);
+  const lastSpeedAlertHapticAtRef = useRef(0);
   const confirmUntil = useTurnConfirmationUntil(nav.isNavigating, nav.currentStepIndex, drivingMode);
   const inConfirmWindow = Date.now() < confirmUntil;
   /** Tracks when turn-card state last entered 'active' for minimum dwell enforcement. */
   const turnCardActiveEnteredAtRef = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (!nav.isNavigating) {
+      lastHapticStepIndexRef.current = null;
+      return;
+    }
+    const idx = nav.currentStepIndex;
+    if (!Number.isFinite(idx) || idx === lastHapticStepIndexRef.current) return;
+    if (lastHapticStepIndexRef.current != null) {
+      void hapticManeuverComplete();
+    }
+    if (currentStep) {
+      void hapticTurnWarning();
+    }
+    lastHapticStepIndexRef.current = idx;
+  }, [nav.isNavigating, nav.currentStepIndex, currentStep]);
+
   const isAmbient = !nav.isNavigating && speed > 6.7;
   const hasNativeMapbox = isMapAvailable() && MapboxGL !== null;
   const mapboxTokenOk = isMapboxPublicTokenConfigured();
@@ -3245,6 +3287,7 @@ export default function MapScreen() {
       if (announcedOfferNavRef.current.has(id)) continue;
       announcedOfferNavRef.current.add(id);
       const name = o.business_name || 'Partner offer';
+      void hapticOfferNearby();
       // Advisory rate source: during an SDK-authoritative trip, voice.ts defers this line
       // for a few seconds after a native turn cue so the two TTS streams don't overlap.
       speak(`Orion: SnapRoad offer nearby — ${name}.`, 'normal', drivingMode, { rateSource: 'advisory' });
@@ -3290,8 +3333,10 @@ export default function MapScreen() {
     announcedRef.current.add(annKey);
 
     if (isNearBand) {
+      void hapticHazardAhead();
       speak('Police reported ahead.', 'high', drivingMode, { rateSource: 'advisory' });
     } else {
+      void hapticHazardAhead();
       speak('Police reported about two miles ahead.', 'high', drivingMode, { rateSource: 'advisory' });
     }
     setActiveReportCard(pick.inc);
@@ -4794,6 +4839,54 @@ export default function MapScreen() {
       console.warn('[MapScreen] handleMapPress', err);
     }
   }, [nav.isNavigating, lngLatFromPressGeometry, selectedPlace, selectedPlaceId]);
+
+  const currentSpeedLimitMph = useMemo(() => {
+    const sdkLimitMph =
+      typeof nav.sdkSpeedLimitMps === 'number' && Number.isFinite(nav.sdkSpeedLimitMps)
+        ? Math.round(nav.sdkSpeedLimitMps * 2.236936)
+        : null;
+    const stepLimit =
+      nav.isNavigating && nav.navigationData?.maxspeeds
+        ? nav.navigationData.maxspeeds[Math.min(nav.currentStepIndex, nav.navigationData.maxspeeds.length - 1)]
+        : null;
+    return sdkLimitMph != null
+      ? sdkLimitMph
+      : typeof stepLimit === 'number' && Number.isFinite(stepLimit)
+        ? stepLimit
+        : null;
+  }, [
+    nav.sdkSpeedLimitMps,
+    nav.isNavigating,
+    nav.navigationData?.maxspeeds,
+    nav.currentStepIndex,
+  ]);
+
+  const speedLimitAlertActive =
+    nav.isNavigating &&
+    currentSpeedLimitMph != null &&
+    speed > currentSpeedLimitMph + 5;
+
+  useEffect(() => {
+    speedAlertAnim.value = withTiming(speedLimitAlertActive ? 1 : 0, {
+      duration: speedLimitAlertActive ? 260 : 520,
+      easing: Easing.out(Easing.cubic),
+    });
+    if (speedLimitAlertActive) {
+      const now = Date.now();
+      if (now - lastSpeedAlertHapticAtRef.current > 10_000) {
+        lastSpeedAlertHapticAtRef.current = now;
+        void hapticSpeedAlert();
+      }
+    }
+  }, [speedLimitAlertActive, speedAlertAnim]);
+
+  const speedLimitPlateAnimatedStyle = useAnimatedStyle(() => ({
+    backgroundColor:
+      speedAlertAnim.value > 0.5
+        ? `rgba(220,38,38,${speedAlertAnim.value})`
+        : 'rgba(255,255,255,0.96)',
+    transform: [{ scale: speedAlertAnim.value > 0.5 ? 1.08 : 1 }],
+  }));
 
   // ─── Permission denied ─────────────────────────────────────────────────────
 
@@ -6559,26 +6652,9 @@ export default function MapScreen() {
       )}
 
       {(nav.isNavigating || speed > 1) && !selectedPlace && !selectedPlaceId && (() => {
-        // Prefer the native SDK speed limit when the logic SDK is authoritative — it
-        // reflects matched-location truth and updates continuously. Fall back to the
-        // Directions `maxspeeds[step]` array when the SDK value is unavailable (warmup,
-        // JS-only mode, or unsupported segment).
-        const sdkLimitMph =
-          typeof nav.sdkSpeedLimitMps === 'number' && Number.isFinite(nav.sdkSpeedLimitMps)
-            ? Math.round(nav.sdkSpeedLimitMps * 2.236936)
-            : null;
-        const stepLimit =
-          nav.isNavigating && nav.navigationData?.maxspeeds
-            ? nav.navigationData.maxspeeds[Math.min(nav.currentStepIndex, nav.navigationData.maxspeeds.length - 1)]
-            : null;
-        const currentSpeedLimit =
-          sdkLimitMph != null
-            ? sdkLimitMph
-            : typeof stepLimit === 'number' && Number.isFinite(stepLimit)
-              ? stepLimit
-              : null;
-        const hasLimit = nav.isNavigating && currentSpeedLimit != null;
-        const isOverSpeed = hasLimit && speed > (currentSpeedLimit as number);
+        const hasLimit = nav.isNavigating && currentSpeedLimitMph != null;
+        const isOverSpeed = hasLimit && speed > (currentSpeedLimitMph as number);
+        const speedLimitTextColor = speedLimitAlertActive ? '#FFFFFF' : isOverSpeed ? '#FF3B30' : '#111827';
         return (
           <View
             style={{
@@ -6609,11 +6685,17 @@ export default function MapScreen() {
               </Text>
               <Text style={[s.speedUnit, { color: colors.textTertiary }]}>mph</Text>
               {hasLimit ? (
-                <View style={[s.speedLimitPlate, { borderColor: isOverSpeed ? '#FF3B30' : 'rgba(15,23,42,0.22)' }]}>
-                  <Text style={[s.speedLimitPlateTop, { color: isOverSpeed ? '#FF3B30' : '#111827' }]}>SPEED</Text>
-                  <Text style={[s.speedLimitPlateMid, { color: isOverSpeed ? '#FF3B30' : '#111827' }]}>LIMIT</Text>
-                  <Text style={[s.speedLimitPlateNum, { color: isOverSpeed ? '#FF3B30' : '#111827' }]}>{currentSpeedLimit}</Text>
-                </View>
+                <Animated.View
+                  style={[
+                    s.speedLimitPlate,
+                    speedLimitPlateAnimatedStyle,
+                    { borderColor: speedLimitAlertActive ? '#FFFFFF' : isOverSpeed ? '#FF3B30' : 'rgba(15,23,42,0.22)' },
+                  ]}
+                >
+                  <Text style={[s.speedLimitPlateTop, { color: speedLimitTextColor }]}>SPEED</Text>
+                  <Text style={[s.speedLimitPlateMid, { color: speedLimitTextColor }]}>LIMIT</Text>
+                  <Text style={[s.speedLimitPlateNum, { color: speedLimitTextColor }]}>{currentSpeedLimitMph}</Text>
+                </Animated.View>
               ) : null}
             </View>
           </View>

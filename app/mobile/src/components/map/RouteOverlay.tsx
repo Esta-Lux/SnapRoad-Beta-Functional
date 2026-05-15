@@ -233,6 +233,7 @@ export default React.memo(function RouteOverlay({
   const passedLineWidth = routeWidth;
   const passedLineOpacity = 0.92 * lineOpacity;
   const effectiveGlowColor = glowColor || routeColor;
+  const neonGlowOpacity = Math.min(0.58, Math.max(glowOpacity * 1.14, isNavigating ? 0.24 : 0.16));
   /**
    * Apple-Maps-style stack: a solid halo casing slightly wider than the core, plus a soft outer glow.
    * Casing color is a solid hex (white on dark, navy on light); alpha lives here as `casingPaintOpacity`
@@ -295,9 +296,9 @@ export default React.memo(function RouteOverlay({
         filter={['==', ['get', 'segment'], 'base']}
         style={{
           lineColor: effectiveGlowColor,
-          lineWidth: routeWidth * 2.6,
-          lineOpacity: glowOpacity * (isRerouting ? 0.3 : 1),
-          lineBlur: 8,
+          lineWidth: routeWidth * 3,
+          lineOpacity: neonGlowOpacity * (isRerouting ? 0.3 : 1),
+          lineBlur: 10,
           lineCap: 'round',
           lineJoin: 'round',
         }}
@@ -353,7 +354,7 @@ export default React.memo(function RouteOverlay({
         filter={['==', ['get', 'segment'], 'ahead']}
         style={{
           lineColor: aheadLineColor,
-          lineWidth: routeWidth,
+          lineWidth: routeWidth + 0.5,
           lineOpacity,
           lineCap: 'round',
           lineJoin: 'round',

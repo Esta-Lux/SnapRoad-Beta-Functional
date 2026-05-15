@@ -63,7 +63,9 @@ test('Standard basemap config keeps Mapbox POIs visible and hides 3D trees durin
   assert.equal(explore.show3dTrees, 'true');
 
   const nav = standardBasemapStyleImportConfig('night', false, 'sport', true);
+  assert.equal(nav.lightPreset, 'dusk');
   assert.equal(nav.showPointOfInterestLabels, 'true');
+  assert.equal(nav.showTransitLabels, 'false');
   assert.equal(nav.show3dTrees, 'false');
   assert.equal(nav.show3dBuildings, 'true');
 });

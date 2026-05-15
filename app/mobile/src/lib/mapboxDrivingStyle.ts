@@ -137,8 +137,10 @@ function standardSatelliteBasemapConfig(
   lightPreset: MapboxLightPreset,
   isNavigating: boolean,
 ): Record<string, string> {
+  const premiumLightPreset =
+    isNavigating && (lightPreset === 'night' || lightPreset === 'dawn') ? 'dusk' : lightPreset;
   return {
-    lightPreset,
+    lightPreset: premiumLightPreset,
     // 3D buildings + landmarks on top of satellite imagery.
     show3dObjects: 'true',
     show3dBuildings: 'true',
@@ -149,7 +151,7 @@ function standardSatelliteBasemapConfig(
     showPointOfInterestLabels: 'true',
     showPlaceLabels: 'true',
     showRoadLabels: 'true',
-    showTransitLabels: 'true',
+    showTransitLabels: isNavigating ? 'false' : 'true',
     showPedestrianRoads: 'true',
     showAdminBoundaries: 'true',
     // Documented Standard-Satellite API (v11.11+): max POI density + landmark icons.
@@ -201,8 +203,10 @@ export function standardBasemapStyleImportConfig(
   if (isSatellite) {
     return standardSatelliteBasemapConfig(lightPreset, isNavigating);
   }
+  const premiumLightPreset =
+    isNavigating && (lightPreset === 'night' || lightPreset === 'dawn') ? 'dusk' : lightPreset;
   return {
-    lightPreset,
+    lightPreset: premiumLightPreset,
     // 3D geometry — granular flags keep building meshes readable (trees optional while navigating).
     show3dObjects: 'true',
     show3dBuildings: 'true',
@@ -214,7 +218,7 @@ export function standardBasemapStyleImportConfig(
     showPointOfInterestLabels: 'true',
     showPlaceLabels: 'true',
     showRoadLabels: 'true',
-    showTransitLabels: 'true',
+    showTransitLabels: isNavigating ? 'false' : 'true',
     showPedestrianRoads: 'true',
     showAdminBoundaries: 'true',
     densityPointOfInterestLabels: '5',
