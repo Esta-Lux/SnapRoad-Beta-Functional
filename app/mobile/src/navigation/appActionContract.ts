@@ -9,7 +9,6 @@ export type AppActionTarget =
   | 'wallet'
   | 'profile'
   | 'offers_hub'
-  | 'profile_billing'
   | 'commute_alerts'
   | 'support'
   | 'share'
@@ -23,7 +22,6 @@ export type AppActionContract = {
   icon: ComponentProps<typeof Ionicons>['name'];
   target: AppActionTarget;
   availability: AppActionAvailability;
-  premiumRequired?: boolean;
   comingSoon?: boolean;
 };
 
@@ -67,14 +65,6 @@ export const APP_ACTION_AUDIT: AppActionContract[] = [
     description: 'A-to-B route scans, traffic timing, and push notifications.',
     icon: 'navigate-outline',
     target: 'commute_alerts',
-    availability: 'works',
-  },
-  {
-    id: 'premium',
-    label: 'Premium',
-    description: 'Plans, billing, and upgrade path.',
-    icon: 'diamond-outline',
-    target: 'profile_billing',
     availability: 'works',
   },
   {

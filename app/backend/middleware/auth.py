@@ -4,7 +4,7 @@ import os
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import HTTPException, Depends, status
+from fastapi import HTTPException, Depends, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from config import JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRY_HOURS
 from services.supabase_service import sb_get_auth_user_from_access_token, sb_get_profile
@@ -167,6 +167,25 @@ async def get_current_user_optional(credentials: HTTPAuthorizationCredentials = 
         return None
     u = _user_from_bearer_token(credentials.credentials)
     return merge_profile_entitlements_into_user(u) if u else None
+
+
+async def get_current_user_or_guest(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    if credentials and credentials.credentials:
+        u = _user_from_bearer_token(credentials.credentials)
+        if u:
+            return merge_profile_entitlements_into_user(u)
+    try:
+        from services.guest_activity import guest_user_from_header
+
+        guest = guest_user_from_header(request.headers.get("x-snaproad-guest-id"))
+        if guest:
+            return guest
+    except Exception:
+        logger.debug("guest auth fallback skipped", exc_info=True)
+    raise HTTPException(status_code=401, detail="Authentication required")
 
 
 def user_id_from_payload(payload: dict) -> str:

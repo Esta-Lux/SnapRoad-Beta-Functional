@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, ScrollView, View, Text, TouchableOpacity, StyleSheet, RefreshControl, Share, Linking, Platform, TextInput, KeyboardAvoidingView } from 'react-native';
+import { Alert, ScrollView, View, Text, TouchableOpacity, StyleSheet, RefreshControl, Share, Platform, TextInput, KeyboardAvoidingView } from 'react-native';
 import Modal from '../components/common/Modal';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -17,14 +17,13 @@ import {
   parseProfilePatch,
   unwrapApiData as unwrapProfileApiData,
 } from '../api/dto/profileWallet';
-import { PLANS, premiumSavingsPercent, PREMIUM_PUBLIC_MONTHLY } from '../constants/plans';
 import { applySnapRoadFromProfilePayload } from '../utils/profileScore';
 import FuelTracker from '../components/profile/FuelTracker';
 import DriverSnapshotModal from '../components/profile/DriverSnapshotModal';
 import ProfileInsightsDashboard from '../components/profile/ProfileInsightsDashboard';
 import HelpSupport from '../components/profile/HelpSupport';
 import SubmitConcern from '../components/profile/SubmitConcern';
-import type { CommuteRoute, DrivingMode, PlanTier, SavedLocation, SavedRoute, User } from '../types';
+import type { CommuteRoute, DrivingMode, SavedLocation, SavedRoute, User } from '../types';
 import AddCommuteModal from '../components/profile/AddCommuteModal';
 import {
   AboutCard,
@@ -37,7 +36,6 @@ import {
   NotificationsCard,
   PlacesCard,
   PlanCard,
-  PlanModal,
   ProfileHeader,
   ProfileBadgeItem,
   ProfileGemTxItem,
@@ -53,16 +51,18 @@ import {
 } from '../components/profile/ProfileSections';
 import type { ProfileOverviewActionItem } from '../components/profile/types';
 import { ProfileStatsStrip, ProfileTabBar } from '../components/profile/ProfileScreenBlocks';
-import {
-  fetchAppleSubscriptionPaywallLines,
-  restoreApplePurchases,
-  startAppleSubscriptionPurchase,
-  type AppleSubscriptionPaywallLine,
-} from '../billing/appleIap';
 import { registerCommutePushToken } from '../utils/pushNotifications';
 import { mapProfileTripHistoryItem, recentTripsListFromPayload } from '../components/profile/tripHistoryMapping';
 import { sanitizeTripSpeedMph } from '../utils/driveMetrics';
-import { FAMILY_MODE_LAUNCH_ENABLED, IOS_EXTERNAL_BILLING_ENABLED } from '../config/launchFlags';
+import { FAMILY_MODE_LAUNCH_ENABLED } from '../config/launchFlags';
+
+const FREE_PLAN_CONFIG = {
+  name: 'Free',
+  price: '$0',
+  features: [
+    'Navigation, cameras, local offers, online deals, wallet, and driving insights are included during launch.',
+  ],
+};
 
 export default function ProfileScreen() {
   const navigation = useNavigation<ProfileStackScreenNavigationProp>();
@@ -72,7 +72,6 @@ export default function ProfileScreen() {
   const { isLight, colors, toggleTheme } = useTheme();
   const { user, logout, updateUser, statsVersion } = useAuth();
   const updateUserRef = useRef(updateUser);
-  const handledBillingStatusRef = useRef<string | null>(null);
   useEffect(() => {
     updateUserRef.current = updateUser;
   });
@@ -81,7 +80,7 @@ export default function ProfileScreen() {
   const cardBg = colors.card;
   const text = colors.text;
   const sub = colors.textSecondary;
-  const isGuest = !user?.id;
+  const isGuest = user?.isGuest === true;
 
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -110,12 +109,6 @@ export default function ProfileScreen() {
   const [pushEnabled, setPushEnabled] = useState(true);
 
   const [defaultMode, setDefaultMode] = useState<DrivingMode>('adaptive');
-  const [showPlanModal, setShowPlanModal] = useState(false);
-  const [restoringPurchases, setRestoringPurchases] = useState(false);
-  const [iosSubscriptionStoreLines, setIosSubscriptionStoreLines] = useState<{
-    premium: AppleSubscriptionPaywallLine | null;
-    family: AppleSubscriptionPaywallLine | null;
-  } | null>(null);
   const [showAddPlace, setShowAddPlace] = useState(false);
   const [newPlaceName, setNewPlaceName] = useState('');
   const [newPlaceAddress, setNewPlaceAddress] = useState('');
@@ -169,24 +162,8 @@ export default function ProfileScreen() {
   });
 
   const openPlanOptions = useCallback(() => {
-    setShowPlanModal(true);
+    Alert.alert('SnapRoad is free', 'Plans and in-app purchases are paused during launch. Enjoy the full app.');
   }, []);
-
-  useEffect(() => {
-    if (!showPlanModal || Platform.OS !== 'ios') return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const lines = await fetchAppleSubscriptionPaywallLines();
-        if (!cancelled) setIosSubscriptionStoreLines(lines);
-      } catch {
-        if (!cancelled) setIosSubscriptionStoreLines({ premium: null, family: null });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [showPlanModal]);
 
   const handleDeleteAccount = useCallback(async () => {
     setDeletingAccount(true);
@@ -248,11 +225,7 @@ export default function ProfileScreen() {
       const profilePayload = unwrapProfileApiData(profileRes?.data);
       const pp = profilePayload as Record<string, unknown>;
       const planStr = typeof pp.plan === 'string' ? pp.plan : '';
-      const planLowerEarly = planStr.toLowerCase();
-      const premiumByPlanEarly = planLowerEarly === 'premium' || planLowerEarly === 'family';
-      const premiumByFlagEarly = pp.is_premium != null && Boolean(pp.is_premium);
-      const isPremiumUser = premiumByPlanEarly || premiumByFlagEarly;
-      const weeklyPromise = isPremiumUser ? safeGet('/api/weekly-recap') : Promise.resolve({ success: false, data: null });
+      const weeklyPromise = safeGet('/api/weekly-recap');
       const [locRes, routeRes, commuteRes, notifRes, weeklyRes, tripsHistoryRes, gemsRes, badgesRes, fuelStatsRes, fuelTrendsRes] = await Promise.all([
         safeGet('/api/locations'),
         safeGet('/api/routes'),
@@ -285,14 +258,11 @@ export default function ProfileScreen() {
         xp: pp.xp != null ? Number(pp.xp) : undefined,
       };
       userPatch.name = displayName ?? 'Driver';
-      const planLower = planStr.toLowerCase();
-      const premiumByPlan = planLower === 'premium' || planLower === 'family';
-      const premiumByFlag = pp.is_premium != null && Boolean(pp.is_premium);
       if (planStr) {
         userPatch.plan = planStr;
       }
-      userPatch.isFamilyPlan = planLower === 'family';
-      userPatch.isPremium = premiumByPlan || premiumByFlag;
+      userPatch.isFamilyPlan = false;
+      userPatch.isPremium = false;
       if (pp.gem_multiplier != null) {
         userPatch.gem_multiplier = Number(pp.gem_multiplier);
       }
@@ -345,29 +315,7 @@ export default function ProfileScreen() {
         ? (notifPayload.push_notifications as Record<string, unknown>)
         : {});
       setPushEnabled(Boolean(push.commute_alerts ?? true));
-      if (!isPremiumUser) {
-        setWeeklyRecap({
-          totalTrips: 0,
-          totalMiles: 0,
-          gemsEarnedWeek: 0,
-          avgSafetyScore: 0,
-          aiTip: '',
-          highlights: [],
-          orionCommentary: null,
-          behavior: { hard_braking_events_total: 0, hard_acceleration_events_total: 0, speeding_events_total: 0 },
-          topSpeedMph: 0,
-          avgSpeedMph: 0,
-          fuelUsedGallons: 0,
-          fuelCostEstimate: 0,
-          mileageValueEstimate: 0,
-          routeFuelSavingsGallons: 0,
-          routeSavingsDollars: 0,
-          offerSavingsDollars: 0,
-          totalSavingsDollars: 0,
-          timeSavedSeconds: 0,
-          savingsDisclaimer: '',
-        });
-      } else {
+      {
         const weekly = (unwrapProfileApiData(weeklyRes?.data) as Record<string, unknown>) ?? {};
         const beh = weekly.behavior;
         setWeeklyRecap({
@@ -492,13 +440,6 @@ export default function ProfileScreen() {
   }, [route.params?.openSupport, navigation]);
 
   useEffect(() => {
-    if (!route.params?.openBilling) return;
-    setProfileTab('settings');
-    openPlanOptions();
-    navigation.setParams({ openBilling: undefined });
-  }, [route.params?.openBilling, navigation, openPlanOptions]);
-
-  useEffect(() => {
     if (user?.vehicle_height_meters && user.vehicle_height_meters > 0) {
       setTallVehicle(true);
       setVehicleHeight(String(user.vehicle_height_meters));
@@ -577,170 +518,6 @@ export default function ProfileScreen() {
     setRoutes((prev) => prev.filter((r) => r.id !== id));
   }, []);
 
-  const handleSelectPlan = useCallback(async (plan: PlanTier) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    if (plan === 'basic') {
-      const pes = (user?.plan_entitlement_source || '').toLowerCase();
-      if (pes === 'admin') {
-        Alert.alert(
-          'Plan managed by your team',
-          'Your tier was set by SnapRoad and cannot be switched to Basic from the app. Contact support if you need a change.',
-        );
-        setShowPlanModal(false);
-        return;
-      }
-      if (pes === 'apple') {
-        Alert.alert(
-          'Apple subscription',
-          'To switch to Basic, cancel your subscription in iPhone Settings → Apple ID → Subscriptions. Your Premium access remains until the billing period ends.',
-        );
-        setShowPlanModal(false);
-        return;
-      }
-      updateUser({ isPremium: false, isFamilyPlan: false, plan: 'basic', gem_multiplier: 1 });
-      const res = await api.post('/api/user/plan', { plan: 'basic' });
-      if (!res.success) {
-        Alert.alert('Cannot change plan', res.error || 'Could not update your plan.');
-        await loadData('silent');
-        setShowPlanModal(false);
-        return;
-      }
-      setShowPlanModal(false);
-      await loadData('silent');
-      return;
-    }
-
-    if (Platform.OS === 'ios') {
-      const uid = user?.id?.trim();
-      if (!uid) {
-        setShowPlanModal(false);
-        navigation.navigate('Auth', { mode: 'signup' });
-        return;
-      }
-      if (plan === 'family') {
-        Alert.alert(
-          'Family plan',
-          'Only Premium is sold on the App Store. Choose Premium to subscribe with Apple.',
-        );
-        return;
-      }
-      try {
-        await startAppleSubscriptionPurchase(uid);
-        setShowPlanModal(false);
-        await loadData('silent');
-        Alert.alert('Subscription active', 'Your plan has been updated.');
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Could not complete the purchase.';
-        Alert.alert('Purchase', msg);
-      }
-      return;
-    }
-
-    try {
-      const checkoutRes = await api.post<any>('/api/payments/checkout/session', {
-        plan_id: plan,
-        user_email: user?.email ?? undefined,
-        return_url: Platform.OS === 'web' ? undefined : 'snaproad://billing',
-      });
-      if (checkoutRes.success) {
-        const url = checkoutRes.data?.url ?? (checkoutRes.data as any)?.data?.url;
-        if (url && typeof url === 'string') {
-          await Linking.openURL(url);
-          setShowPlanModal(false);
-          return;
-        }
-      }
-      Alert.alert('Upgrade Failed', checkoutRes.error ?? 'Could not start checkout. Please try again.');
-    } catch (err) {
-      Alert.alert('Upgrade Failed', 'Could not process upgrade right now. Check your connection and try again.');
-    }
-    setShowPlanModal(false);
-    await loadData('silent');
-  }, [updateUser, loadData, navigation, user?.email, user?.id, user?.plan_entitlement_source]);
-
-  /**
-   * "Restore Purchases" handler — required by Apple to be discoverable on the
-   * paywall. Walks our IAP service for any past Apple transactions tied to
-   * configured SnapRoad SKUs and re-syncs them with the backend so an account
-   * that lost its Premium flag (e.g. fresh install, sign-in to a new device)
-   * gets re-entitled without paying again.
-   */
-  const handleRestorePurchases = useCallback(async () => {
-    if (Platform.OS !== 'ios') {
-      Alert.alert(
-        'Restore Purchases',
-        'Restore Purchases is for iOS App Store subscriptions. On Android, your subscription is restored automatically when you sign in with the same Google account.',
-      );
-      return;
-    }
-    setRestoringPurchases(true);
-    try {
-      const result = await restoreApplePurchases();
-      if (result.delivered > 0) {
-        await loadData('silent');
-        Alert.alert(
-          'Purchases restored',
-          result.delivered === 1
-            ? 'Your previous SnapRoad subscription has been restored.'
-            : `Restored ${result.delivered} previous subscriptions.`,
-        );
-      } else if (result.reason === 'none_found') {
-        Alert.alert(
-          'Nothing to restore',
-          'We could not find any previous SnapRoad subscriptions on this Apple ID.',
-        );
-      } else if (result.reason === 'sync_failed') {
-        Alert.alert(
-          'Restore failed',
-          result.message || 'Could not verify your subscription with SnapRoad. Please try again in a moment.',
-        );
-      } else {
-        Alert.alert(
-          'Restore failed',
-          result.message || 'Could not check your past purchases. Please try again.',
-        );
-      }
-    } finally {
-      setRestoringPurchases(false);
-    }
-  }, [loadData]);
-
-  useEffect(() => {
-    const status = typeof route.params?.status === 'string' ? route.params.status : '';
-    const sessionId = typeof route.params?.session_id === 'string' ? route.params.session_id : '';
-    const key = `${status}:${sessionId}`;
-    if (!status || handledBillingStatusRef.current === key) return;
-    handledBillingStatusRef.current = key;
-
-    const finalizeBilling = async () => {
-      if (status === 'success' && sessionId) {
-        const result = await api.get(`/api/payments/checkout/status/${sessionId}`);
-        if (!result.success) {
-          Alert.alert('Subscription Update', result.error || 'Payment completed, but we could not refresh your plan yet.');
-          return;
-        }
-        await loadData('silent');
-        Alert.alert('Subscription Updated', 'Your subscription is active and your account has been refreshed.');
-        return;
-      }
-
-      if (status === 'cancel') {
-        Alert.alert('Checkout Cancelled', 'Your plan was not changed.');
-        return;
-      }
-
-      if (status === 'portal') {
-        await loadData('silent');
-        Alert.alert('Billing Updated', 'Returned from the billing portal.');
-      }
-    };
-
-    finalizeBilling().catch(() => {
-      Alert.alert('Billing Update', 'Returned from billing, but the app could not refresh your account yet.');
-    });
-  }, [loadData, route.params?.session_id, route.params?.status]);
-
   const syncNotification = useCallback(async (setting: string, enabled: boolean) => {
     setNotifSyncing(true);
     try {
@@ -761,8 +538,7 @@ export default function ProfileScreen() {
     }
   }, []);
 
-  const currentPlan = user?.isFamilyPlan ? 'family' : user?.isPremium ? 'premium' : 'basic';
-  const planConfig = PLANS[currentPlan];
+  const planConfig = FREE_PLAN_CONFIG;
   const initials = (user?.name ?? 'U').split(' ').filter(Boolean).map((n) => n[0]).join('').slice(0, 2).toUpperCase();
   const badgeTotal = badgeRows.length || 1;
   const actionRows: ProfileOverviewActionItem[] = [
@@ -770,13 +546,8 @@ export default function ProfileScreen() {
       key: 'share_location',
       icon: 'locate-outline',
       label: 'Share My Location',
-      value: user?.isPremium ? 'Premium enabled' : 'Track friends on the map',
-      badgeText: user?.isPremium ? 'PREMIUM' : 'LOCKED',
+      value: 'Available during launch',
       onPress: async () => {
-        if (!user?.isPremium) {
-          openPlanOptions();
-          return;
-        }
         const { lat, lng } = location;
         const coords =
           Number.isFinite(lat) && Number.isFinite(lng)
@@ -796,10 +567,8 @@ export default function ProfileScreen() {
       key: 'achievements',
       icon: 'trophy-outline',
       label: 'Achievements',
-      value: user?.isPremium
-        ? `${badgeRows.filter((b) => b.earned).length}/${badgeTotal} badges · open Insights for full list`
-        : `${badgeRows.filter((b) => b.earned).length}/${badgeTotal} badges · Insights is Premium`,
-      onPress: () => (user?.isPremium ? setShowInsightsDashboard(true) : openPlanOptions()),
+      value: `${badgeRows.filter((b) => b.earned).length}/${badgeTotal} badges · open Insights for full list`,
+      onPress: () => setShowInsightsDashboard(true),
     },
     {
       key: 'incidents',
@@ -860,7 +629,7 @@ export default function ProfileScreen() {
             <View style={{ flex: 1, paddingRight: 10 }}>
               <Text style={[styles.guestAccountTitle, { color: text }]}>Save your drives</Text>
               <Text style={[styles.guestAccountSub, { color: sub }]}>
-                Sign in when you want trip history, metrics, Orion, cameras, and premium tools.
+                Guest mode works for driving, cameras, and offers. Sign in when you want your history synced across devices.
               </Text>
             </View>
             <View style={styles.guestAccountActions}>
@@ -897,15 +666,14 @@ export default function ProfileScreen() {
             <TouchableOpacity
               activeOpacity={0.92}
               onPress={() => {
-                if (user?.isPremium) setShowInsightsDashboard(true);
-                else openPlanOptions();
+                setShowInsightsDashboard(true);
               }}
               style={{ marginHorizontal: 16, marginBottom: 12, borderRadius: 16, overflow: 'hidden' }}
               accessibilityRole="button"
-              accessibilityLabel={user?.isPremium ? 'Open Insights and Recap dashboard' : 'Upgrade to unlock Insights and Recap'}
+              accessibilityLabel="Open Insights and Recap dashboard"
             >
               <LinearGradient
-                colors={user?.isPremium ? ['#1D4ED8', '#3B82F6'] : ['#475569', '#64748B']}
+                colors={['#1D4ED8', '#3B82F6']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={{ paddingVertical: 12, paddingHorizontal: 14 }}
@@ -913,19 +681,17 @@ export default function ProfileScreen() {
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                   <View style={{ flex: 1, paddingRight: 12 }}>
                     <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, fontWeight: '800', letterSpacing: 0.8 }}>
-                      INSIGHTS & RECAP {user?.isPremium ? '' : '· PREMIUM'}
+                      INSIGHTS & RECAP
                     </Text>
                     <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900', marginTop: 4 }}>
-                      {user?.isPremium ? 'Your tracking dashboard' : 'Unlock with Premium'}
+                      Your tracking dashboard
                     </Text>
                     <Text style={{ color: 'rgba(255,255,255,0.88)', fontSize: 12, marginTop: 4 }} numberOfLines={1}>
-                      {user?.isPremium
-                        ? 'Trips · Safety · Gems · Fuel · Badges · Orion'
-                        : 'Weekly recap, coaching, fuel trends, and badges explorer — upgrade to view.'}
+                      Trips · Safety · Gems · Fuel · Badges · Orion
                     </Text>
                   </View>
                   <View style={{ backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 10, padding: 8 }}>
-                    <Ionicons name={user?.isPremium ? 'stats-chart' : 'lock-closed'} size={22} color="#fff" />
+                    <Ionicons name="stats-chart" size={22} color="#fff" />
                   </View>
                 </View>
               </LinearGradient>
@@ -1027,81 +793,8 @@ export default function ProfileScreen() {
               <Ionicons name="chevron-forward" size={18} color={sub} />
             </TouchableOpacity>
 
-            <SectionHeader title="Your Plan" isLight={isLight} />
-            <PlanCard cardBg={cardBg} text={text} sub={sub} planName={planConfig.name} planPrice={planConfig.price} planFeatures={planConfig.features} currentPlan={currentPlan} onUpgrade={openPlanOptions} />
-
-            <TouchableOpacity
-              style={{
-                marginHorizontal: 16,
-                marginBottom: 12,
-                paddingVertical: 12,
-                paddingHorizontal: 14,
-                borderRadius: 12,
-                backgroundColor: isLight ? '#EFF6FF' : 'rgba(59,130,246,0.12)',
-                borderWidth: 1,
-                borderColor: colors.primary + '40',
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-              onPress={openPlanOptions}
-              activeOpacity={0.75}
-              accessibilityRole="button"
-              accessibilityLabel="Plans and billing"
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: text, fontSize: 15, fontWeight: '800' }}>Plans &amp; billing</Text>
-                <Text style={{ color: sub, fontSize: 11, marginTop: 3, lineHeight: 15 }} numberOfLines={1}>
-                  {(Platform.OS === 'ios' && (user?.plan_entitlement_source || '').toLowerCase() === 'apple')
-                    ? 'Premium is managed with Apple in iPhone Settings → Apple ID → Subscriptions.'
-                    : currentPlan === 'basic'
-                      ? premiumSavingsPercent() > 0
-                        ? `${PLANS.premium.price} · reg. $${PREMIUM_PUBLIC_MONTHLY.toFixed(2)}/mo · ~${premiumSavingsPercent()}% off`
-                        : `${PLANS.premium.price} · Upgrade anytime`
-                      : 'View plans, compare features, or change subscription'}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.primary} />
-            </TouchableOpacity>
-
-            {currentPlan !== 'basic' && (
-              Platform.OS !== 'ios' ||
-              (user?.plan_entitlement_source || '').toLowerCase() === 'apple' ||
-              IOS_EXTERNAL_BILLING_ENABLED
-            ) && (
-              <TouchableOpacity
-                style={{ marginHorizontal: 16, marginBottom: 8, paddingVertical: 10, borderRadius: 11, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, alignItems: 'center', backgroundColor: cardBg }}
-                onPress={async () => {
-                  try {
-                    if (Platform.OS === 'ios' && (user?.plan_entitlement_source || '').toLowerCase() === 'apple') {
-                      try {
-                        const { deepLinkToSubscriptions } = await import('react-native-iap');
-                        await deepLinkToSubscriptions({});
-                      } catch {
-                        await Linking.openURL('https://apps.apple.com/account/subscriptions');
-                      }
-                      return;
-                    }
-                    const res = await api.post<{ success?: boolean; data?: { url?: string } }>('/api/payments/billing-portal', {
-                      return_url: Platform.OS === 'web' ? undefined : 'snaproad://billing/portal',
-                    });
-                    if (!res.success) {
-                      Alert.alert('Manage Subscription', res.error || 'Could not open billing portal.');
-                      return;
-                    }
-                    const body = res.data as { success?: boolean; data?: { url?: string } } | undefined;
-                    const url = body?.data?.url;
-                    if (url) await Linking.openURL(url);
-                    else Alert.alert('Manage Subscription', 'No billing link returned. Complete a subscription purchase once, or run DB migration 016_profiles_stripe_customer.sql and try again after checkout.');
-                  } catch (e: any) {
-                    Alert.alert('Error', e?.message || 'Could not open billing portal.');
-                  }
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={{ color: colors.primary, fontSize: 14, fontWeight: '600' }}>Manage Subscription</Text>
-              </TouchableOpacity>
-            )}
+            <SectionHeader title="Launch Access" isLight={isLight} />
+            <PlanCard cardBg={cardBg} text={text} sub={sub} planName={planConfig.name} planPrice={planConfig.price} planFeatures={planConfig.features} currentPlan="free" onUpgrade={openPlanOptions} />
 
             <SectionHeader title="Vehicle" isLight={isLight} />
             <VehicleCard
@@ -1231,19 +924,6 @@ export default function ProfileScreen() {
         </View>
       </Modal>
 
-      <PlanModal
-        visible={showPlanModal}
-        onClose={() => setShowPlanModal(false)}
-        cardBg={cardBg}
-        text={text}
-        sub={sub}
-        currentPlan={currentPlan}
-        onSelectPlan={handleSelectPlan}
-        isLight={isLight}
-        onRestorePurchases={handleRestorePurchases}
-        restoreInFlight={restoringPurchases}
-        iosSubscriptionStoreLines={iosSubscriptionStoreLines}
-      />
       <AddPlaceModal
         visible={showAddPlace}
         onClose={() => setShowAddPlace(false)}
@@ -1274,7 +954,7 @@ export default function ProfileScreen() {
         gemTxRows={gemTxRows}
         badgeRows={badgeRows}
         fuelSummary={fuelSummary}
-        isPremium={Boolean(user?.isPremium)}
+        isPremium
         onUpgrade={() => {
           setShowInsightsDashboard(false);
           openPlanOptions();

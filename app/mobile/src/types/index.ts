@@ -23,6 +23,7 @@ export interface User {
   /** Total XP from profile API */
   xp?: number;
   plan?: string;
+  isGuest?: boolean;
   gem_multiplier?: number;
   vehicle_height_meters?: number;
   /** car | motorcycle — from profiles.vehicle_type */

@@ -2220,8 +2220,8 @@ export default function MapScreen() {
   } = useMapLayers();
   /** Apple Maps baseline: safety cameras should be visible during active nav even if the explore layer is off. */
   const trafficSafetyWanted = showTrafficSafety || nav.isNavigating;
-  /** Camera POIs are a premium browse layer, but active navigation should still populate safety context. */
-  const cameraPoisWanted = (Boolean(user?.isPremium) && showCameras) || nav.isNavigating;
+  /** Camera POIs should be visible when enabled, plus during active navigation for safety context. */
+  const cameraPoisWanted = showCameras || nav.isNavigating;
 
   // ── New layer data ──
   const [photoReports, setPhotoReports] = useState<PhotoReport[]>([]);
@@ -5534,7 +5534,7 @@ export default function MapScreen() {
       />
 
       <TrafficCameraSheet
-        visible={Boolean(user?.isPremium && selectedTrafficCamera)}
+        visible={Boolean(selectedTrafficCamera)}
         camera={selectedTrafficCamera}
         onClose={() => setSelectedTrafficCamera(null)}
       />
@@ -6807,7 +6807,6 @@ export default function MapScreen() {
                 ic: 'videocam-outline' as const,
                 v: showCameras,
                 t: setShowCameras,
-                sub: user?.isPremium ? undefined : 'Premium — tap to upgrade and enable',
               },
               { k: 'construction', l: 'Construction', ic: 'construct-outline' as const, v: showConstruction, t: setShowConstruction },
               {
@@ -6830,22 +6829,10 @@ export default function MapScreen() {
                   ) : null}
                 </View>
                 <Switch
-                  value={ly.k === 'cameras' ? Boolean(user?.isPremium && ly.v) : ly.v}
+                  value={ly.v}
                   disabled={'disabled' in ly && ly.disabled}
                   onValueChange={(v) => {
                     if (ly.k === 'cameras') {
-                      if (!user?.isPremium) {
-                        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-                        Alert.alert(
-                          'Premium feature',
-                          'Traffic cameras on the map are included with SnapRoad Premium. Upgrade to enable this layer.',
-                          [
-                            { text: 'Not now', style: 'cancel' },
-                            { text: 'Upgrade', onPress: () => rnNav.navigate('Profile', { screen: 'ProfileMain' }) },
-                          ],
-                        );
-                        return;
-                      }
                       setShowCameras(v);
                       return;
                     }
@@ -6887,11 +6874,6 @@ export default function MapScreen() {
             rnNav.navigate('Offers', { screen: 'OffersMain' });
           } else if (screen === 'Wallet') {
             rnNav.navigate('Wallet', { screen: 'RewardsMain' });
-          } else if (screen === 'Premium') {
-            (rnNav as { navigate: (name: string, params?: object) => void }).navigate('Profile', {
-              screen: 'ProfileMain',
-              params: { openBilling: true },
-            });
           } else if (screen === 'Profile') {
             rnNav.navigate('Profile', { screen: 'ProfileMain' });
           } else if (screen === 'Help') {

@@ -232,7 +232,6 @@ function ProfileStackScreen() {
   return (
     <ProfileStack.Navigator screenOptions={{ headerShown: false }}>
       <ProfileStack.Screen name="ProfileMain" component={ProfileScreenLazy} />
-      <ProfileStack.Screen name="ProfileBilling" component={ProfileScreenLazy} />
       <ProfileStack.Screen
         name="Auth"
         getComponent={() => require('./src/screens/AuthScreen').default}
@@ -464,37 +463,6 @@ function RootNavigator() {
 
     const path = getPathFromUrl(normalizedUrl);
 
-    if (path.startsWith('billing/')) {
-      lastHandledUrlRef.current = normalizedUrl;
-      const params = parseParamsFromUrl(normalizedUrl);
-      const sessionId = (params.session_id || '').trim();
-      const statusSeg = path.slice('billing/'.length).split('/')[0] || '';
-
-      if (isAuthenticated) {
-        if (statusSeg === 'success' && sessionId) {
-          try {
-            await api.get(`/api/payments/checkout/status/${encodeURIComponent(sessionId)}`);
-          } catch (e) {
-            console.warn('[Billing] checkout status failed', e);
-          }
-        }
-        const goProfile = () => {
-          if (!rootNavigationRef.isReady()) return;
-          rootNavigationRef.dispatch(
-            CommonActions.navigate({
-              name: 'Profile',
-              params: {
-                screen: 'ProfileMain',
-                params: { status: statusSeg, session_id: sessionId },
-              },
-            }),
-          );
-        };
-        requestAnimationFrame(goProfile);
-      }
-      return;
-    }
-
     if (path !== 'auth') {
       return;
     }
@@ -642,7 +610,6 @@ function RootNavigator() {
         Profile: {
           screens: {
             ProfileMain: 'profile',
-            ProfileBilling: 'billing/:status',
             Auth: 'auth',
             ForgotPassword: 'forgot-password',
             ResetPassword: 'reset-password',
@@ -784,25 +751,8 @@ export default function App() {
   }, []);
 
   React.useEffect(() => {
-    if (Platform.OS !== 'ios') return;
-    let cancelled = false;
-    let shutdownAppleIap: (() => Promise<void>) | null = null;
-    void (async () => {
-      try {
-        const appleIap = await import('./src/billing/appleIap');
-        if (cancelled) return;
-        shutdownAppleIap = appleIap.shutdownAppleIap;
-        await appleIap.bootstrapAppleIap();
-      } catch (e) {
-        console.warn('[IAP] bootstrap failed', e);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      if (shutdownAppleIap) {
-        void shutdownAppleIap().catch(() => {});
-      }
-    };
+    // IAP is intentionally dormant while SnapRoad launches as a free product.
+    return undefined;
   }, []);
 
   if (apiConfigErr) {

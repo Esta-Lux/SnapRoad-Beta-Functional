@@ -6,7 +6,7 @@ import logging
 import math
 import time
 from models.schemas import TripResult, FuelLogCreate
-from middleware.auth import get_current_user, get_current_user_optional
+from middleware.auth import get_current_user, get_current_user_optional, get_current_user_or_guest
 from pydantic import BaseModel
 from uuid import UUID, uuid4
 from services.trips_ports import (
@@ -24,6 +24,7 @@ from services.llm_client import chat_completion_model, get_sync_openai_client
 from database import get_supabase
 from services.supabase_service import sb_get_profile
 from services.premium_access import require_premium_user
+from services.guest_activity import is_guest_user_id, record_guest_activity
 from limiter import limiter
 from services.gas_prices_service import regular_price_usd_for_state_label
 from services.tomtom_fuel import fetch_tomtom_fuel_stations
@@ -54,6 +55,7 @@ trips_legacy_router = APIRouter()
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
 OptionalUser = Annotated[Optional[dict], Depends(get_current_user_optional)]
+CurrentUserOrGuest = Annotated[dict, Depends(get_current_user_or_guest)]
 
 _LEGACY_503_RESPONSES = {
     503: {"description": "Legacy endpoint unavailable in production"},
@@ -904,7 +906,7 @@ def _read_profile_totals_after_trip(user_id: str) -> Optional[Dict[str, Any]]:
 
 @trips_history_router.post("/trips/complete", responses=_503_RESPONSES)
 @limiter.limit("30/minute")
-def complete_trip(request: Request, body: TripCompleteBody, user: CurrentUser):
+def complete_trip(request: Request, body: TripCompleteBody, user: CurrentUserOrGuest):
     """Persist a completed trip to Supabase and update profile stats."""
     user_id = str(user.get("user_id") or user.get("id") or "").strip()
     distance = _sanitize_trip_distance_miles(
@@ -926,6 +928,45 @@ def complete_trip(request: Request, body: TripCompleteBody, user: CurrentUser):
             },
         }
     safety = max(0, min(100, body.safety_score))
+    if is_guest_user_id(user_id):
+        trip_id = f"guest_trip_{uuid4()}"
+        gems_earned, xp_earned = _compute_trip_rewards(
+            distance,
+            safety,
+            {"plan": "free", "is_premium": False},
+            body.duration_seconds,
+            profile_id="",
+        )
+        record_guest_activity(
+            user_id,
+            "trip_complete",
+            trip_id=trip_id,
+            metadata={
+                "distance_miles": round(distance, 2),
+                "duration_seconds": _int_for_pg(body.duration_seconds),
+                "safety_score": round(safety, 1),
+                "origin": body.origin or "Start",
+                "destination": body.destination or "End",
+                "gems_earned": gems_earned,
+                "xp_earned": xp_earned,
+            },
+        )
+        return {
+            "success": True,
+            "data": {
+                "trip_id": trip_id,
+                "counted": True,
+                "guest": True,
+                "gems_earned": gems_earned,
+                "xp_earned": xp_earned,
+                "safety_score": round(safety, 1),
+                "distance_miles": round(distance, 2),
+                "duration_seconds": _int_for_pg(body.duration_seconds),
+                "origin": body.origin or "Start",
+                "destination": body.destination or "End",
+                "message": "Guest trip tracked locally and archived for admin review.",
+            },
+        }
     prof = sb_get_profile(str(user_id)) if user_id else None
     reward_user = {**user, **(prof or {})}
     already_today = _trip_gems_today_utc(user_id)

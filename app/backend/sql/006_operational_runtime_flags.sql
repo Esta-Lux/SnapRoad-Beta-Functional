@@ -4,7 +4,7 @@
 INSERT INTO public.app_config (key, value, updated_at) VALUES
   ('driver_signups_enabled', 'true'::jsonb, NOW()),
   ('partner_signups_enabled', 'true'::jsonb, NOW()),
-  ('premium_purchases_enabled', 'true'::jsonb, NOW()),
+  ('premium_purchases_enabled', 'false'::jsonb, NOW()),
   ('partner_payments_enabled', 'true'::jsonb, NOW()),
   ('offer_redemptions_enabled', 'true'::jsonb, NOW()),
   ('partner_qr_redemption_enabled', 'true'::jsonb, NOW()),

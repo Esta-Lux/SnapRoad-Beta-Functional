@@ -21,7 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Skeleton from '../common/Skeleton';
 import { DRIVING_MODES } from '../../constants/modes';
-import type { CommuteRoute, DrivingMode, PlanTier, SavedLocation, SavedRoute, User } from '../../types';
+import type { CommuteRoute, DrivingMode, SavedLocation, SavedRoute, User } from '../../types';
 import type { ProfileOverviewActionItem } from './types';
 export type {
   ProfileBadgeItem,
@@ -56,7 +56,7 @@ export function ProfileHeader({
   level: number;
 }) {
   return (
-    <LinearGradient colors={user?.isPremium ? ['#D97706', '#F59E0B'] : ['#1D4ED8', '#2563EB']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.headerCard}>
+    <LinearGradient colors={['#1D4ED8', '#2563EB']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.headerCard}>
       <TouchableOpacity style={styles.avatarCircle} accessibilityRole="button" accessibilityLabel="Profile avatar">
         <Text style={styles.avatarText}>{initials}</Text>
       </TouchableOpacity>
@@ -229,9 +229,12 @@ export function PlanCard({
   planName: string;
   planPrice: string;
   planFeatures: string[];
-  currentPlan: PlanTier;
+  currentPlan: string;
   onUpgrade: () => void;
 }) {
+  void currentPlan;
+  void onUpgrade;
+
   return (
     <View style={[styles.card, { backgroundColor: cardBg }]}>
       <Text style={[styles.planName, { color: text }]}>{planName} - {planPrice}</Text>
@@ -245,11 +248,6 @@ export function PlanCard({
           +{planFeatures.length - 6} more — tap Compare plans below
         </Text>
       ) : null}
-      {currentPlan === 'basic' && (
-        <TouchableOpacity style={styles.upgradeBtn} onPress={onUpgrade}>
-          <Text style={styles.upgradeBtnText}>Upgrade</Text>
-        </TouchableOpacity>
-      )}
     </View>
   );
 }
@@ -265,15 +263,15 @@ export function PremiumUpsellCard({
     <View style={[styles.card, { backgroundColor: cardBg, padding: 0, overflow: 'hidden' }]}>
       <LinearGradient colors={['#2563EB', '#4F46E5']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.upsellTop}>
         <Ionicons name="flash-outline" size={34} color="#fff" />
-        <Text style={styles.upsellTitle}>Premium Feature</Text>
-        <Text style={styles.upsellSub}>Unlock deeper score insights and Orion-powered driving tips</Text>
+        <Text style={styles.upsellTitle}>Included during launch</Text>
+        <Text style={styles.upsellSub}>Use deeper score insights and Orion-powered driving tips while SnapRoad is free.</Text>
       </LinearGradient>
       <View style={styles.upsellBody}>
         {[
           'Insights & Recap — mileage, trips, safety & weekly trends',
           'Deeper discounts on local & partner offers (many save ~$100–150/mo)',
           'Detailed driving score breakdown & improvement tips',
-          'Voice coaching & Premium stats from Orion',
+          'Voice coaching and driving stats from Orion',
           'Track progress over time',
         ].map((feature) => (
           <View key={feature} style={styles.upsellRow}>
@@ -282,7 +280,7 @@ export function PremiumUpsellCard({
           </View>
         ))}
         <TouchableOpacity style={styles.upsellBtn} onPress={onUpgrade}>
-          <Text style={styles.upsellBtnText}>Upgrade to Premium</Text>
+          <Text style={styles.upsellBtnText}>Open insights</Text>
         </TouchableOpacity>
       </View>
     </View>

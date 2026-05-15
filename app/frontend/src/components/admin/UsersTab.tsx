@@ -12,14 +12,9 @@ interface UsersTabProps {
   theme: 'dark' | 'light'
 }
 
-/** Matches backend sb_get_platform_stats premium counting (incl. admin promo merge). */
-function isEffectivePremium(u: AdminUser): boolean {
-  const p = (u.plan || '').toLowerCase()
-  return Boolean(u.is_premium) || p === 'premium' || p === 'family'
-}
-
 function roleBadge(role: string | undefined): { label: string; pill: string } {
   const r = (role || 'driver').toLowerCase()
+  if (r === 'guest') return { label: 'Guest', pill: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/25' }
   if (r === 'partner') return { label: 'Partner', pill: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/25' }
   if (r === 'admin' || r === 'super_admin') return { label: 'Admin', pill: 'bg-amber-500/15 text-amber-300 border-amber-500/25' }
   return { label: 'Driver', pill: 'bg-slate-500/15 text-slate-300 border-white/10' }
@@ -43,6 +38,10 @@ function partnerPlanPillClass(plan: string | null | undefined): string {
 function isPartnerPortalAccount(u: AdminUser): boolean {
   if (u.partner_id) return true
   return (u.role || '').toLowerCase() === 'partner'
+}
+
+function isGuestUser(u: AdminUser): boolean {
+  return Boolean(u.is_guest) || (u.role || '').toLowerCase() === 'guest' || String(u.id || '').startsWith('guest_')
 }
 
 function formatPartnerPlanDisplay(plan: string | null | undefined): string {
@@ -69,14 +68,6 @@ export default function UsersTab({ theme }: UsersTabProps) {
   const [editUser, setEditUser] = useState<AdminUser | null>(null)
   const [editName, setEditName] = useState('')
   const [editBusy, setEditBusy] = useState(false)
-  const [planConfirm, setPlanConfirm] = useState<{
-    user: AdminUser
-    next: 'basic' | 'premium' | 'family'
-  } | null>(null)
-
-  useEffect(() => {
-    loadUsers()
-  }, [])
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -87,7 +78,12 @@ export default function UsersTab({ theme }: UsersTabProps) {
     })
   }, [])
 
-  const loadUsers = async () => {
+  const showFeedback = useCallback((type: 'success' | 'error', message: string) => {
+    setFeedback({ type, message })
+    setTimeout(() => setFeedback(null), 3000)
+  }, [])
+
+  const loadUsers = useCallback(async () => {
     setLoading(true)
     try {
       const res = await adminApi.getUsers(500)
@@ -100,12 +96,11 @@ export default function UsersTab({ theme }: UsersTabProps) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [showFeedback])
 
-  const showFeedback = (type: 'success' | 'error', message: string) => {
-    setFeedback({ type, message })
-    setTimeout(() => setFeedback(null), 3000)
-  }
+  useEffect(() => {
+    void loadUsers()
+  }, [loadUsers])
 
   const handleSuspendUser = async (userId: string) => {
     try {
@@ -114,7 +109,7 @@ export default function UsersTab({ theme }: UsersTabProps) {
         showFeedback('success', 'User suspended')
         loadUsers()
       }
-    } catch (error) {
+    } catch {
       showFeedback('error', 'Failed to suspend user')
     }
   }
@@ -141,21 +136,6 @@ export default function UsersTab({ theme }: UsersTabProps) {
       }
     } catch (error) {
       showFeedback('error', adminApiErrorMessage(error, 'Failed to delete user'))
-    }
-  }
-
-  const applyPlanChange = async (userId: string, plan: 'basic' | 'premium' | 'family') => {
-    try {
-      const res = await adminApi.updateUser(userId, {
-        plan,
-        is_premium: plan !== 'basic',
-      })
-      if (res.success) {
-        showFeedback('success', `User plan updated to ${plan}`)
-        void loadUsers()
-      }
-    } catch (e) {
-      showFeedback('error', adminApiErrorMessage(e, 'Failed to update user plan'))
     }
   }
 
@@ -191,20 +171,22 @@ export default function UsersTab({ theme }: UsersTabProps) {
         a.click()
         URL.revokeObjectURL(url)
       }
-    } catch (error) {
+    } catch {
       showFeedback('error', 'Failed to export users')
     }
   }
 
   const filteredUsers = useMemo(() => {
     return users.filter(user => {
-      const matchesSearch = (user.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           (user.email || '').toLowerCase().includes(searchTerm.toLowerCase())
+      const q = searchTerm.toLowerCase()
+      const matchesSearch = (user.name || '').toLowerCase().includes(q) ||
+                           (user.email || '').toLowerCase().includes(q) ||
+                           (user.guest_id || user.id || '').toLowerCase().includes(q)
       const matchesPlan = (() => {
         if (planFilter === 'All Plans') return true
         const pf = planFilter.toLowerCase()
         const driverPlan = (user.plan || 'basic').toLowerCase()
-        if (['basic', 'premium', 'family'].includes(pf)) return driverPlan === pf
+        if (pf === 'basic') return driverPlan === pf
         if (['starter', 'growth', 'enterprise'].includes(pf)) {
           if (!isPartnerPortalAccount(user)) return false
           const raw = (user.partner_plan || '').toLowerCase()
@@ -218,6 +200,7 @@ export default function UsersTab({ theme }: UsersTabProps) {
       const matchesRole =
         roleFilter === 'All roles' ||
         (roleFilter === 'driver' && r === 'driver') ||
+        (roleFilter === 'guest' && isGuestUser(user)) ||
         (roleFilter === 'partner' && r === 'partner') ||
         (roleFilter === 'admin' && (r === 'admin' || r === 'super_admin'))
       return matchesSearch && matchesPlan && matchesStatus && matchesRole
@@ -226,7 +209,7 @@ export default function UsersTab({ theme }: UsersTabProps) {
 
   const toggleSelectAllFiltered = useCallback(() => {
     setSelectedIds((prev) => {
-      const ids = filteredUsers.map((u) => u.id)
+      const ids = filteredUsers.filter((u) => !isGuestUser(u)).map((u) => u.id)
       const allOn = ids.length > 0 && ids.every((id) => prev.has(id))
       if (allOn) {
         const next = new Set(prev)
@@ -246,9 +229,9 @@ export default function UsersTab({ theme }: UsersTabProps) {
     users.length > 0
       ? Math.round(users.reduce((acc, u) => acc + num(u.safety_score), 0) / users.length)
       : 0
-  const premiumCount = users.filter(isEffectivePremium).length
+  const guestCount = users.filter(isGuestUser).length
 
-  const filteredIds = useMemo(() => filteredUsers.map((u) => u.id), [filteredUsers])
+  const filteredIds = useMemo(() => filteredUsers.filter((u) => !isGuestUser(u)).map((u) => u.id), [filteredUsers])
   const allFilteredSelected =
     filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id))
 
@@ -271,8 +254,8 @@ export default function UsersTab({ theme }: UsersTabProps) {
           <div className={`text-xs ${textSecondary}`}>Total Users</div>
         </div>
         <div className={`p-4 rounded-xl border ${card}`}>
-          <div className={`text-2xl font-bold ${textPrimary}`}>{premiumCount}</div>
-          <div className={`text-xs ${textSecondary}`}>Premium / Family (effective)</div>
+          <div className={`text-2xl font-bold ${textPrimary}`}>{guestCount}</div>
+          <div className={`text-xs ${textSecondary}`}>Guest Sessions</div>
         </div>
         <div className={`p-4 rounded-xl border ${card}`}>
           <div className={`text-2xl font-bold ${textPrimary}`}>{avgSafety}</div>
@@ -285,8 +268,8 @@ export default function UsersTab({ theme }: UsersTabProps) {
       </div>
 
       <p className={`text-xs ${textSecondary} px-1`}>
-        For accounts with a linked business, the Plan column shows <strong className={textPrimary}>Partner</strong> tier (Starter / Growth / …) from the Partners table, plus a <strong className={textPrimary}>Driver app</strong> line for the mobile subscription.
-        Plan filters: <strong className={textPrimary}>Basic / Premium / Family</strong> match the driver profile; <strong className={textPrimary}>Starter / Growth / Enterprise</strong> match the partner business tier.
+        For accounts with a linked business, the Plan column shows <strong className={textPrimary}>Partner</strong> tier (Starter / Growth / …) from the Partners table, plus a <strong className={textPrimary}>Driver app</strong> line for launch access.
+        Guest rows come from launch-mode mobile sessions and include trips, miles, savings, activity count, and last seen time when the guest archive tables are enabled.
       </p>
 
       {/* Filters */}
@@ -313,9 +296,7 @@ export default function UsersTab({ theme }: UsersTabProps) {
           >
             <option value="All Plans">All Plans</option>
             <optgroup label="Driver app">
-              <option value="basic">Basic</option>
-              <option value="premium">Premium</option>
-              <option value="family">Family</option>
+              <option value="basic">Free launch</option>
             </optgroup>
             <optgroup label="Partner business">
               <option value="starter">Starter</option>
@@ -332,6 +313,7 @@ export default function UsersTab({ theme }: UsersTabProps) {
           >
             <option value="All roles">All roles</option>
             <option value="driver">Drivers only</option>
+            <option value="guest">Guests only</option>
             <option value="partner">Partners only</option>
             <option value="admin">Admins only</option>
           </select>
@@ -398,13 +380,22 @@ export default function UsersTab({ theme }: UsersTabProps) {
                       type="checkbox"
                       checked={selectedIds.has(user.id)}
                       onChange={() => toggleSelect(user.id)}
+                      disabled={isGuestUser(user)}
                       className="rounded border-slate-500"
                     />
                   </td>
                   <td className="px-6 py-4">
                     <div>
                       <div className={`text-sm font-medium ${textPrimary}`}>{user.name || '—'}</div>
-                      <div className={`text-xs ${textSecondary}`}>{user.email}</div>
+                      <div className={`text-xs ${textSecondary}`}>
+                        {isGuestUser(user) ? `Guest ID ${user.guest_id || user.id}` : user.email}
+                      </div>
+                      {isGuestUser(user) ? (
+                        <div className={`text-[10px] mt-0.5 ${textSecondary}`}>
+                          {num(user.total_trips).toLocaleString()} trips · {num(user.total_miles).toLocaleString()} mi · {num(user.guest_event_count).toLocaleString()} events
+                          {user.last_seen_at ? ` · last seen ${String(user.last_seen_at).slice(0, 16).replace('T', ' ')}` : ''}
+                        </div>
+                      ) : null}
                       {isPartnerPortalAccount(user) ? (
                         <div className={`text-[10px] mt-0.5 ${textSecondary}`}>
                           Partner login · business id{' '}
@@ -419,16 +410,27 @@ export default function UsersTab({ theme }: UsersTabProps) {
                     <span
                       className={`inline-flex px-2 py-0.5 text-xs rounded-md border ${roleBadge(user.role).pill}`}
                       title={
-                        (user.role || '').toLowerCase() === 'partner'
+                        isGuestUser(user)
+                          ? 'Guest launch session tracked by app activity'
+                          : (user.role || '').toLowerCase() === 'partner'
                           ? 'Uses partner portal; comp business subscription on Partners tab'
-                          : 'Driver-app profile; comp Premium/Family from this tab'
+                          : 'Driver-app profile'
                       }
                     >
                       {roleBadge(user.role).label}
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    {isPartnerPortalAccount(user) ? (
+                    {isGuestUser(user) ? (
+                      <div className="flex flex-col gap-1 max-w-[14rem]">
+                        <span className="inline-flex w-fit items-center gap-1 px-2 py-1 text-xs rounded-full bg-emerald-500/15 text-emerald-300">
+                          Free launch guest
+                        </span>
+                        <div className={`text-[10px] ${textSecondary}`}>
+                          Cameras, offers, and navigation activity are archived when used.
+                        </div>
+                      </div>
+                    ) : isPartnerPortalAccount(user) ? (
                       <div className="flex flex-col gap-1 max-w-[14rem]">
                         <span
                           className={`inline-flex w-fit items-center gap-1 px-2 py-1 text-xs rounded-full ${partnerPlanPillClass(user.partner_plan)}`}
@@ -454,12 +456,8 @@ export default function UsersTab({ theme }: UsersTabProps) {
                       </div>
                     ) : (
                       <>
-                        <span className={`px-2 py-1 text-xs rounded-full ${
-                          user.plan === 'premium' ? 'bg-purple-500/20 text-purple-400' :
-                          user.plan === 'family' ? 'bg-blue-500/20 text-blue-400' :
-                          'bg-slate-500/20 text-slate-400'
-                        }`}>
-                          {user.plan ? user.plan.charAt(0).toUpperCase() + user.plan.slice(1) : 'Basic'}
+                        <span className="px-2 py-1 text-xs rounded-full bg-slate-500/20 text-slate-400">
+                          Free launch
                         </span>
                         {user.promotion_access_until && (
                           <div className={`text-[10px] mt-1 ${textSecondary}`}>
@@ -468,7 +466,7 @@ export default function UsersTab({ theme }: UsersTabProps) {
                         )}
                         {(user.plan_entitlement_source || '').toLowerCase() === 'admin' && (
                           <div className={`text-[10px] mt-1 text-amber-400/90`}>
-                            Admin-managed tier (in-app downgrade blocked)
+                            Archived tier override
                           </div>
                         )}
                       </>
@@ -508,6 +506,10 @@ export default function UsersTab({ theme }: UsersTabProps) {
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
+                      {isGuestUser(user) ? (
+                        <span className={`text-xs ${textSecondary}`}>Tracked automatically</span>
+                      ) : (
+                        <>
                       <button
                         type="button"
                         onClick={() => {
@@ -543,35 +545,8 @@ export default function UsersTab({ theme }: UsersTabProps) {
                       >
                         <Trash2 size={16} />
                       </button>
-                      {!isPartnerPortalAccount(user) && user.plan !== 'premium' && (
-                        <button
-                          type="button"
-                          onClick={() => setPlanConfirm({ user, next: 'premium' })}
-                          className="px-2 py-1 rounded hover:bg-white/10 text-xs text-purple-300"
-                          title="Make premium"
-                        >
-                          Premium
-                        </button>
-                      )}
-                      {!isPartnerPortalAccount(user) && user.plan !== 'family' && (
-                        <button
-                          type="button"
-                          onClick={() => setPlanConfirm({ user, next: 'family' })}
-                          className="px-2 py-1 rounded hover:bg-white/10 text-xs text-blue-300"
-                          title="Set family plan"
-                        >
-                          Family
-                        </button>
-                      )}
-                      {!isPartnerPortalAccount(user) && user.plan !== 'basic' && (
-                        <button
-                          type="button"
-                          onClick={() => setPlanConfirm({ user, next: 'basic' })}
-                          className="px-2 py-1 rounded hover:bg-white/10 text-xs text-slate-300"
-                          title="Set basic"
-                        >
-                          Basic
-                        </button>
+                      <span className={`text-xs ${textSecondary}`}>Launch access</span>
+                        </>
                       )}
                     </div>
                   </td>
@@ -607,41 +582,6 @@ export default function UsersTab({ theme }: UsersTabProps) {
           setSelectedIds(new Set())
         }}
       />
-
-      {planConfirm && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60">
-          <div className={`w-full max-w-md rounded-2xl border shadow-xl p-6 ${card}`}>
-            <h3 className={`text-lg font-semibold ${textPrimary}`}>Change plan?</h3>
-            <p className={`text-sm mt-2 ${textSecondary}`}>
-              Set <strong className={textPrimary}>{planConfirm.user.email}</strong> to{' '}
-              <strong className={textPrimary}>{planConfirm.next}</strong>. This updates the driver-app subscription
-              fields on their profile immediately.
-            </p>
-            <div className="flex gap-2 mt-6">
-              <button
-                type="button"
-                onClick={() => setPlanConfirm(null)}
-                className={`flex-1 py-2.5 rounded-xl border text-sm font-medium ${
-                  isDark ? 'border-white/15 text-slate-300' : 'border-[#E6ECF5] text-[#4B5C74]'
-                }`}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const { user, next } = planConfirm
-                  setPlanConfirm(null)
-                  void applyPlanChange(user.id, next)
-                }}
-                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white text-sm font-semibold"
-              >
-                Confirm
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {editUser && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60">

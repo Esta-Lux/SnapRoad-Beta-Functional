@@ -373,11 +373,25 @@ def sb_list_profiles(limit: int = 100) -> list:
         ).limit(limit).execute()
         rows = result.data or []
         # Merge time-boxed admin promos so plan/is_premium match driver-app entitlements.
-        return [merge_profile_promotion_entitlements(dict(r)) for r in rows]
+        profiles = [merge_profile_promotion_entitlements(dict(r)) for r in rows]
+        try:
+            from services.guest_activity import list_guest_users
+
+            remaining = max(0, int(limit) - len(profiles))
+            if remaining:
+                profiles.extend(list_guest_users(limit=remaining))
+        except Exception:
+            logger.debug("guest users append skipped", exc_info=True)
+        return profiles
     except Exception as e:
         if not _table_missing(e):
             logger.error(f"sb_list_profiles: {e}")
-        return []
+        try:
+            from services.guest_activity import list_guest_users
+
+            return list_guest_users(limit=limit)
+        except Exception:
+            return []
 
 
 def sb_get_profile_promotion_until_raw(profile_id: str) -> Optional[object]:

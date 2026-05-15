@@ -239,7 +239,7 @@ export default function RewardsScreen() {
   }, [statsVersion, loadFull, location.lat, location.lng]);
 
   const earnedBadges = badges.filter((b) => b.earned).length;
-  const multiplier = user?.isPremium ? '2x' : '1x';
+  const multiplier = '1x';
   const headerMultiplier = rewardsSummary?.gemMultiplierLabel ?? multiplier;
   const tripsCardValue = rewardsSummary != null ? rewardsSummary.totalTrips : (user?.totalTrips ?? 0);
   const badgesCardLabel =
@@ -389,29 +389,27 @@ export default function RewardsScreen() {
             </LinearGradient>
           </TouchableOpacity>
 
-          {!user?.isPremium && (
-            <TouchableOpacity
-              activeOpacity={0.88}
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); navigation.navigate('Profile', { screen: 'ProfileMain' }); }}
-              style={{ marginHorizontal: 16, marginBottom: 14, borderRadius: 18, overflow: 'hidden', ...shadow(8) }}
+          <TouchableOpacity
+            activeOpacity={0.88}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); navigation.navigate('Profile', { screen: 'ProfileMain' }); }}
+            style={{ marginHorizontal: 16, marginBottom: 14, borderRadius: 18, overflow: 'hidden', ...shadow(8) }}
+          >
+            <LinearGradient
+              colors={isLight ? ['#EFF6FF', '#DBEAFE'] : ['rgba(29,78,216,0.42)', 'rgba(59,130,246,0.26)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{ flexDirection: 'row', alignItems: 'center', padding: 16, borderWidth: 1, borderColor: isLight ? 'rgba(37,99,235,0.28)' : 'rgba(96,165,250,0.4)' }}
             >
-              <LinearGradient
-                colors={isLight ? ['#EFF6FF', '#DBEAFE'] : ['rgba(29,78,216,0.42)', 'rgba(59,130,246,0.26)']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={{ flexDirection: 'row', alignItems: 'center', padding: 16, borderWidth: 1, borderColor: isLight ? 'rgba(37,99,235,0.28)' : 'rgba(96,165,250,0.4)' }}
-              >
-                <LinearGradient colors={[colors.ctaGradientStart, colors.ctaGradientEnd]} style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                  <Ionicons name="sparkles" size={22} color="#fff" />
-                </LinearGradient>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ color: text, fontSize: 15, fontWeight: '800' }}>Upgrade to Premium</Text>
-                  <Text style={{ color: sub, fontSize: 12, marginTop: 3, lineHeight: 17 }}>2× gems, richer offers, traffic cameras, more place alerts, and deeper Profile insights.</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+              <LinearGradient colors={[colors.ctaGradientStart, colors.ctaGradientEnd]} style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                <Ionicons name="sparkles" size={22} color="#fff" />
               </LinearGradient>
-            </TouchableOpacity>
-          )}
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: text, fontSize: 15, fontWeight: '800' }}>Included during launch</Text>
+                <Text style={{ color: sub, fontSize: 12, marginTop: 3, lineHeight: 17 }}>Offers, cameras, rewards, and driving insights are open while SnapRoad launches free.</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+            </LinearGradient>
+          </TouchableOpacity>
         </>
       )}
 

@@ -192,7 +192,7 @@ const FRIEND_FEATURES = [
   { icon: 'people-outline', label: 'Trusted Circles', text: 'Organize close friends, coworkers, and road trip crews.' },
   { icon: 'time-outline', label: 'Timed Sharing', text: 'Share during a drive, for an hour, or until arrival.' },
   { icon: 'map-outline', label: 'Meetup Map', text: 'See live ETAs, traffic context, and safe arrival states.' },
-  { icon: 'trophy-outline', label: 'Challenges', text: 'Premium driver goals and trip highlights with friends.' },
+  { icon: 'trophy-outline', label: 'Challenges', text: 'Driver goals and trip highlights with friends.' },
 ] as const;
 
 const FAMILY_FEATURES = [
@@ -219,8 +219,8 @@ export default function DashboardScreen() {
       title: family ? 'Family Safety' : 'Friends',
       eyebrow: family ? 'Coming soon family dashboard' : 'Coming soon friends dashboard',
       subtitle: family
-        ? 'A premium household command center for arrivals, teen driving, zones, SOS, and calm daily coordination.'
-        : 'A premium social driving hub for trusted location sharing, live ETAs, meetup coordination, and group challenges.',
+        ? 'A polished household command center for arrivals, teen driving, zones, SOS, and calm daily coordination.'
+        : 'A polished social driving hub for trusted location sharing, live ETAs, meetup coordination, and group challenges.',
       gradient: family ? (['#0F172A', '#1D4ED8', '#EC4899'] as const) : (['#0F172A', '#0EA5E9', '#8B5CF6'] as const),
       accent: family ? '#2563EB' : '#0EA5E9',
       softAccent: family ? 'rgba(37,99,235,0.12)' : 'rgba(14,165,233,0.12)',

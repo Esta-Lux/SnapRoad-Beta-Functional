@@ -35,7 +35,6 @@ export type HamburgerMenuTarget =
   | 'CommuteAlerts'
   | 'Wallet'
   | 'Profile'
-  | 'Premium'
   | 'Help'
   | 'Family';
 
@@ -125,14 +124,6 @@ export default function HamburgerMenu({ visible, onClose, isLight, onNavigate, o
       accent: '#14B8A6',
       availability: actionMeta('wallet')?.availability,
       action: () => runAfterMenuClose(onClose, () => onNavigate('Wallet')),
-    },
-    {
-      icon: actionMeta('premium')?.icon ?? 'diamond-outline',
-      label: actionMeta('premium')?.label ?? 'Premium',
-      description: actionMeta('premium')?.description ?? 'Plans and billing.',
-      accent: '#D97706',
-      availability: actionMeta('premium')?.availability,
-      action: () => runAfterMenuClose(onClose, () => onNavigate('Premium')),
     },
     {
       icon: actionMeta('support')?.icon ?? 'help-circle-outline',

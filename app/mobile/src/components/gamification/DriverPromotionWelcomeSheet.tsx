@@ -6,9 +6,9 @@ import Modal from '../common/Modal';
 import { useTheme } from '../../contexts/ThemeContext';
 
 function formatPlanLabel(plan?: string): string {
-  const p = (plan || 'premium').toLowerCase();
-  if (p === 'family') return 'Family';
-  return 'Premium';
+  const p = (plan || 'launch').toLowerCase();
+  if (p === 'family') return 'Family preview';
+  return 'Launch access';
 }
 
 function formatUntil(dateIso?: string): string {
@@ -31,8 +31,8 @@ interface Props {
 }
 
 /**
- * Shown when an admin has granted time-boxed Premium/Family access.
- * “Maybe later” dismisses for this promo window; “View plans” opens billing.
+ * Shown when an admin has granted time-boxed launch access.
+ * “Maybe later” dismisses for this promo window; the primary action opens Profile.
  */
 export default function DriverPromotionWelcomeSheet({
   visible,
@@ -53,9 +53,8 @@ export default function DriverPromotionWelcomeSheet({
         </View>
         <Text style={[styles.title, { color: colors.text }]}>Complimentary access</Text>
         <Text style={[styles.sub, { color: colors.textSecondary }]}>
-          SnapRoad for you is unlocked at the <Text style={{ fontWeight: '800', color: colors.text }}>{label}</Text> level
-          {until ? ` through ${until}` : ''}. Enjoy full driver features for this period. When it ends, you can subscribe
-          from Profile to keep Premium benefits.
+          SnapRoad is unlocked with <Text style={{ fontWeight: '800', color: colors.text }}>{label}</Text>
+          {until ? ` through ${until}` : ''}. Enjoy full driver features while the app launches free.
         </Text>
       </View>
       <TouchableOpacity activeOpacity={0.9} onPress={onViewPlans} style={styles.primaryWrap}>
@@ -65,7 +64,7 @@ export default function DriverPromotionWelcomeSheet({
           end={{ x: 1, y: 1 }}
           style={styles.primaryBtn}
         >
-          <Text style={styles.primaryBtnText}>View plans & billing</Text>
+          <Text style={styles.primaryBtnText}>Open Profile</Text>
           <Ionicons name="chevron-forward" size={18} color="#fff" />
         </LinearGradient>
       </TouchableOpacity>

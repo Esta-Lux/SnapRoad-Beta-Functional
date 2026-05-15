@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import type { User, ApiUser } from '../types';
 import { applySnapRoadFromProfilePayload } from '../utils/profileScore';
 import { friendlySupabaseAuthErrorMessage } from '../utils/deepLinks';
+import { getOrCreateGuestId } from '../utils/guestIdentity';
 
 interface AuthContextType {
   user: User | null;
@@ -129,6 +130,28 @@ function mapApiUserToContext(apiUser: Record<string, unknown>): User {
   return user;
 }
 
+function guestUserFromId(id: string): User {
+  return {
+    id,
+    name: 'Guest Driver',
+    email: '',
+    avatar: 'GD',
+    isPremium: false,
+    isFamilyPlan: false,
+    gems: 0,
+    level: 1,
+    safetyScore: 0,
+    streak: 0,
+    totalMiles: 0,
+    totalTrips: 0,
+    badges: 0,
+    xp: 0,
+    plan: 'free',
+    gem_multiplier: 1,
+    isGuest: true,
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -141,8 +164,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const restoreSession = async () => {
+    const setGuestUser = async () => {
+      setUser(guestUserFromId(await getOrCreateGuestId()));
+    };
     const token = await api.getToken();
     if (!token) {
+      await setGuestUser();
       setIsLoading(false);
       return;
     }
@@ -154,7 +181,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const role = apiUser.role as string | undefined;
         if (isStaffRole(role) && !allowStaffInDriverApp()) {
           await api.setToken(null);
-          setUser(null);
+          await setGuestUser();
         } else {
           setUser(mapApiUserToContext(apiUser));
         }
@@ -167,7 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           errMsg.toLowerCase().includes('token expired');
         if (isAuthReject) {
           await api.setToken(null);
-          setUser(null);
+          await setGuestUser();
         }
         // Network errors / 5xx: keep token so the user isn't logged out offline
       }
@@ -314,7 +341,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { supabase } = await import('../lib/supabase');
       await supabase.auth.signOut();
     } catch { /* Supabase may not be configured */ }
-    setUser(null);
+    setUser(guestUserFromId(await getOrCreateGuestId()));
     setAuthError(null);
     setStatsVersion(0);
   };
@@ -356,7 +383,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
-        isAuthenticated: !!user,
+        isAuthenticated: !!user && user.isGuest !== true,
         isLoading,
         isAuthSubmitting,
         authError,

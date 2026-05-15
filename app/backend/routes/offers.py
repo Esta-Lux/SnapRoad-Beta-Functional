@@ -15,7 +15,8 @@ from services.cache import cache_get, cache_set, cache_delete, invalidate_offers
 from services.fee_calculator import calculate_redemption_fee, record_redemption_fee
 from services.offer_categories import attach_offer_category_fields, public_category_list
 from services.offer_analytics import record_offer_event
-from middleware.auth import get_current_user, get_current_user_optional
+from middleware.auth import get_current_user, get_current_user_optional, get_current_user_or_guest
+from services.guest_activity import is_guest_user_id, record_guest_activity
 from limiter import limiter
 import asyncio
 import copy
@@ -28,6 +29,7 @@ router = APIRouter(prefix="/api", tags=["Offers"])
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
 OptionalUser = Annotated[Optional[dict], Depends(get_current_user_optional)]
+CurrentUserOrGuest = Annotated[dict, Depends(get_current_user_or_guest)]
 logger = logging.getLogger(__name__)
 
 
@@ -1070,7 +1072,7 @@ def get_personalized_offers(
 
 @router.post("/offers/{offer_id}/redeem")
 @limiter.limit("30/minute")
-def redeem_offer(request: Request, offer_id: str, auth_user: CurrentUser):
+def redeem_offer(request: Request, offer_id: str, auth_user: CurrentUserOrGuest):
     from services.runtime_config import require_enabled
 
     require_enabled(
@@ -1097,6 +1099,31 @@ def redeem_offer(request: Request, offer_id: str, auth_user: CurrentUser):
     user_id = str(auth_user.get("user_id") or auth_user.get("id") or "").strip()
     if not user_id:
         return {"success": False, "message": "Authentication required"}
+    if is_guest_user_id(user_id):
+        redemption_id = f"guest_redemption_{uuid.uuid4()}"
+        qr_payload = _issue_post_redeem_qr(offer=offer, user_id=user_id, redemption_id=redemption_id)
+        record_guest_activity(
+            user_id,
+            "offer_redeem",
+            offer_id=str(offer.get("id") or offer_id),
+            metadata={
+                "business_name": offer.get("business_name"),
+                "discount_percent": offer.get("discount_percent"),
+                "guest_redemption_id": redemption_id,
+            },
+        )
+        return {
+            "success": True,
+            "data": {
+                "redemption_id": redemption_id,
+                "redeemed_at": datetime.now(timezone.utc).isoformat(),
+                "gem_cost": 0,
+                "new_gem_total": 0,
+                "discount_applied": int(offer.get("discount_percent") or 0),
+                **(qr_payload or {}),
+            },
+            "message": "Offer saved for this guest session.",
+        }
     try:
         return complete_offer_redemption(offer=offer, user_id=user_id)
     except Exception as exc:

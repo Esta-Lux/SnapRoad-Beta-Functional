@@ -391,7 +391,7 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
             <View style={{ flex: 1, marginLeft: 12 }}>
               <Text style={[styles.headerTitle, { color: text }]}>Orion</Text>
               <Text style={[styles.headerSub, { color: sub }]}>
-                {isPremium ? 'Premium · deeper stats on every reply' : 'Voice & chat · say “take me to …” to navigate'}
+                {isPremium ? 'Driving insights on every reply' : 'Voice & chat · say “take me to …” to navigate'}
               </Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>

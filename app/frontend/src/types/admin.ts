@@ -90,6 +90,10 @@ export interface AdminUser {
   promotion_plan?: string | null
   /** admin | stripe | promo — admin-set tiers block in-app downgrades on mobile */
   plan_entitlement_source?: string | null
+  guest_id?: string | null
+  is_guest?: boolean
+  guest_event_count?: number
+  last_seen_at?: string | null
 }
 
 export interface AdminIncident {
@@ -402,4 +406,3 @@ export interface TelemetryEvent {
   error?: string | null
   error_stack?: string | null
 }
-

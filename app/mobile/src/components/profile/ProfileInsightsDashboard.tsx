@@ -180,11 +180,11 @@ export default function ProfileInsightsDashboard({
   /** Week view: server weekly total can include trips not yet in the recent-history list. */
   const kpiTripsDisplay = useMemo(() => {
     let n = kpis.trips;
-    if (preset === 'week' && isPremium && weeklyRecap.totalTrips > 0) {
+    if (preset === 'week' && weeklyRecap.totalTrips > 0) {
       n = Math.max(n, weeklyRecap.totalTrips);
     }
     return n;
-  }, [kpis.trips, preset, isPremium, weeklyRecap.totalTrips]);
+  }, [kpis.trips, preset, weeklyRecap.totalTrips]);
 
   /** Top speed display — prefer in-range max; fall back to server recap when the range is "week". */
   const topSpeedDisplay = useMemo(() => {
@@ -208,12 +208,7 @@ export default function ProfileInsightsDashboard({
   const earnedCount = badgeRows.filter((b) => b.earned).length;
 
   const loadDrivingScore = useCallback(async () => {
-    if (!isPremium) {
-      setDrivingMetrics([]);
-      setOrionTips([]);
-      setDrivingError(null);
-      return;
-    }
+    void isPremium;
     setDrivingLoading(true);
     setDrivingError(null);
     try {
@@ -272,48 +267,7 @@ export default function ProfileInsightsDashboard({
     </TouchableOpacity>
   );
 
-  if (visible && !isPremium) {
-    return (
-      <SheetModal visible={visible} onClose={onClose} scrollable={false}>
-        <View style={{ paddingVertical: 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.md }}>
-            <Text style={[typography.h2, { color: colors.text, flex: 1 }]}>Insights & Recap</Text>
-          </View>
-          <View style={{ alignItems: 'center', paddingVertical: 20 }}>
-            <Ionicons name="lock-closed" size={40} color={colors.primary} />
-            <Text style={{ color: colors.text, fontSize: 17, fontWeight: '800', marginTop: 16, textAlign: 'center' }}>
-              Premium only
-            </Text>
-            <Text
-              style={{
-                color: colors.textSecondary,
-                fontSize: 14,
-                marginTop: 10,
-                textAlign: 'center',
-                lineHeight: 20,
-                paddingHorizontal: 8,
-              }}
-            >
-              Weekly recap, range filters, and Orion coaching are part of SnapRoad Premium. You still keep
-              your trips, miles, and gems on the free plan.
-            </Text>
-            <TouchableOpacity
-              onPress={onUpgrade}
-              style={{
-                marginTop: 22,
-                backgroundColor: colors.primary,
-                borderRadius: 14,
-                paddingVertical: 14,
-                paddingHorizontal: 28,
-              }}
-            >
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>Upgrade to Premium</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </SheetModal>
-    );
-  }
+  void onUpgrade;
 
   const kpiTile = (
     icon: keyof typeof Ionicons.glyphMap,
@@ -604,20 +558,7 @@ export default function ProfileInsightsDashboard({
 
         <View style={[styles.card, { borderColor: colors.border, backgroundColor: colors.card }]}>
           <Text style={{ color: colors.text, fontWeight: '800', marginBottom: 8 }}>Orion insights</Text>
-          {!isPremium ? (
-            <View style={[styles.lockBox, { borderColor: `${colors.primary}44` }]}>
-              <Ionicons name="lock-closed" size={24} color={colors.primary} style={{ marginBottom: 8 }} />
-              <Text style={{ color: colors.textSecondary, textAlign: 'center', marginBottom: 12 }}>
-                Premium unlocks coaching from your real trip patterns (speeding and braking signals) plus personalized tips.
-              </Text>
-              <TouchableOpacity
-                onPress={onUpgrade}
-                style={[styles.ctaBtn, { backgroundColor: colors.primary }]}
-              >
-                <Text style={styles.ctaBtnText}>Upgrade</Text>
-              </TouchableOpacity>
-            </View>
-          ) : drivingLoading ? (
+          {drivingLoading ? (
             <Text style={{ color: colors.textSecondary }}>Loading coaching…</Text>
           ) : drivingError ? (
             <Text style={{ color: colors.textSecondary }}>{drivingError}</Text>
@@ -642,7 +583,7 @@ export default function ProfileInsightsDashboard({
                   {weeklyRecap.behavior.hard_acceleration_events_total ?? 0} hard acceleration segments ·{' '}
                   {weeklyRecap.behavior.speeding_events_total} speeding events from synced trips.
                 </Text>
-              ) : !weeklyRecap.orionCommentary && isPremium ? (
+              ) : !weeklyRecap.orionCommentary ? (
                 <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: spacing.sm }}>
                   Deeper Orion commentary appears when your weekly recap sync includes behavior signals and the AI service
                   is configured on the server.

@@ -33,17 +33,8 @@ export type OffersStackParamList = {
 export type ProfileStackParamList = {
   ProfileMain:
     | {
-        status?: string;
-        session_id?: string;
         openCommuteReminders?: boolean;
         openSupport?: boolean;
-        openBilling?: boolean;
-      }
-    | undefined;
-  ProfileBilling:
-    | {
-        status?: string;
-        session_id?: string;
       }
     | undefined;
   Auth: { mode?: 'signup' | 'signin'; referral_code?: string } | undefined;

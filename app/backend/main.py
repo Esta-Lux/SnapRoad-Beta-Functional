@@ -203,6 +203,7 @@ def _add_telemetry_middleware(app: FastAPI) -> None:
                 "timestamp": telemetry_service.now_iso(),
                 "method": method,
                 "path": path,
+                "guest_id": request.headers.get("x-snaproad-guest-id"),
                 "status_code": status_code,
                 "duration_ms": duration_ms,
                 "severity": severity,
