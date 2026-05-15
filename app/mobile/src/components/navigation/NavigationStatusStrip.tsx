@@ -182,6 +182,8 @@ export default React.memo(function NavigationStatusStrip({
           },
         ]}
       >
+        <View pointerEvents="none" style={styles.stripGlassBase} />
+        <View pointerEvents="none" style={styles.stripGlassSheen} />
         {onVoiceToggle ? (
           <Pressable
             style={[styles.voiceBtn, styles.voiceBtnOffset]}
@@ -263,6 +265,8 @@ const styles = StyleSheet.create({
   },
   /** Detached from map at bottom: top edge and upward shadow (negative Y) “face” the map; content reads toward the driver. */
   strip: {
+    position: 'relative',
+    overflow: 'hidden',
     borderTopWidth: StyleSheet.hairlineWidth * 2,
     borderTopLeftRadius: 12,
     borderTopRightRadius: 12,
@@ -274,6 +278,18 @@ const styles = StyleSheet.create({
       android: { elevation: 6 },
       default: {},
     }),
+  },
+  stripGlassBase: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  stripGlassSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 24,
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
   voiceBtn: {
     position: 'absolute',

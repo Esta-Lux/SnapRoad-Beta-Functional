@@ -250,7 +250,7 @@ export const DRIVING_MODES: Record<DrivingMode, ModeConfig> = {
     speechRate: HUD_VOICE_RATE,
     speechPitch: HUD_VOICE_PITCH,
 
-    lightPreset: 'night',
+    lightPreset: 'dusk',
     terrainExaggeration: 1.4,
     buildingOpacity: 0.85,
 

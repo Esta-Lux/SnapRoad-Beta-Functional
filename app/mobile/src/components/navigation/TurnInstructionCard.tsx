@@ -387,7 +387,7 @@ export default React.memo(function TurnInstructionCard({
       textOpacity.value = 1;
     }
     prevStateRef.current = state;
-  }, [state, mode]);
+  }, [distScaleAnim, mode, state, textOpacity]);
 
   const distAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: distScaleAnim.value }],
@@ -442,6 +442,9 @@ export default React.memo(function TurnInstructionCard({
           }),
         ]}
       >
+        <View pointerEvents="none" style={styles.glassBase} />
+        <View pointerEvents="none" style={styles.glassHighlight} />
+        <View pointerEvents="none" style={styles.glassSheen} />
         <View style={styles.row}>
           <Animated.View
             style={[
@@ -606,7 +609,32 @@ const styles = StyleSheet.create({
     marginTop: Platform.OS === 'ios' ? 4 : 8,
     overflow: 'hidden',
   },
-  grad: { overflow: 'hidden' },
+  grad: {
+    overflow: 'hidden',
+    backgroundColor: 'rgba(12,18,28,0.72)',
+  },
+  glassBase: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+  },
+  glassHighlight: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.42)',
+  },
+  glassSheen: {
+    position: 'absolute',
+    top: 1,
+    left: 1,
+    right: 1,
+    height: 36,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
   row: { flexDirection: 'row', alignItems: 'center' },
   distCol: { alignItems: 'center', flexShrink: 0, marginRight: 4 },
   distVal: { fontWeight: '900', letterSpacing: -0.4, lineHeight: 44, textAlign: 'center' },

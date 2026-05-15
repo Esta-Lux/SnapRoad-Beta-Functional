@@ -4,6 +4,7 @@ import { DRIVING_MODES } from '../constants/modes';
 import {
   effectiveAlternateRouteLineColor,
   effectiveNavRouteColors,
+  getDrivingLightPreset,
   standardBasemapStyleImportConfig,
 } from './mapboxDrivingStyle';
 
@@ -51,9 +52,10 @@ test('alternate route preview is dimmed iOS blue on day; brighter blue on dark /
 });
 
 test('Standard basemap config keeps Mapbox POIs visible and hides 3D trees during nav', () => {
-  const explore = standardBasemapStyleImportConfig('night', false, 'sport', false);
+  const explore = standardBasemapStyleImportConfig('dusk', false, 'sport', false);
   assert.equal(explore.showPointOfInterestLabels, 'true');
   assert.equal(explore.showTransitLabels, 'true');
+  assert.equal(explore.lightPreset, 'dusk');
   assert.equal(explore.densityPointOfInterestLabels, '5');
   assert.equal(explore.showLandmarkIcons, 'true');
   assert.equal(explore.showLandmarkIconLabels, 'true');
@@ -70,6 +72,24 @@ test('Standard basemap config keeps Mapbox POIs visible and hides 3D trees durin
   assert.equal(nav.show3dBuildings, 'true');
 });
 
-test('Sport driving mode locks the Mapbox Standard light preset to night', () => {
-  assert.equal(DRIVING_MODES.sport.lightPreset, 'night');
+test('driving modes keep their own Mapbox Standard light preset in browse and nav', () => {
+  assert.equal(DRIVING_MODES.calm.lightPreset, 'dawn');
+  assert.equal(DRIVING_MODES.adaptive.lightPreset, 'day');
+  assert.equal(DRIVING_MODES.sport.lightPreset, 'dusk');
+
+  assert.equal(getDrivingLightPreset('calm', true), 'dawn');
+  assert.equal(getDrivingLightPreset('calm', false), 'dawn');
+  assert.equal(getDrivingLightPreset('adaptive', false), 'day');
+  assert.equal(getDrivingLightPreset('sport', true), 'dusk');
+  assert.equal(getDrivingLightPreset('sport', false), 'dusk');
+
+  const calmNav = standardBasemapStyleImportConfig('dawn', false, 'calm', true);
+  const adaptiveNav = standardBasemapStyleImportConfig('day', false, 'adaptive', true);
+  const sportBrowse = standardBasemapStyleImportConfig('dusk', false, 'sport', false);
+  const sportNav = standardBasemapStyleImportConfig('night', false, 'sport', true);
+
+  assert.equal(calmNav.lightPreset, 'dawn');
+  assert.equal(adaptiveNav.lightPreset, 'day');
+  assert.equal(sportBrowse.lightPreset, 'dusk');
+  assert.equal(sportNav.lightPreset, 'dusk');
 });

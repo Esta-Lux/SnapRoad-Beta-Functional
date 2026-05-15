@@ -34,15 +34,15 @@ function shouldUseHighVisibilityRouteInk(
   isSatellite: boolean,
   drivingMode?: DrivingMode,
 ): boolean {
-  /** Sport is always night basemap in-app — keep the neon stack even if a caller passes `day`. */
+  /** Sport owns the dusk basemap in-app — keep the high-vis stack even if a caller passes `day`. */
   if (drivingMode === 'sport') return true;
   if (isSatellite) return true;
   return mapLightPreset === 'night' || mapLightPreset === 'dusk';
 }
 
 /**
- * SnapRoad-blue route palette: day/dawn stays iOS `#0A84FF`; Sport + night/dusk/satellite forces
- * luminous `#5EE9FF` + casing tuned for dark imagery (Sport always uses this stack — app pins Sport to night).
+ * SnapRoad-blue route palette: day/dawn stays iOS `#0A84FF`; Sport + night/dusk/satellite uses
+ * a white casing tuned for dark imagery (Sport always uses this stack — app pins Sport to dusk).
  */
 export function effectiveNavRouteColors(
   modeConfig: ModeConfig,
@@ -108,16 +108,17 @@ export function effectiveAlternateRouteLineColor(
 }
 
 /**
- * Maps app driving mode + app light/dark theme to Mapbox Standard `lightPreset`.
- * Dark UI theme always uses `night` on the basemap for a neutral, readable map.
+ * Maps app driving mode to Mapbox Standard `lightPreset`.
+ * Driving mode owns the basemap mood so browse + active navigation stay visually consistent.
  */
 export function getDrivingLightPreset(
   drivingMode: DrivingMode,
   isLightAppTheme: boolean,
   options?: { sportBasemapAlwaysDark?: boolean },
 ): MapboxLightPreset {
-  if (!isLightAppTheme) return 'night';
-  if (options?.sportBasemapAlwaysDark && drivingMode === 'sport') return 'night';
+  void isLightAppTheme;
+  void options;
+  if (drivingMode === 'sport') return 'dusk';
   return DRIVING_MODES[drivingMode].lightPreset;
 }
 
@@ -136,9 +137,9 @@ export function usesStandardStyleConfiguration(url: string): boolean {
 function standardSatelliteBasemapConfig(
   lightPreset: MapboxLightPreset,
   isNavigating: boolean,
+  drivingMode: DrivingMode,
 ): Record<string, string> {
-  const premiumLightPreset =
-    isNavigating && (lightPreset === 'night' || lightPreset === 'dawn') ? 'dusk' : lightPreset;
+  const premiumLightPreset = drivingMode === 'sport' ? 'dusk' : lightPreset;
   return {
     lightPreset: premiumLightPreset,
     // 3D buildings + landmarks on top of satellite imagery.
@@ -199,12 +200,10 @@ export function standardBasemapStyleImportConfig(
   drivingMode: DrivingMode = 'adaptive',
   isNavigating = true,
 ): Record<string, string> {
-  void drivingMode;
   if (isSatellite) {
-    return standardSatelliteBasemapConfig(lightPreset, isNavigating);
+    return standardSatelliteBasemapConfig(lightPreset, isNavigating, drivingMode);
   }
-  const premiumLightPreset =
-    isNavigating && (lightPreset === 'night' || lightPreset === 'dawn') ? 'dusk' : lightPreset;
+  const premiumLightPreset = drivingMode === 'sport' ? 'dusk' : lightPreset;
   return {
     lightPreset: premiumLightPreset,
     // 3D geometry — granular flags keep building meshes readable (trees optional while navigating).
