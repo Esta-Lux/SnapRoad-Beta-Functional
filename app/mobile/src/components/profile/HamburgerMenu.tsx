@@ -3,22 +3,16 @@ import {
   Alert,
   InteractionManager,
   Modal,
-  Platform,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import Constants from 'expo-constants';
 import Animated, { SlideInDown, SlideOutDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import type { AppActionAvailability } from '../../navigation/appActionContract';
 import { APP_ACTION_AUDIT } from '../../navigation/appActionContract';
-
-const DEFAULT_SHARE_URL =
-  (Constants.expoConfig?.extra as { snaproadSiteUrl?: string } | undefined)?.snaproadSiteUrl ?? 'https://snaproad.app';
 
 /** Let the menu Modal dismiss before opening another modal, navigating, or the system share sheet (avoids iOS freezes). */
 function runAfterMenuClose(onClose: () => void, action: () => void, delayMs = 220) {
@@ -36,7 +30,8 @@ export type HamburgerMenuTarget =
   | 'Wallet'
   | 'Profile'
   | 'Help'
-  | 'Family';
+  | 'Family'
+  | 'InviteDrivers';
 
 interface Props {
   visible: boolean;
@@ -134,32 +129,12 @@ export default function HamburgerMenu({ visible, onClose, isLight, onNavigate, o
       action: () => runAfterMenuClose(onClose, () => onNavigate('Help')),
     },
     {
-      icon: 'share-social-outline',
-      label: 'Share SnapRoad',
-      description: 'Invite someone to save time and fuel.',
-      accent: '#0EA5E9',
+      icon: 'gift-outline',
+      label: 'Invite Drivers',
+      description: 'Share SnapRoad and earn gems when friends join.',
+      accent: '#D946EF',
       availability: 'works',
-      action: () => {
-        runAfterMenuClose(
-          onClose,
-          () => {
-            void (async () => {
-              try {
-                const msg =
-                  'Check out SnapRoad — the AI driving companion for safer, more rewarding drives.';
-                const sharePayload =
-                  Platform.OS === 'ios'
-                    ? { title: 'SnapRoad', message: msg, url: DEFAULT_SHARE_URL }
-                    : { title: 'SnapRoad', message: `${msg} ${DEFAULT_SHARE_URL}` };
-                await Share.share(sharePayload);
-              } catch {
-                Alert.alert('Share', 'Could not open the share sheet. Try again in a moment.');
-              }
-            })();
-          },
-          320,
-        );
-      },
+      action: () => runAfterMenuClose(onClose, () => onNavigate('InviteDrivers')),
     },
     {
       icon: 'information-circle-outline',

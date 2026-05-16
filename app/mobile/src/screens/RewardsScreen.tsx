@@ -391,6 +391,31 @@ export default function RewardsScreen() {
 
           <TouchableOpacity
             activeOpacity={0.88}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              navigation.navigate('Profile', { screen: 'InviteDrivers' });
+            }}
+            style={{ marginHorizontal: 16, marginBottom: 14, borderRadius: 18, overflow: 'hidden', ...shadow(8) }}
+          >
+            <LinearGradient
+              colors={isLight ? ['#FFF1F2', '#FEE2E2'] : ['rgba(217,70,239,0.32)', 'rgba(244,114,182,0.22)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{ flexDirection: 'row', alignItems: 'center', padding: 16, borderWidth: 1, borderColor: isLight ? 'rgba(244,114,182,0.4)' : 'rgba(244,114,182,0.4)' }}
+            >
+              <LinearGradient colors={['#F472B6', '#D946EF']} style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                <Ionicons name="gift" size={22} color="#fff" />
+              </LinearGradient>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: text, fontSize: 15, fontWeight: '800' }}>Invite Drivers</Text>
+                <Text style={{ color: sub, fontSize: 12, marginTop: 3, lineHeight: 17 }}>Share SnapRoad and earn gems when friends sign up with your link.</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+            </LinearGradient>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            activeOpacity={0.88}
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); navigation.navigate('Profile', { screen: 'ProfileMain' }); }}
             style={{ marginHorizontal: 16, marginBottom: 14, borderRadius: 18, overflow: 'hidden', ...shadow(8) }}
           >

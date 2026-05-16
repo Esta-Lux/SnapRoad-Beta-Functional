@@ -35,6 +35,10 @@ import {
   getPathFromUrl,
   parseParamsFromUrl,
 } from './src/utils/deepLinks';
+import {
+  extractReferralCodeFromUrl,
+  storePendingReferralCode,
+} from './src/utils/referralStorage';
 import * as Sentry from '@sentry/react-native';
 import MapboxGL from './src/utils/mapbox';
 import {
@@ -243,6 +247,10 @@ function ProfileStackScreen() {
       <ProfileStack.Screen
         name="ResetPassword"
         getComponent={() => require('./src/screens/ResetPasswordScreen').default}
+      />
+      <ProfileStack.Screen
+        name="InviteDrivers"
+        getComponent={() => require('./src/screens/InviteDriversScreen').default}
       />
     </ProfileStack.Navigator>
   );
@@ -457,11 +465,40 @@ function RootNavigator() {
     setShowDriverPromoWelcome(false);
   }, [user?.promotion_access_until]);
 
+  const handleReferralDeepLink = React.useCallback(async (url: string) => {
+    const code = extractReferralCodeFromUrl(url);
+    if (!code) return;
+    await storePendingReferralCode(code);
+    if (isAuthenticated) {
+      Alert.alert(
+        'Referral saved for new accounts',
+        'Referral links credit gems on new SnapRoad accounts only. Share your own invite from Profile → Invite Drivers.',
+      );
+      return;
+    }
+    if (rootNavigationRef.isReady()) {
+      rootNavigationRef.dispatch(
+        CommonActions.navigate({
+          name: 'Profile',
+          params: { screen: 'Auth', params: { mode: 'signup', referral_code: code } },
+        }),
+      );
+    }
+  }, [isAuthenticated]);
+
   const handleIncomingUrl = React.useCallback(async (url: string) => {
     const normalizedUrl = url.trim();
     if (!normalizedUrl || lastHandledUrlRef.current === normalizedUrl) return;
 
     const path = getPathFromUrl(normalizedUrl);
+
+    // Driver Referral (beta): snaproad://referral/{code} / snaproad://invite/{code}
+    // (and HTTPS variants). getPathFromUrl lowercases, so we match the prefix.
+    if (path.startsWith('referral') || path.startsWith('invite')) {
+      lastHandledUrlRef.current = normalizedUrl;
+      await handleReferralDeepLink(normalizedUrl);
+      return;
+    }
 
     if (path !== 'auth') {
       return;
@@ -514,7 +551,7 @@ function RootNavigator() {
     if (accessToken && refreshToken) {
       await completeOAuthSignIn(accessToken, refreshToken);
     }
-  }, [completeOAuthSignIn, isAuthenticated]);
+  }, [completeOAuthSignIn, handleReferralDeepLink]);
 
   React.useEffect(() => {
     let alive = true;
@@ -613,6 +650,10 @@ function RootNavigator() {
             Auth: 'auth',
             ForgotPassword: 'forgot-password',
             ResetPassword: 'reset-password',
+            InviteDrivers: {
+              path: 'invite/:code?',
+              parse: { code: (v: string) => decodeURIComponent(v ?? '') },
+            },
           },
         },
       },

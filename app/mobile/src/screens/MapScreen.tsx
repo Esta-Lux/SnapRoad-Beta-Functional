@@ -6890,6 +6890,10 @@ export default function MapScreen() {
             rnNav.navigate('Dashboards', { screen: 'DashboardMain', params: { section: 'friends' } });
           } else if (screen === 'Family') {
             rnNav.navigate('Dashboards', { screen: 'DashboardMain', params: { section: 'family' } });
+          } else if (screen === 'InviteDrivers') {
+            (rnNav as { navigate: (name: string, params?: object) => void }).navigate('Profile', {
+              screen: 'InviteDrivers',
+            });
           }
         }}
       />

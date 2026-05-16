@@ -51,7 +51,12 @@ const args = ["eas-cli", "submit", "--platform", "ios", "--latest", "--non-inter
 
 let status = 1;
 try {
-  const r = spawnSync("npx", args, { cwd: root, stdio: "inherit", env: process.env });
+  const r = spawnSync("npx", args, {
+    cwd: root,
+    stdio: "inherit",
+    env: process.env,
+    shell: true,
+  });
   status = r.status ?? 1;
 } finally {
   fs.writeFileSync(easPath, raw);

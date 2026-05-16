@@ -5,6 +5,7 @@ import type { User, ApiUser } from '../types';
 import { applySnapRoadFromProfilePayload } from '../utils/profileScore';
 import { friendlySupabaseAuthErrorMessage } from '../utils/deepLinks';
 import { getOrCreateGuestId } from '../utils/guestIdentity';
+import { consumePendingReferralCode } from '../utils/referralStorage';
 
 interface AuthContextType {
   user: User | null;
@@ -239,12 +240,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthError(null);
     setIsAuthSubmitting(true);
     try {
+      // Driver Referral: pick up an explicit code first, otherwise consume any
+      // pending code captured from a snaproad://referral/* deep link.
+      let effectiveCode = referralCode?.trim() ?? '';
+      if (!effectiveCode) {
+        effectiveCode = await consumePendingReferralCode();
+      }
       const result = await api.signup({
         name: name.trim(),
         email: email.trim(),
         password: password.trim(),
         date_of_birth: dateOfBirth.trim(),
-        ...(referralCode?.trim() ? { referral_code: referralCode.trim() } : {}),
+        ...(effectiveCode ? { referral_code: effectiveCode } : {}),
       });
       if (!result.success || !result.data) {
         setAuthError(result.error || 'Signup failed');
@@ -302,7 +309,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { ok: false, message };
       }
 
-      const result = await api.exchangeSupabaseAccessToken(accessToken);
+      // Driver Referral (beta): forward any pending referral code captured from
+      // a snaproad://referral/* deep link so the backend can apply + verify on
+      // first OAuth profile creation.
+      const pendingReferralCode = await consumePendingReferralCode();
+      const result = await api.exchangeSupabaseAccessToken(
+        accessToken,
+        pendingReferralCode ? { referralCode: pendingReferralCode } : undefined,
+      );
       if (!result.success || !result.data) {
         const message = result.error || 'Could not finish Google sign-in.';
         setAuthError(message);

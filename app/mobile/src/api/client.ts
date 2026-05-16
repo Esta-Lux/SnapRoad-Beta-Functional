@@ -216,16 +216,24 @@ class ApiService {
     return this.cachedToken;
   }
 
-  async exchangeSupabaseAccessToken(accessToken: string): Promise<ApiResponse<AuthResponse>> {
+  async exchangeSupabaseAccessToken(
+    accessToken: string,
+    extras?: { referralCode?: string },
+  ): Promise<ApiResponse<AuthResponse>> {
     const token = accessToken.trim();
     if (!token) {
       return { success: false, error: 'Missing Supabase access token.' };
+    }
+    const body: Record<string, unknown> = { access_token: token };
+    const referralCode = extras?.referralCode?.trim();
+    if (referralCode) {
+      body.referral_code = referralCode;
     }
     const result = await this.request<{ success?: boolean; data?: { user?: unknown; token?: string } }>(
       '/api/auth/oauth/supabase',
       {
         method: 'POST',
-        body: JSON.stringify({ access_token: token }),
+        body: JSON.stringify(body),
       },
     );
     if (!result.success) return { success: false, error: result.error };

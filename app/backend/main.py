@@ -69,6 +69,7 @@ from routes.commute_routes import router as commute_routes_router
 from routes.legal import router as legal_router
 from routes.weather import router as weather_router
 from routes.gas_prices import router as gas_prices_router
+from routes.referrals import router as referrals_router
 from config import (
     JWT_SECRET,
     SUPABASE_URL,
@@ -273,6 +274,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(legal_router)
     app.include_router(weather_router)
     app.include_router(gas_prices_router)
+    app.include_router(referrals_router)
 
 def _build_health_response() -> dict:
     if IS_PRODUCTION:

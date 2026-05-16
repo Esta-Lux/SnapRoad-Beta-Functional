@@ -136,6 +136,26 @@ APPLE_IAP_PREMIUM_PRODUCT_ID = (os.environ.get("APPLE_IAP_PREMIUM_PRODUCT_ID") o
 APPLE_IAP_FAMILY_PRODUCT_ID = (os.environ.get("APPLE_IAP_FAMILY_PRODUCT_ID") or "").strip()
 
 
+# Driver Referral (beta) — gems awarded to the referrer when a referred user's
+# profile is created. Wallet ledger writes a `referral_bonus` tx. Keep the value
+# configurable so we can tune the bounty without redeploying mobile.
+def _parse_int_env(name: str, default: int) -> int:
+    raw = (os.environ.get(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+REFERRAL_SIGNUP_GEMS = max(0, _parse_int_env("REFERRAL_SIGNUP_GEMS", 100))
+# Base URL appended with /{code} to produce the share link. No trailing slash.
+REFERRAL_INVITE_URL_BASE = (
+    os.environ.get("REFERRAL_INVITE_URL_BASE") or "https://snaproad.app/referral"
+).rstrip("/")
+
+
 def get_collectapi_key() -> str:
     """Latest CollectAPI token from env (aliases in `_pick_collectapi_key`).
 

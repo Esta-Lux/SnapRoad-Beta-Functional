@@ -564,6 +564,13 @@ export default function ProfileScreen() {
       },
     },
     {
+      key: 'invite_drivers',
+      icon: 'gift-outline',
+      label: 'Invite Drivers',
+      value: 'Share SnapRoad and earn gems when friends join',
+      onPress: () => navigation.navigate('InviteDrivers'),
+    },
+    {
       key: 'achievements',
       icon: 'trophy-outline',
       label: 'Achievements',

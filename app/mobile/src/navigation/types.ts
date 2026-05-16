@@ -40,6 +40,7 @@ export type ProfileStackParamList = {
   Auth: { mode?: 'signup' | 'signin'; referral_code?: string } | undefined;
   ForgotPassword: undefined;
   ResetPassword: undefined;
+  InviteDrivers: { code?: string } | undefined;
 };
 
 /** Params MapScreen reads on both MapMain and MapRedeem (same component). */

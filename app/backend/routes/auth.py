@@ -77,34 +77,37 @@ def _parse_and_validate_dob(raw_value: Optional[str]) -> date:
     return dob
 
 
-def _record_driver_referral(referrer_raw: str, referred_user_id: str, referred_email: str) -> None:
-    """Insert pending referrals row when referee signs up; gems on first paid sub (webhook)."""
+def _apply_and_verify_driver_referral(
+    referrer_raw: str, referred_user_id: str, referred_email: str
+) -> None:
+    """
+    Beta referral hook: resolve the code (friend_code or UUID), insert the pending
+    referrals row, and immediately verify so REFERRAL_SIGNUP_GEMS are credited.
+
+    Fails soft — referral failures must never block signup.
+    """
     try:
-        rid = str(referrer_raw).strip()
-        if not rid or rid == referred_user_id:
-            return
-        try:
-            uuid.UUID(rid)
-        except ValueError:
-            logger.info("signup referral_code ignored (not a UUID): %s", rid[:12])
-            return
-        ref_profile = sb_get_profile(rid)
-        if not ref_profile:
-            logger.info("signup referral_code ignored: referrer profile not found")
+        code = str(referrer_raw or "").strip()
+        rid = str(referred_user_id or "").strip()
+        if not code or not rid:
             return
         from database import get_supabase
+        from services.driver_referrals import apply_referral, verify_referral
 
         sb = get_supabase()
-        sb.table("referrals").insert({
-            "referrer_id": rid,
-            "referred_user_id": referred_user_id,
-            "referrer_email": (ref_profile.get("email") or "")[:320],
-            "referred_email": (referred_email or "")[:320],
-            "status": "pending",
-            "credits_awarded": 0,
-        }).execute()
+        applied = apply_referral(
+            sb,
+            referred_user_id=rid,
+            referred_email=referred_email or "",
+            code=code,
+        )
+        status = str(applied.get("status") or "").lower()
+        if status in ("pending", "already_referred"):
+            verify_referral(sb, referred_user_id=rid)
+        else:
+            logger.info("signup referral declined: %s", applied.get("reason"))
     except Exception as e:
-        logger.warning("driver referral insert skipped: %s", e)
+        logger.warning("driver referral apply/verify skipped: %s", e)
 
 
 def _clean(user: dict) -> dict:
@@ -141,7 +144,7 @@ def signup(request: Request, body: SignupRequest):
         sb_update_profile(new_id, {"date_of_birth": dob.isoformat()})
         ref_raw = (getattr(body, "referral_code", None) or "").strip()
         if ref_raw and new_id:
-            _record_driver_referral(ref_raw, new_id, email)
+            _apply_and_verify_driver_referral(ref_raw, new_id, email)
         token = _build_token(user)
         logger.info(f"Supabase signup: {email}")
         return {"success": True, "data": {"user": _clean(user), "token": token}}
@@ -248,6 +251,7 @@ def oauth_supabase(request: Request, payload: dict):
     # 2. Ensure we have a profile row. Prefer id match, fallback to email.
     try:
         profile = sb_get_user_by_email(email) or {}
+        is_new_profile = False
         if not profile:
             generated_name = (
                 str(meta.get("full_name") or meta.get("name") or meta.get("preferred_username") or "").strip()
@@ -266,6 +270,7 @@ def oauth_supabase(request: Request, payload: dict):
             }
             get_supabase().table("profiles").upsert(profile_seed).execute()
             profile = sb_get_user_by_email(email) or profile_seed
+            is_new_profile = True
 
         status = str(profile.get("status") or "active").strip().lower()
         if status in {"deleted", "deactivated", "suspended", "disabled"}:
@@ -274,6 +279,28 @@ def oauth_supabase(request: Request, payload: dict):
         # Ensure id is present for JWT.
         if not profile.get("id") and uid:
             profile["id"] = uid
+
+        # Driver Referral (beta): on the first OAuth session for this account,
+        # honor a referral code in the request body (mobile carries the deferred
+        # deep-link code here) and verify any pending row.
+        if is_new_profile:
+            new_id = str(profile.get("id") or "")
+            ref_raw = str(
+                payload.get("referral_code")
+                or payload.get("referralCode")
+                or ""
+            ).strip()
+            if new_id and ref_raw:
+                _apply_and_verify_driver_referral(ref_raw, new_id, email)
+            elif new_id:
+                # Pending row may already exist from a prior /api/referrals/apply call.
+                try:
+                    from database import get_supabase as _gs
+                    from services.driver_referrals import verify_referral
+
+                    verify_referral(_gs(), referred_user_id=new_id)
+                except Exception as exc:  # pragma: no cover - fails soft
+                    logger.debug("oauth referral verify skipped: %s", exc)
 
         token = _build_token(profile)
         return {"success": True, "data": {"user": _clean(profile), "token": token}}
