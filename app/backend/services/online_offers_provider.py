@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 ONLINE_OFFERS_PROVIDER = (os.environ.get("ONLINE_OFFERS_PROVIDER") or "admin").strip().lower()
 ONLINE_OFFERS_API_KEY = (os.environ.get("ONLINE_OFFERS_API_KEY") or "").strip()
 ONLINE_OFFERS_API_BASE_URL = (os.environ.get("ONLINE_OFFERS_API_BASE_URL") or "").strip().rstrip("/")
+FMTC_API_TOKEN = (os.environ.get("FMTC_API_TOKEN") or "").strip()
 
 PAGE_SIZE = 12
 
@@ -151,14 +152,24 @@ def fetch_online_catalog(*, category_slug: Optional[str] = None, cursor: Optiona
 
     Resolution order:
       1. `online_offers` Supabase table (admin paste-link publishes go here).
-      2. `ONLINE_OFFERS_PROVIDER=http_json` partner JSON proxy.
-      3. Empty catalog.
+      2. FMTC, when `ONLINE_OFFERS_PROVIDER=fmtc` or `FMTC_API_TOKEN` is set.
+      3. `ONLINE_OFFERS_PROVIDER=http_json` partner JSON proxy.
+      4. Empty catalog.
     """
     db = _db_catalog(category_slug=category_slug, cursor=cursor)
     if db is not None:
         return db
 
     prov = ONLINE_OFFERS_PROVIDER
+    if prov == "fmtc" or FMTC_API_TOKEN:
+        try:
+            from services.fmtc_offers_provider import fetch_fmtc_online_catalog
+
+            return fetch_fmtc_online_catalog(category_slug=category_slug, cursor=cursor)
+        except Exception as exc:
+            logger.warning("FMTC online offers provider failed: %s", exc, exc_info=True)
+            return _empty_catalog(provider="fmtc_error")
+
     if prov == "http_json":
         return _http_json_catalog(category_slug=category_slug, cursor=cursor)
     if prov in ("", "admin", "supabase", "disabled", "none", "placeholder", "mock", "static"):

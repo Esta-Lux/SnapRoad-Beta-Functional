@@ -157,6 +157,9 @@ export function OfferDetailModal({
   const mi = offer?.distance_km != null ? (Number(offer.distance_km) * 0.621371).toFixed(1) : null;
   const heroUri = offerHeroUri(offer ?? null);
   const qrValue = redeemExtras?.qr_token || redeemExtras?.qr_code_value || redeemExtras?.claim_code;
+  const affiliateUrl = String(offer?.affiliate_tracking_url || offer?.offer_url || '').trim();
+  const isAffiliateOffer = Boolean(affiliateUrl) && String(offer?.offer_source || '').toLowerCase() === 'fmtc';
+  const discountText = Number(offer?.discount_percent || 0) > 0 ? `${offer?.discount_percent ?? 0}% off` : isAffiliateOffer ? 'Partner deal' : `${offer?.discount_percent ?? 0}% off`;
 
   return (
     <Modal visible={!!selectedOffer} transparent animationType="slide" onRequestClose={onClose}>
@@ -195,7 +198,7 @@ export function OfferDetailModal({
                 <Text style={{ color: sub, fontSize: 11, fontWeight: '900' }}>{displayOfferCategory(offer ?? {})}</Text>
               </View>
               <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: `${primary}18` }}>
-                <Text style={{ color: primary, fontSize: 11, fontWeight: '900' }}>{offer?.discount_percent ?? 0}% off</Text>
+                <Text style={{ color: primary, fontSize: 11, fontWeight: '900' }}>{discountText}</Text>
               </View>
             </View>
             <Text style={{ color: sub, fontSize: 14, marginTop: 12, lineHeight: 21 }}>{offer?.description ?? `${offer?.discount_percent ?? 0}% off at this partner.`}</Text>
@@ -217,15 +220,32 @@ export function OfferDetailModal({
                   <Text style={{ color: sub, fontSize: 10, fontWeight: '900', marginBottom: 6, letterSpacing: 0.5 }}>TERMS</Text>
                   <Text style={{ color: sub, fontSize: 11, lineHeight: 17 }}>
                     {offer?.expires_at ? `Expires ${new Date(String(offer.expires_at)).toLocaleString()}. ` : ''}
-                    Valid at participating location. Partner policies apply. Gems are non-transferable.
+                    Valid at participating location. Partner policies apply. {isAffiliateOffer ? 'Offer opens with the partner.' : 'Gems are non-transferable.'}
                   </Text>
                 </View>
-                <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 18, marginBottom: 8 }}>
-                  <Text style={{ color: sub, fontSize: 13, fontWeight: '800' }}>Redeem for</Text>
-                  <Text style={{ color: primary, fontSize: 26, fontWeight: '900' }}>{cost} gems</Text>
-                </View>
+                {!isAffiliateOffer ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 18, marginBottom: 8 }}>
+                    <Text style={{ color: sub, fontSize: 13, fontWeight: '800' }}>Redeem for</Text>
+                    <Text style={{ color: primary, fontSize: 26, fontWeight: '900' }}>{cost} gems</Text>
+                  </View>
+                ) : null}
                 {loading ? <Skeleton width="100%" height={48} borderRadius={14} /> : null}
-                {!loading && (
+                {!loading && isAffiliateOffer ? (
+                  <TouchableOpacity
+                    onPress={() => void Linking.openURL(affiliateUrl)}
+                    activeOpacity={0.85}
+                  >
+                    <LinearGradient
+                      colors={[primary, `${primary}cc`]}
+                      start={{ x: 0, y: 0.5 }}
+                      end={{ x: 1, y: 0.5 }}
+                      style={{ borderRadius: 16, paddingVertical: 16, alignItems: 'center' }}
+                    >
+                      <Text style={rewardsStyles.navBtnText}>Open partner offer</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                ) : null}
+                {!loading && !isAffiliateOffer && (
                   <TouchableOpacity
                     disabled={redeemingOfferId === selectedOffer?.id}
                     onPress={() => selectedOffer && onRedeem({ ...selectedOffer, ...offer })}

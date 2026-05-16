@@ -46,6 +46,14 @@ def _distance_meters(lat1: float, lng1: float, lat2: float, lng2: float) -> floa
 
 
 def _resolve_offer_by_id(offer_id: str) -> Optional[dict]:
+    if str(offer_id).startswith("fmtc_"):
+        try:
+            from services.fmtc_offers_provider import resolve_fmtc_local_offer
+
+            return resolve_fmtc_local_offer(offer_id)
+        except Exception:
+            logger.warning("failed to resolve FMTC offer %s", offer_id, exc_info=True)
+            return None
     try:
         result = _sb().table("offers").select("*").eq("id", offer_id).maybe_single().execute()
         if result and result.data:
@@ -58,6 +66,21 @@ def _resolve_offer_by_id(offer_id: str) -> Optional[dict]:
 
 def _offer_type(offer: dict) -> str:
     return str(offer.get("offer_type") or ("admin" if offer.get("is_admin_offer") else "partner")).lower()
+
+
+def _offer_is_active_now(offer: dict) -> bool:
+    if str(offer.get("status") or "active").lower() not in {"", "active"}:
+        return False
+    exp_raw = str(offer.get("expires_at") or "")
+    if not exp_raw:
+        return True
+    try:
+        exp = datetime.fromisoformat(exp_raw.replace("Z", "+00:00"))
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        return exp > datetime.now(timezone.utc)
+    except Exception:
+        return True
 
 
 def _get_profile_like(user_id: str) -> dict:
@@ -801,10 +824,18 @@ def _hydrate_offer_coordinates_from_locations(offers: list[dict]) -> None:
 def _active_offers_source(limit: int = 500) -> list[dict]:
     try:
         rows = _sb().table("offers").select("*").eq("status", "active").limit(limit).execute()
-        return rows.data or []
+        source = [r for r in (rows.data or []) if _offer_is_active_now(r)]
     except Exception:
         logger.exception("active offers read failed")
         raise HTTPException(status_code=503, detail="Offer service unavailable")
+    if len(source) < limit:
+        try:
+            from services.fmtc_offers_provider import fetch_fmtc_local_offers
+
+            source.extend(fetch_fmtc_local_offers(limit=limit - len(source)))
+        except Exception:
+            logger.debug("FMTC local offers unavailable", exc_info=True)
+    return source[:limit]
 
 
 @router.get("/offers")
@@ -819,7 +850,7 @@ def get_offers(
     try:
         sb = _sb()
         result = sb.table("offers").select("*").eq("status", "active").limit(limit).execute()
-        rows = result.data or []
+        rows = [r for r in (result.data or []) if _offer_is_active_now(r)]
         offers = []
         for offer in rows:
             premium_disc = offer.get("premium_discount_percent") or offer.get("discount_percent", 0)

@@ -72,6 +72,12 @@ function formatExpiryShort(iso?: string): string | null {
   }
 }
 
+function isUnexpired(iso?: string): boolean {
+  if (!iso) return true;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) || d.getTime() > Date.now();
+}
+
 function titleCaseLabel(slug: string): string {
   const key = slug.trim().toLowerCase();
   return ONLINE_CATEGORY_LABELS[key] ?? key.replace(/[^a-z0-9]+/g, ' ').trim().replace(/\b\w/g, (c) => c.toUpperCase());
@@ -172,7 +178,7 @@ export default function OffersScreen() {
         api.get(`/api/offers/nearby?lat=${lat}&lng=${lng}&radius=32.2`),
         api.get('/api/offers/categories'),
       ]);
-      setLocalOffers(parseNearbyOffers(nearRes.data));
+      setLocalOffers(parseNearbyOffers(nearRes.data).filter((offer) => isUnexpired(offer.expires_at)));
       if (catRes.success) {
         setOfferCategories(parseOfferCategories(catRes.data));
       }
@@ -226,7 +232,7 @@ export default function OffersScreen() {
           return;
         }
         const parsed = parseOnlineOffersCatalog(res.data);
-        const parsedItems = parsed.items.map((item) => {
+        const parsedItems = parsed.items.filter((item) => isUnexpired(item.expires_at)).map((item) => {
           const inferred = inferOnlineCategory(item);
           return {
             ...item,
@@ -396,6 +402,8 @@ export default function OffersScreen() {
     const hero = offerHeroUri(o);
     const mi = o.distance_km != null ? (Number(o.distance_km) * 0.621371).toFixed(1) : null;
     const expiry = formatExpiryShort(o.expires_at);
+    const isAffiliate = String(o.offer_source || '').toLowerCase() === 'fmtc' || Boolean(o.affiliate_tracking_url || o.offer_url);
+    const discountLabel = Number(o.discount_percent || 0) > 0 ? `${o.discount_percent ?? 0}% off` : isAffiliate ? 'Partner deal' : '0% off';
     return (
       <TouchableOpacity
         key={String(o.id)}
@@ -406,7 +414,7 @@ export default function OffersScreen() {
         }}
         style={[
           {
-            marginHorizontal: 16,
+            width: 300,
             marginBottom: 12,
             borderRadius: 18,
             overflow: 'hidden',
@@ -434,7 +442,7 @@ export default function OffersScreen() {
               borderRadius: 10,
             }}
           >
-            <Text style={{ color: '#fff', fontSize: 11, fontWeight: '900' }}>{o.discount_percent ?? 0}% off</Text>
+              <Text style={{ color: '#fff', fontSize: 11, fontWeight: '900' }}>{discountLabel}</Text>
           </View>
         </View>
         <View style={{ paddingHorizontal: 14, paddingVertical: 12 }}>
@@ -449,8 +457,8 @@ export default function OffersScreen() {
               <Text style={{ color: sub, fontSize: 10, fontWeight: '900' }}>{displayOfferCategory(o)}</Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: `${colors.success}18`, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 }}>
-              <Ionicons name="diamond-outline" size={14} color={colors.success} />
-              <Text style={{ color: colors.success, fontSize: 13, fontWeight: '900' }}>{o.gem_cost ?? o.gems_reward ?? 0}</Text>
+              <Ionicons name={isAffiliate ? 'open-outline' : 'diamond-outline'} size={14} color={colors.success} />
+              <Text style={{ color: colors.success, fontSize: 13, fontWeight: '900' }}>{isAffiliate ? 'Open' : (o.gem_cost ?? o.gems_reward ?? 0)}</Text>
             </View>
             {mi != null ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -490,7 +498,7 @@ export default function OffersScreen() {
         activeOpacity={0.86}
         onPress={() => void safeOpenAffiliate(outboundUrl)}
         style={{
-          flex: 1,
+          width: 220,
           marginHorizontal: 6,
           marginBottom: 12,
           borderRadius: 16,
@@ -623,14 +631,18 @@ export default function OffersScreen() {
           ) : featuredLocal.length > 0 ? (
             <>
               <Text style={{ color: text, fontSize: 13, fontWeight: '900', marginHorizontal: 16, marginTop: 14, marginBottom: 8 }}>Featured</Text>
-              {featuredLocal.map(renderLocalCard)}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12, paddingBottom: 8 }}>
+                {featuredLocal.map(renderLocalCard)}
+              </ScrollView>
             </>
           ) : null}
 
           {!loadingLocalBootstrap && partnerLocal.length > 0 ? (
             <>
               <Text style={{ color: text, fontSize: 13, fontWeight: '900', marginHorizontal: 16, marginTop: 8, marginBottom: 8 }}>Nearby</Text>
-              {partnerLocal.map(renderLocalCard)}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12, paddingBottom: 8 }}>
+                {partnerLocal.map(renderLocalCard)}
+              </ScrollView>
             </>
           ) : null}
 
@@ -664,14 +676,14 @@ export default function OffersScreen() {
 
           {onlineFeatured.length > 0 ? (
             <>
-              <Text style={{ color: text, fontSize: 13, fontWeight: '900', marginHorizontal: 16, marginTop: 14, marginBottom: 10 }}>Featured row</Text>
+              <Text style={{ color: text, fontSize: 13, fontWeight: '900', marginHorizontal: 16, marginTop: 14, marginBottom: 10 }}>Featured</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12, gap: 10, paddingBottom: 12 }}>
                 {onlineFeatured.map((row) => (
                   <TouchableOpacity
                     key={row.id}
                     activeOpacity={0.88}
                     onPress={() => void safeOpenAffiliate(row.affiliate_url || '')}
-                    style={{ width: 200, marginHorizontal: 4, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, overflow: 'hidden', ...shadow(6) }}
+                    style={{ width: 220, marginHorizontal: 4, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, overflow: 'hidden', ...shadow(6) }}
                   >
                     <View style={{ height: 120, backgroundColor: `${colors.primary}10` }}>
                       {row.image_url ? (
@@ -691,13 +703,9 @@ export default function OffersScreen() {
           ) : null}
 
           <Text style={{ color: text, fontSize: 13, fontWeight: '900', marginHorizontal: 16, marginTop: 8, marginBottom: 12 }}>All deals</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 10 }}>
-            {onlineRegular.map((row) => (
-              <View key={row.id} style={{ width: '50%' }}>
-                {renderOnlineCard(row)}
-              </View>
-            ))}
-          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 10, gap: 6, paddingBottom: 8 }}>
+            {onlineRegular.map(renderOnlineCard)}
+          </ScrollView>
 
           {onlineLoadingMore ? (
             <ActivityIndicator style={{ marginTop: 8 }} color={colors.primary} />

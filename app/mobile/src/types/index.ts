@@ -202,6 +202,10 @@ export interface Offer {
   distance_km?: number;
   is_admin_offer?: boolean;
   offer_type?: 'partner' | 'admin';
+  offer_source?: string;
+  offer_url?: string;
+  affiliate_tracking_url?: string;
+  external_id?: string;
   view_count?: number;
   visit_count?: number;
   redemption_count?: number;

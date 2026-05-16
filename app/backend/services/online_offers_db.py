@@ -27,6 +27,23 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _parse_dt(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        d = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=timezone.utc)
+        return d.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _row_is_unexpired(row: dict[str, Any]) -> bool:
+    exp = _parse_dt(row.get("expires_at"))
+    return exp is None or exp > datetime.now(timezone.utc)
+
+
 def _coerce_price(v: Any) -> Optional[float]:
     if v is None or v == "":
         return None
@@ -180,8 +197,11 @@ def list_online_offers(
             q = q.eq("category_slug", category_slug)
         # Featured first, then newest. Supabase Python builder chains `.order(...)`.
         q = q.order("featured", desc=True).order("created_at", desc=True)
-        q = q.range(offset, offset + max(0, limit - 1))
-        return q.execute().data or []
+        fetch_limit = min(1000, max(limit, offset + limit + 200))
+        q = q.range(0, max(0, fetch_limit - 1))
+        rows = q.execute().data or []
+        active_rows = [r for r in rows if _row_is_unexpired(r)]
+        return active_rows[offset : offset + limit]
     except Exception as e:
         if not _table_missing(e):
             logger.error("list_online_offers: %s", e, exc_info=True)
@@ -190,13 +210,13 @@ def list_online_offers(
 
 def count_online_offers(*, status: Optional[str] = "active", category_slug: Optional[str] = None) -> int:
     try:
-        q = _sb().table("online_offers").select("id", count="exact")
+        q = _sb().table("online_offers").select("id, expires_at")
         if status and status != "all":
             q = q.eq("status", status)
         if category_slug:
             q = q.eq("category_slug", category_slug)
         res = q.execute()
-        return int(res.count or 0)
+        return len([r for r in (res.data or []) if _row_is_unexpired(r)])
     except Exception as e:
         if not _table_missing(e):
             logger.warning("count_online_offers: %s", e)
