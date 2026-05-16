@@ -13,8 +13,8 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
+import { copyTextToClipboard } from '../utils/clipboard';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 
@@ -94,23 +94,29 @@ export default function InviteDriversScreen() {
 
   const handleCopyLink = useCallback(async () => {
     if (!inviteUrl) return;
-    try {
-      await Clipboard.setStringAsync(inviteUrl);
+    const ok = await copyTextToClipboard(inviteUrl);
+    if (ok) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Link copied', 'Your invite link is on the clipboard.');
-    } catch {
-      Alert.alert('Copy failed', 'Could not copy the link. Try sharing it instead.');
+    } else {
+      Alert.alert(
+        'Copy unavailable',
+        'Update the app from TestFlight to enable copy, or use Share Invite below.',
+      );
     }
   }, [inviteUrl]);
 
   const handleCopyCode = useCallback(async () => {
     if (!codeDisplay) return;
-    try {
-      await Clipboard.setStringAsync(codeDisplay);
+    const ok = await copyTextToClipboard(codeDisplay);
+    if (ok) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Code copied', `${codeDisplay} is on the clipboard.`);
-    } catch {
-      Alert.alert('Copy failed', 'Could not copy the code.');
+    } else {
+      Alert.alert(
+        'Copy unavailable',
+        'Update the app from TestFlight to enable copy, or share your invite link instead.',
+      );
     }
   }, [codeDisplay]);
 

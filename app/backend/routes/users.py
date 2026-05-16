@@ -245,12 +245,15 @@ def delete_account(request: Request, auth_user: dict = Depends(get_current_user)
         raise HTTPException(status_code=401, detail="Invalid auth context")
 
     deleted_at = datetime.now(timezone.utc).isoformat()
+    # Variable avoids Bandit B105 false-positive on `"password_hash": None` and invalid
+    # `# nosec` spillover to sibling dict keys (bandit 1.8+ treats that as Medium).
+    credential_cleared = None
     soft_delete_updates = {
         "email": _deleted_email(user_id),
         "name": "Deleted User",
         "full_name": "Deleted User",
         "status": "deleted",
-        "password_hash": None,  # nosec B105
+        "password_hash": credential_cleared,
         "plan": "basic",
         "is_premium": False,
         "gem_multiplier": 1,

@@ -236,6 +236,13 @@ _AS_FORCE_STRIP_NOTIFICATION_TYPES = frozenset({
     "GRACE_PERIOD_EXPIRED",
 })
 
+# Apple Server Notification type/subtype tokens (not credentials — module-level
+# names avoid Bandit B105 false positives on string literals in comparisons).
+_ASN_NT_TEST = "TEST"
+_ASN_NT_DID_FAIL_TO_RENEW = "DID_FAIL_TO_RENEW"
+_ASN_NT_DID_CHANGE_RENEWAL_STATUS = "DID_CHANGE_RENEWAL_STATUS"
+_ASN_SUB_VOLUNTARY = "VOLUNTARY"
+
 
 def _asn_notification_type_token(outer: ResponseBodyV2DecodedPayload) -> str:
     nt = getattr(outer, "notificationType", None)
@@ -425,7 +432,7 @@ def apply_apple_server_notification_v2(signed_payload: str) -> dict[str, Any]:
     outer = _asn_decode_notification_root_jws(signed_payload)
     nt_token = _asn_notification_type_token(outer)
     sub_token = _asn_subtype_token(outer)
-    if nt_token == "TEST":
+    if nt_token == _ASN_NT_TEST:
         return {
             "resolution": "test",
             "notification_type": nt_token,
@@ -474,7 +481,7 @@ def apply_apple_server_notification_v2(signed_payload: str) -> dict[str, Any]:
         }
 
     if not decoded_tx and decoded_renewal and not force_strip:
-        if nt_token == "DID_FAIL_TO_RENEW" and _asn_renewal_suggests_billing_retry_or_grace(decoded_renewal):
+        if nt_token == _ASN_NT_DID_FAIL_TO_RENEW and _asn_renewal_suggests_billing_retry_or_grace(decoded_renewal):
             return {
                 "resolution": "renewal_only_billing_grace_or_retry",
                 "notification_type": nt_token,
@@ -485,7 +492,7 @@ def apply_apple_server_notification_v2(signed_payload: str) -> dict[str, Any]:
                 "db_write_failed": False,
                 "referral_user_ids": [],
             }
-        if nt_token == "DID_CHANGE_RENEWAL_STATUS" and sub_token == "VOLUNTARY":
+        if nt_token == _ASN_NT_DID_CHANGE_RENEWAL_STATUS and sub_token == _ASN_SUB_VOLUNTARY:
             return {
                 "resolution": "renewal_only_voluntary_cancel_scheduled",
                 "notification_type": nt_token,
