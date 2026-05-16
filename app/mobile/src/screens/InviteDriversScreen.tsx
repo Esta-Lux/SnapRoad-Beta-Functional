@@ -14,7 +14,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { copyTextToClipboard } from '../utils/clipboard';
+import { copyOrShareText } from '../utils/clipboard';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 
@@ -94,29 +94,35 @@ export default function InviteDriversScreen() {
 
   const handleCopyLink = useCallback(async () => {
     if (!inviteUrl) return;
-    const ok = await copyTextToClipboard(inviteUrl);
-    if (ok) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Link copied', 'Your invite link is on the clipboard.');
-    } else {
-      Alert.alert(
-        'Copy unavailable',
-        'Update the app from TestFlight to enable copy, or use Share Invite below.',
-      );
+    try {
+      const result = await copyOrShareText(inviteUrl, { dialogTitle: 'Copy invite link' });
+      if (result === 'copied') {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert('Link copied', 'Your invite link is on the clipboard.');
+      } else if (result === 'shared') {
+        Alert.alert('Copy your link', 'Use Copy on the share sheet to save your invite link.');
+      } else {
+        Alert.alert('Could not copy', 'Try Share Invite instead.');
+      }
+    } catch {
+      Alert.alert('Could not copy', 'Try Share Invite instead.');
     }
   }, [inviteUrl]);
 
   const handleCopyCode = useCallback(async () => {
     if (!codeDisplay) return;
-    const ok = await copyTextToClipboard(codeDisplay);
-    if (ok) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Code copied', `${codeDisplay} is on the clipboard.`);
-    } else {
-      Alert.alert(
-        'Copy unavailable',
-        'Update the app from TestFlight to enable copy, or share your invite link instead.',
-      );
+    try {
+      const result = await copyOrShareText(codeDisplay, { dialogTitle: 'Copy referral code' });
+      if (result === 'copied') {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert('Code copied', `${codeDisplay} is on the clipboard.`);
+      } else if (result === 'shared') {
+        Alert.alert('Copy your code', 'Use Copy on the share sheet to save your referral code.');
+      } else {
+        Alert.alert('Could not copy', 'Try Share Invite instead.');
+      }
+    } catch {
+      Alert.alert('Could not copy', 'Try Share Invite instead.');
     }
   }, [codeDisplay]);
 
@@ -133,10 +139,9 @@ export default function InviteDriversScreen() {
       }
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } catch {
-      // Fall back to copying the link if the share sheet fails.
-      handleCopyLink();
+      Alert.alert('Share failed', 'Try Copy Link or try again in a moment.');
     }
-  }, [inviteUrl, handleCopyLink]);
+  }, [inviteUrl]);
 
   if (!isAuthenticated) {
     return (
