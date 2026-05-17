@@ -196,7 +196,7 @@ fuel_stats = {
 
 # ==================== NOTIFICATIONS ====================
 notification_settings = {
-    "push_notifications": {"trip_summary": True, "challenges": True, "offers": True, "gems_earned": True, "friend_activity": False, "safety_alerts": True},
+    "push_notifications": {"trip_summary": True, "challenges": True, "offers": True, "gems_earned": True, "friend_activity": False, "safety_alerts": True, "commute_alerts": True},
     "email_alerts": {"weekly_summary": True, "monthly_report": True, "special_offers": False, "account_updates": True},
     "in_app_sounds": {"navigation_voice": True, "notifications": True, "achievements": True},
 }

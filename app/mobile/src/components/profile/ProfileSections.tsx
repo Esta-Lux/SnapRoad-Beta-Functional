@@ -40,8 +40,27 @@ export {
 type NotificationItem = { label: string; val: boolean; set: (v: boolean) => void };
 type HeightPreset = { label: string; value: string };
 
-export function SectionHeader({ title, isLight }: { title: string; isLight: boolean }) {
-  return <Text style={[sStyles.sectionTitle, { color: isLight ? '#111' : '#fff' }]}>{title}</Text>;
+export function SectionHeader({ title, isLight, subtitle }: { title: string; isLight: boolean; subtitle?: string }) {
+  return (
+    <>
+      <Text style={[sStyles.sectionTitle, { color: isLight ? '#111' : '#fff' }]}>{title}</Text>
+      {subtitle ? (
+        <Text
+          style={{
+            paddingHorizontal: 16,
+            marginTop: -2,
+            marginBottom: 6,
+            fontSize: 11,
+            fontWeight: '600',
+            color: isLight ? '#64748B' : '#94A3B8',
+          }}
+          numberOfLines={2}
+        >
+          {subtitle}
+        </Text>
+      ) : null}
+    </>
+  );
 }
 
 export function ProfileHeader({
@@ -277,6 +296,114 @@ export function PremiumUpsellCard({
           <Text style={styles.upsellBtnText}>Open insights</Text>
         </TouchableOpacity>
       </View>
+    </View>
+  );
+}
+
+export function SettingsPremiumPassCard({
+  onOpenInsights,
+}: {
+  onOpenInsights: () => void;
+}) {
+  return (
+    <TouchableOpacity activeOpacity={0.9} onPress={onOpenInsights} accessibilityRole="button" accessibilityLabel="Open insights recap">
+      <LinearGradient
+        colors={['#1E3A5F', '#2563EB', '#7C3AED']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{ marginHorizontal: 16, marginBottom: 10, borderRadius: 14, overflow: 'hidden' }}
+      >
+        <View style={{ paddingHorizontal: 14, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="ribbon-outline" size={22} color="#FDE68A" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: 'rgba(255,255,255,0.88)', fontSize: 11, fontWeight: '800', letterSpacing: 0.6 }}>FULL ACCESS</Text>
+            <Text style={{ color: '#fff', fontSize: 15, fontWeight: '900', marginTop: 3 }}>SnapRoad perks are on</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.82)', fontSize: 11, marginTop: 4, fontWeight: '600' }}>
+              Insights, offers depth, Orion tips — tap to open your recap dashboard.
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.9)" />
+        </View>
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+}
+
+export function SettingsSupportCard({
+  cardBg,
+  text,
+  sub,
+  border,
+  primary,
+  onHelp,
+  onConcern,
+}: {
+  cardBg: string;
+  text: string;
+  sub: string;
+  border: string;
+  primary: string;
+  onHelp: () => void;
+  onConcern: () => void;
+}) {
+  return (
+    <View style={[styles.card, { backgroundColor: cardBg }]}>
+      <Text style={{ color: sub, fontSize: 11, marginBottom: 8 }}>
+        Billing is through Apple subscriptions when applicable. Reach us anytime.
+      </Text>
+      <TouchableOpacity
+        onPress={onHelp}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingVertical: 10,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: 'rgba(148,163,184,0.2)',
+        }}
+        accessibilityRole="button"
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View style={[styles.actionIconWrap, { backgroundColor: 'rgba(59,130,246,0.12)' }]}>
+            <Ionicons name="help-circle-outline" size={18} color={primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: text, fontSize: 14, fontWeight: '700' }}>Help & FAQ</Text>
+            <Text style={{ color: sub, fontSize: 11 }}>Guides & common questions</Text>
+          </View>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={sub} />
+      </TouchableOpacity>
+      <TouchableOpacity
+        onPress={onConcern}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingVertical: 10,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: 'rgba(148,163,184,0.2)',
+        }}
+        accessibilityRole="button"
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View
+            style={[
+              styles.actionIconWrap,
+              { backgroundColor: 'rgba(124,58,237,0.12)', borderWidth: StyleSheet.hairlineWidth, borderColor: border },
+            ]}
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={18} color="#7C3AED" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: text, fontSize: 14, fontWeight: '700' }}>Submit feedback</Text>
+            <Text style={{ color: sub, fontSize: 11 }}>Issues, moderation, billing questions</Text>
+          </View>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={sub} />
+      </TouchableOpacity>
     </View>
   );
 }

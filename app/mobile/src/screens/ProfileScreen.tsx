@@ -23,7 +23,7 @@ import DriverSnapshotModal from '../components/profile/DriverSnapshotModal';
 import ProfileInsightsDashboard from '../components/profile/ProfileInsightsDashboard';
 import HelpSupport from '../components/profile/HelpSupport';
 import SubmitConcern from '../components/profile/SubmitConcern';
-import type { CommuteRoute, DrivingMode, SavedLocation, SavedRoute, User } from '../types';
+import type { CommuteRoute, DrivingMode, SavedLocation, User } from '../types';
 import AddCommuteModal from '../components/profile/AddCommuteModal';
 import {
   AboutCard,
@@ -42,9 +42,10 @@ import {
   ProfileWeeklyRecap,
   ProfileOverviewSection,
   MyCarRow,
-  RoutesCard,
   CommuteRoutesSection,
   SectionHeader,
+  SettingsPremiumPassCard,
+  SettingsSupportCard,
   SignOutButton,
   VehicleCard,
 } from '../components/profile/ProfileSections';
@@ -53,7 +54,6 @@ import { ProfileTabBar } from '../components/profile/ProfileScreenBlocks';
 import { registerCommutePushToken } from '../utils/pushNotifications';
 import { mapProfileTripHistoryItem, recentTripsListFromPayload } from '../components/profile/tripHistoryMapping';
 import { sanitizeTripSpeedMph } from '../utils/driveMetrics';
-import { FAMILY_MODE_LAUNCH_ENABLED } from '../config/launchFlags';
 
 export default function ProfileScreen() {
   const navigation = useNavigation<ProfileStackScreenNavigationProp>();
@@ -80,7 +80,6 @@ export default function ProfileScreen() {
     () => places.filter((p) => (p.category || '').toLowerCase() === 'favorite'),
     [places],
   );
-  const [routes, setRoutes] = useState<SavedRoute[]>([]);
   const [commutes, setCommutes] = useState<CommuteRoute[]>([]);
   const [commuteLimit, setCommuteLimit] = useState(5);
   const [showAddCommute, setShowAddCommute] = useState(false);
@@ -177,7 +176,6 @@ export default function ProfileScreen() {
     else if (mode === 'refresh') setRefreshing(true);
     if (!user?.id) {
       setPlaces([]);
-      setRoutes([]);
       setCommutes([]);
       setCommuteLimit(5);
       setTripHistoryRows([]);
@@ -217,9 +215,8 @@ export default function ProfileScreen() {
       const pp = profilePayload as Record<string, unknown>;
       const planStr = typeof pp.plan === 'string' ? pp.plan : '';
       const weeklyPromise = safeGet('/api/weekly-recap');
-      const [locRes, routeRes, commuteRes, notifRes, weeklyRes, tripsHistoryRes, gemsRes, badgesRes, fuelStatsRes, fuelTrendsRes] = await Promise.all([
+      const [locRes, commuteRes, notifRes, weeklyRes, tripsHistoryRes, gemsRes, badgesRes, fuelStatsRes, fuelTrendsRes] = await Promise.all([
         safeGet('/api/locations'),
-        safeGet('/api/routes'),
         safeGet('/api/commute-routes'),
         safeGet('/api/settings/notifications'),
         weeklyPromise,
@@ -271,6 +268,17 @@ export default function ProfileScreen() {
       }
       userPatch.promotion_active = pp.promotion_active === true;
       applySnapRoadFromProfilePayload(userPatch, pp);
+      const dmTop = pp.default_driving_mode;
+      if (dmTop === 'calm' || dmTop === 'adaptive' || dmTop === 'sport') {
+        setDefaultMode(dmTop);
+      } else if (
+        pp.app_preferences
+        && typeof pp.app_preferences === 'object'
+        && !Array.isArray(pp.app_preferences)
+      ) {
+        const dmP = (pp.app_preferences as Record<string, unknown>).default_driving_mode;
+        if (dmP === 'calm' || dmP === 'adaptive' || dmP === 'sport') setDefaultMode(dmP);
+      }
       const statsBody = (unwrapProfileApiData(fuelStatsRes?.data) as Record<string, unknown>) ?? {};
       const trendsBody = (unwrapProfileApiData(fuelTrendsRes?.data) as Record<string, unknown>) ?? {};
       const avgMpgRaw = statsBody.avg_mpg ?? statsBody.averageMpg;
@@ -293,9 +301,7 @@ export default function ProfileScreen() {
         milesSinceLastFill,
       });
       const locData = unwrap(locRes);
-      const routeData = unwrap(routeRes);
       setPlaces(Array.isArray(locData) ? (locData as SavedLocation[]) : []);
-      setRoutes(Array.isArray(routeData) ? (routeData as SavedRoute[]) : []);
       if (commuteRes.success && commuteRes.data) {
         const cw = commuteRes.data as { data?: CommuteRoute[]; limit?: number };
         setCommutes(Array.isArray(cw.data) ? cw.data : []);
@@ -504,11 +510,6 @@ export default function ProfileScreen() {
     }
   }, [newPlaceName, newPlaceAddress, newPlaceCategory, loadData]);
 
-  const handleDeleteRoute = useCallback(async (id: number) => {
-    await api.delete(`/api/routes/${id}`);
-    setRoutes((prev) => prev.filter((r) => r.id !== id));
-  }, []);
-
   const syncNotification = useCallback(async (setting: string, enabled: boolean) => {
     setNotifSyncing(true);
     try {
@@ -521,13 +522,35 @@ export default function ProfileScreen() {
               ? 'Enable notifications in iOS Settings so SnapRoad can send commute alerts.'
               : 'Could not register this device for commute alerts yet.',
           );
+          setPushEnabled(false);
+          return;
         }
       }
-      await api.put(`/api/settings/notifications?category=push_notifications&setting=${setting}&enabled=${enabled}`);
+      const res = await api.put(
+        `/api/settings/notifications?category=push_notifications&setting=${setting}&enabled=${enabled}`,
+      );
+      if (!res.success) {
+        if (setting === 'commute_alerts') setPushEnabled(!enabled);
+        Alert.alert('Notifications', res.error ?? 'Could not save this preference.');
+      }
     } finally {
       setNotifSyncing(false);
     }
   }, []);
+
+  const persistDefaultDrivingMode = useCallback(
+    async (mode: DrivingMode) => {
+      setDefaultMode(mode);
+      if (isGuest) return;
+      const res = await api.put('/api/user/profile', {
+        app_preferences: { default_driving_mode: mode },
+      });
+      if (!res.success) {
+        Alert.alert('Could not save', res.error ?? 'Try again in a moment.');
+      }
+    },
+    [isGuest],
+  );
 
   const initials = (user?.name ?? 'U').split(' ').filter(Boolean).map((n) => n[0]).join('').slice(0, 2).toUpperCase();
   const badgeTotal = badgeRows.length || 1;
@@ -765,8 +788,51 @@ export default function ProfileScreen() {
           </>
         )}
 
-        {profileTab === 'settings' && (
+        {profileTab === 'settings' && isGuest ? (
           <>
+            <SectionHeader title="Profile settings" isLight={isLight} />
+            <View
+              style={{
+                marginHorizontal: 16,
+                marginBottom: 12,
+                borderRadius: 16,
+                padding: 16,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: colors.border,
+                backgroundColor: cardBg,
+              }}
+            >
+              <Text style={{ color: text, fontSize: 17, fontWeight: '900', marginBottom: 8 }}>Sign in to sync settings</Text>
+              <Text style={{ color: sub, fontSize: 13, lineHeight: 19, marginBottom: 14 }}>
+                Save vehicle preferences, commute pushes, and username across devices.
+              </Text>
+              <TouchableOpacity
+                activeOpacity={0.9}
+                style={{ backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 12, alignItems: 'center', marginBottom: 10 }}
+                onPress={() => navigation.navigate('Auth', { mode: 'signup' })}
+              >
+                <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>Create account</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.9}
+                style={{
+                  borderRadius: 12,
+                  paddingVertical: 12,
+                  alignItems: 'center',
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderColor: colors.border,
+                  backgroundColor: isLight ? 'rgba(243,246,249,1)' : 'rgba(30,41,59,0.65)',
+                }}
+                onPress={() => navigation.navigate('Auth', { mode: 'signin' })}
+              >
+                <Text style={{ color: text, fontWeight: '800', fontSize: 15 }}>Sign in</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        ) : profileTab === 'settings' ? (
+          <>
+            <SettingsPremiumPassCard onOpenInsights={() => setShowInsightsDashboard(true)} />
+
             <SectionHeader title="Account" isLight={isLight} />
             <TouchableOpacity
               style={{ marginHorizontal: 16, marginBottom: 8, paddingVertical: 11, paddingHorizontal: 14, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: cardBg, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
@@ -781,7 +847,7 @@ export default function ProfileScreen() {
               <Ionicons name="chevron-forward" size={18} color={sub} />
             </TouchableOpacity>
 
-            <SectionHeader title="Vehicle" isLight={isLight} />
+            <SectionHeader title="Vehicle & routing defaults" isLight={isLight} subtitle="Stored on your driver profile." />
             <VehicleCard
               cardBg={cardBg}
               text={text}
@@ -796,39 +862,38 @@ export default function ProfileScreen() {
               onSave={handleSaveVehicle}
             />
 
-            <SectionHeader title={`Saved Places (${places.length})`} isLight={isLight} />
-            <PlacesCard cardBg={cardBg} text={text} sub={sub} places={places} loading={initialLoading} onDelete={handleDeletePlace} onAdd={() => setShowAddPlace(true)} />
-
-            <SectionHeader title={`Quick routes (${routes.length})`} isLight={isLight} />
-            <RoutesCard cardBg={cardBg} text={text} sub={sub} routes={routes} loading={initialLoading} onDelete={handleDeleteRoute} />
-
-            <SectionHeader title={notifSyncing ? 'Notifications (syncing...)' : 'Notifications'} isLight={isLight} />
+            <SectionHeader title={notifSyncing ? 'Notifications (syncing...)' : 'Commute pushes'} isLight={isLight} subtitle="Uses your commute routes & leave times." />
             <NotificationsCard
               cardBg={cardBg}
               text={text}
               sub={sub}
               items={[
-                { label: 'Commute Alerts', val: pushEnabled, set: (v) => { setPushEnabled(v); syncNotification('commute_alerts', v); } },
+                {
+                  label: 'Commute alerts',
+                  val: pushEnabled,
+                  set: (v: boolean) => {
+                    setPushEnabled(v);
+                    void syncNotification('commute_alerts', v);
+                  },
+                },
               ]}
             />
 
-            <SectionHeader title="Appearance" isLight={isLight} />
+            <SectionHeader title="Appearance & map mode" isLight={isLight} subtitle="Theme and default routing style." />
             <AppearanceCard cardBg={cardBg} text={text} sub={sub} darkEnabled={!isLight} onToggle={toggleTheme} />
-
-            <SectionHeader title="Default Driving Mode" isLight={isLight} />
-            <DrivingModeCard cardBg={cardBg} text={text} defaultMode={defaultMode} setDefaultMode={setDefaultMode} />
+            <View style={{ height: 4 }} />
+            <DrivingModeCard cardBg={cardBg} text={text} defaultMode={defaultMode} setDefaultMode={persistDefaultDrivingMode} />
 
             <SectionHeader title="Support" isLight={isLight} />
-            <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 8 }}>
-              <TouchableOpacity style={[styles.fuelBtn, { flexDirection: 'row', gap: 8, justifyContent: 'center' }]} onPress={() => setShowHelp(true)}>
-                <Ionicons name="help-circle-outline" size={18} color="#fff" />
-                <Text style={styles.fuelBtnText}>Help & Support</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.fuelBtn, { flexDirection: 'row', gap: 8, justifyContent: 'center', backgroundColor: '#7C3AED' }]} onPress={() => setShowConcern(true)}>
-                <Ionicons name="chatbubble-ellipses-outline" size={18} color="#fff" />
-                <Text style={styles.fuelBtnText}>Submit Concern</Text>
-              </TouchableOpacity>
-            </View>
+            <SettingsSupportCard
+              cardBg={cardBg}
+              text={text}
+              sub={sub}
+              border={colors.border}
+              primary={colors.primary}
+              onHelp={() => setShowHelp(true)}
+              onConcern={() => setShowConcern(true)}
+            />
 
             <SectionHeader title="About" isLight={isLight} />
             <AboutCard cardBg={cardBg} text={text} sub={sub} />
@@ -836,7 +901,7 @@ export default function ProfileScreen() {
             <SignOutButton onSignOut={logout} />
             <DeleteAccountButton onDeleteAccount={handleDeleteAccount} isDeleting={deletingAccount} />
           </>
-        )}
+        ) : null}
       </ScrollView>
       </KeyboardAvoidingView>
 

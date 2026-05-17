@@ -1,3 +1,4 @@
+import copy
 import logging
 import os
 from datetime import datetime, timezone, timedelta
@@ -30,6 +31,27 @@ ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 logger = logging.getLogger(__name__)
 
 _USERNAME_COOLDOWN_DAYS = 14
+
+_VALID_DRIVING_MODES = frozenset({"calm", "adaptive", "sport"})
+_SUPABASE_USERS_DB_SKIP_KEYS = frozenset(
+    {"notifications", "car", "equipped_car", "owned_cars", "equipped_skin", "owned_skins"}
+)
+
+
+def _merged_notifications(stored: Any) -> dict:
+    """Deep-merge Postgres JSON with template defaults."""
+    merged = copy.deepcopy(notification_settings)
+    if not isinstance(stored, dict):
+        return merged
+    for k, v in stored.items():
+        if isinstance(v, dict) and isinstance(merged.get(k), dict):
+            merged[k].update(v)
+        else:
+            merged[k] = v
+    push = merged.setdefault("push_notifications", {})
+    if "commute_alerts" not in push:
+        push["commute_alerts"] = True
+    return merged
 
 
 def _username_change_meta_from_row(row: Optional[Dict[str, Any]]) -> dict:
@@ -88,6 +110,9 @@ def _get_user_store(user: Optional[Dict[str, Any]]) -> dict:
             row = None
         if row and isinstance(row, dict) and str(row.get("id") or user_id).strip() == user_id:
             users_db[user_id] = _profile_row_to_store(user_id, str(user.get("email", "")), row)
+            users_db[user_id]["notification_settings"] = _merged_notifications(row.get("notification_settings"))
+            row_ap = row.get("app_preferences")
+            users_db[user_id]["app_preferences"] = dict(row_ap) if isinstance(row_ap, dict) else {}
         else:
             initial = {
                 "id": user_id,
@@ -113,8 +138,11 @@ def _get_user_store(user: Optional[Dict[str, Any]]) -> dict:
 def _persist_user(user_id: str, updates: dict) -> None:
     users_db.setdefault(user_id, {"id": user_id})
     users_db[user_id].update(updates)
+    to_supabase = {k: v for k, v in updates.items() if k not in _SUPABASE_USERS_DB_SKIP_KEYS}
+    if not to_supabase:
+        return
     try:
-        sb_update_profile(user_id, updates)
+        sb_update_profile(user_id, to_supabase)
     except Exception:
         if ENVIRONMENT == "production":
             raise HTTPException(status_code=503, detail="User persistence unavailable")
@@ -171,6 +199,21 @@ def get_user_profile(auth_user: CurrentUser):
         payload["promotion_active"] = promotion_access_active(row)
     else:
         payload["promotion_active"] = False
+    raw_ns = user.get("notification_settings")
+    if isinstance(row, dict) and row.get("notification_settings") is not None:
+        raw_ns = row.get("notification_settings")
+    ns_merged = _merged_notifications(raw_ns)
+    payload["notification_settings"] = ns_merged
+    user["notification_settings"] = ns_merged
+    app_prefs_out: Dict[str, Any] = {}
+    if row and isinstance(row.get("app_preferences"), dict):
+        app_prefs_out = dict(row["app_preferences"])
+    elif isinstance(user.get("app_preferences"), dict):
+        app_prefs_out = dict(user["app_preferences"])
+    payload["app_preferences"] = app_prefs_out
+    user["app_preferences"] = app_prefs_out
+    dm_raw = str(app_prefs_out.get("default_driving_mode") or "adaptive").strip().lower()
+    payload["default_driving_mode"] = dm_raw if dm_raw in _VALID_DRIVING_MODES else "adaptive"
     return {"success": True, "data": payload}
 
 
@@ -431,11 +474,9 @@ def get_pricing():
 @router.get("/settings/notifications")
 def get_notification_settings(auth_user: CurrentUser):
     user = _get_user_store(auth_user)
-    settings = user.get("notification_settings")
-    if not isinstance(settings, dict):
-        settings = {**notification_settings}
-        user["notification_settings"] = settings
-    return {"success": True, "data": settings}
+    merged = _merged_notifications(user.get("notification_settings"))
+    user["notification_settings"] = merged
+    return {"success": True, "data": merged}
 
 
 @router.post("/settings/notifications")
@@ -446,8 +487,10 @@ def update_notification_settings(settings: dict, auth_user: CurrentUser):
     if not isinstance(current, dict):
         current = {**notification_settings}
     current.update(settings)
-    _persist_user(user_id, {"notification_settings": current})
-    return {"success": True, "message": "Settings updated", "data": users_db[user_id].get("notification_settings", current)}
+    merged = _merged_notifications(current)
+    user["notification_settings"] = merged
+    _persist_user(user_id, {"notification_settings": merged})
+    return {"success": True, "message": "Settings updated", "data": merged}
 
 
 @router.post("/user/push-token", responses={400: {"description": "Missing push token"}})
@@ -619,8 +662,10 @@ def update_notification_settings_put(
         if category not in settings:
             settings[category] = {}
         settings[category][setting] = enabled
-    _persist_user(str(user.get("id")), {"notification_settings": settings})
-    return {"success": True, "message": "Settings updated", "data": users_db[str(user.get("id"))].get("notification_settings", settings)}
+    merged = _merged_notifications(settings)
+    user["notification_settings"] = merged
+    _persist_user(str(user.get("id")), {"notification_settings": merged})
+    return {"success": True, "message": "Settings updated", "data": merged}
 
 
 @router.put("/user/profile", responses={400: {"description": "Invalid vehicle_height_meters value"}})
@@ -675,6 +720,23 @@ def update_profile(request: Request, body: dict, auth_user: CurrentUser):
         if vt not in ("car", "motorcycle", ""):
             raise HTTPException(status_code=400, detail="vehicle_type must be car, motorcycle, or empty")
         updates["vehicle_type"] = vt if vt else None
+    if "app_preferences" in updates:
+        ap_body = updates.pop("app_preferences")
+        if isinstance(ap_body, dict) and uid:
+            row_raw = sb_get_profile_raw(uid) or {}
+            raw_ap = row_raw.get("app_preferences")
+            base_ap = dict(raw_ap) if isinstance(raw_ap, dict) else {}
+            merged_ap = {**base_ap, **ap_body}
+            dm = merged_ap.get("default_driving_mode")
+            if dm is not None:
+                dm_s = str(dm).strip().lower()
+                if dm_s not in _VALID_DRIVING_MODES:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="default_driving_mode must be calm, adaptive, or sport.",
+                    )
+                merged_ap["default_driving_mode"] = dm_s
+            updates["app_preferences"] = merged_ap
     # Graceful write behavior: if persistence layer/schema lacks this field,
     # keeping it in-memory remains non-fatal for this endpoint.
     _persist_user(str(user.get("id")), updates)
