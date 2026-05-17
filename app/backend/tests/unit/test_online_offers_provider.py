@@ -2,6 +2,7 @@
 
 import importlib
 import sys
+from types import SimpleNamespace
 
 
 def _reload_provider(monkeypatch, provider: str = "admin"):
@@ -50,6 +51,29 @@ def test_http_json_returns_empty_when_base_missing(monkeypatch):
 
     assert cat.get("provider") == "http_json_unconfigured"
     assert cat.get("items") == []
+
+
+def test_online_api_key_without_base_uses_fmtc_provider(monkeypatch):
+    monkeypatch.setenv("ONLINE_OFFERS_API_KEY", "fmtc-token")
+    monkeypatch.delenv("ONLINE_OFFERS_API_BASE_URL", raising=False)
+    mod = _reload_provider(monkeypatch)
+    monkeypatch.setitem(
+        sys.modules,
+        "services.fmtc_offers_provider",
+        SimpleNamespace(
+            fetch_fmtc_online_catalog=lambda **kwargs: {
+                "items": [{"id": "fmtc_1"}],
+                "categories": [{"slug": "travel", "label": "Travel", "count": "1"}],
+                "next_cursor": None,
+                "provider": "fmtc",
+            }
+        ),
+    )
+
+    cat = mod.fetch_online_catalog(category_slug=None, cursor=None)
+
+    assert cat["provider"] == "fmtc"
+    assert cat["items"] == [{"id": "fmtc_1"}]
 
 
 def test_fmtc_provider_filters_expired_and_maps_online_items(monkeypatch):

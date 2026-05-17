@@ -112,6 +112,7 @@ export default function OffersScreen() {
   const skipFirstFocusRef = useRef(true);
   const lastSilentOffersFetchAt = useRef(0);
   const bootstrapped = useRef(false);
+  const onlineBootstrapped = useRef(false);
   const locationGridRef = useRef('');
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
@@ -311,9 +312,16 @@ export default function OffersScreen() {
   }, [statsVersion, loadLocalBootstrap]);
 
   useEffect(() => {
-    if (section !== 'online') return;
+    if (section !== 'online' || onlineBootstrapped.current) return;
+    onlineBootstrapped.current = true;
     void fetchOnlinePage(null, 'reset');
   }, [section, fetchOnlinePage]);
+
+  useEffect(() => {
+    if (!isFocused || onlineBootstrapped.current) return;
+    onlineBootstrapped.current = true;
+    void fetchOnlinePage(null, 'reset');
+  }, [isFocused, fetchOnlinePage]);
 
   const localCategoryChoices = useMemo(() => [{ slug: null as string | null, label: 'All' }, ...offerCategories.map((c) => ({ slug: c.slug, label: c.label }))], [offerCategories]);
 
@@ -330,7 +338,7 @@ export default function OffersScreen() {
     [onlineItems, onlineSlug],
   );
   const onlineFeatured = useMemo(() => filteredOnlineItems.filter((x) => x.featured), [filteredOnlineItems]);
-  const onlineRegular = useMemo(() => filteredOnlineItems.filter((x) => !x.featured), [filteredOnlineItems]);
+  const onlineAll = useMemo(() => filteredOnlineItems, [filteredOnlineItems]);
 
   const onlineChipChoices = useMemo(
     () => [{ slug: null as string | null, label: 'All' }, ...onlineCategories.map((c) => ({ slug: c.slug, label: c.label }))],
@@ -704,7 +712,7 @@ export default function OffersScreen() {
 
           <Text style={{ color: text, fontSize: 13, fontWeight: '900', marginHorizontal: 16, marginTop: 8, marginBottom: 12 }}>All deals</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 10, gap: 6, paddingBottom: 8 }}>
-            {onlineRegular.map(renderOnlineCard)}
+            {onlineAll.map(renderOnlineCard)}
           </ScrollView>
 
           {onlineLoadingMore ? (

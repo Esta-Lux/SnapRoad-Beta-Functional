@@ -1412,6 +1412,20 @@ def sb_get_platform_stats() -> dict:
         total_partners = _safe_count("partners")
         active_partners = _safe_count("partners", {"status": "active"})
         total_offers = _safe_count("offers", {"status": "active"})
+        online_offers = 0
+        online_offers_provider = "none"
+        try:
+            from services.online_offers_provider import fetch_online_catalog
+
+            catalog = fetch_online_catalog(category_slug=None, cursor=None)
+            online_offers_provider = str(catalog.get("provider") or "unknown")
+            categories = catalog.get("categories") or []
+            if isinstance(categories, list) and categories:
+                online_offers = sum(int(c.get("count") or 0) for c in categories if isinstance(c, dict))
+            else:
+                online_offers = len(catalog.get("items") or [])
+        except Exception:
+            logger.debug("online offers summary unavailable", exc_info=True)
         total_redemptions = _safe_count("redemptions")
 
         trip_stats = sb_get_trips_stats()
@@ -1428,6 +1442,8 @@ def sb_get_platform_stats() -> dict:
             "total_partners": total_partners,
             "active_partners": active_partners,
             "total_offers": total_offers,
+            "online_offers": online_offers,
+            "offer_catalog_provider": online_offers_provider,
             "total_redemptions": total_redemptions,
             "total_trips": trip_stats.get("total_trips", 0),
             "total_gems": total_gems,

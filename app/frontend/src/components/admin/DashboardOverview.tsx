@@ -67,6 +67,9 @@ export default function DashboardOverview({ theme, onNavigate }: DashboardOvervi
 
   const summary = analytics?.summary
   const queues = analytics?.queues
+  const offerSummary = summary as ({ online_offers?: unknown; offer_catalog_provider?: unknown } | undefined)
+  const onlineOfferCount = Number(offerSummary?.online_offers ?? 0)
+  const offerProvider = String(offerSummary?.offer_catalog_provider ?? '').trim()
 
   const growthRaw = (stats?.user_growth || '').trim()
   const showUserGrowth = Boolean(growthRaw && growthRaw !== '+0%' && growthRaw !== '0%')
@@ -192,6 +195,10 @@ export default function DashboardOverview({ theme, onNavigate }: DashboardOvervi
             <div className={`text-xl font-bold tabular-nums ${textPrimary}`}>
               {(summary?.total_offers ?? 0).toLocaleString()}
             </div>
+            <div className={`text-xs mt-1 ${textSecondary}`}>
+              Online catalog: {onlineOfferCount.toLocaleString()}
+              {offerProvider && offerProvider !== 'none' ? ` · ${offerProvider}` : ''}
+            </div>
           </div>
           <div className={`rounded-lg p-4 ${isDark ? 'bg-slate-700/30' : 'bg-[#F8FAFC]'}`}>
             <div className="flex items-center gap-2 text-sm font-medium text-amber-400 mb-1">
@@ -314,7 +321,7 @@ export default function DashboardOverview({ theme, onNavigate }: DashboardOvervi
             { icon: 'user', title: `${stats?.total_users ?? summary?.total_users ?? 0} users registered`, detail: 'Total platform users', time: 'Overall' },
             { icon: 'partner', title: `${stats?.active_partners ?? summary?.active_partners ?? 0} active partners`, detail: 'Business partners', time: 'Current' },
             { icon: 'trip', title: `${stats?.total_trips ?? summary?.total_trips ?? 0} trips tracked`, detail: 'Total driving sessions', time: 'All time' },
-            { icon: 'offer', title: `${stats?.total_offers ?? summary?.total_offers ?? 0} active offers`, detail: 'Partner offers', time: 'Current' },
+            { icon: 'offer', title: `${stats?.total_offers ?? summary?.total_offers ?? 0} active offers`, detail: onlineOfferCount > 0 ? `${onlineOfferCount.toLocaleString()} online catalog deals` : 'Partner offers', time: 'Current' },
           ]).map((activity: AdminRecentActivityItem) => {
             const iconMap: Record<string, typeof UserPlus> = { user: UserPlus, partner: Building2, trip: Navigation, offer: CheckCircle }
             const colorMap: Record<string, string> = {

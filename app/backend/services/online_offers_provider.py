@@ -152,7 +152,8 @@ def fetch_online_catalog(*, category_slug: Optional[str] = None, cursor: Optiona
 
     Resolution order:
       1. `online_offers` Supabase table (admin paste-link publishes go here).
-      2. FMTC, when `ONLINE_OFFERS_PROVIDER=fmtc` or `FMTC_API_TOKEN` is set.
+      2. FMTC, when `ONLINE_OFFERS_PROVIDER=fmtc`, `FMTC_API_TOKEN`, or a
+         standalone `ONLINE_OFFERS_API_KEY` is set.
       3. `ONLINE_OFFERS_PROVIDER=http_json` partner JSON proxy.
       4. Empty catalog.
     """
@@ -161,7 +162,8 @@ def fetch_online_catalog(*, category_slug: Optional[str] = None, cursor: Optiona
         return db
 
     prov = ONLINE_OFFERS_PROVIDER
-    if prov == "fmtc" or FMTC_API_TOKEN:
+    fmtc_token_configured = bool(FMTC_API_TOKEN or (ONLINE_OFFERS_API_KEY and not ONLINE_OFFERS_API_BASE_URL))
+    if prov == "fmtc" or fmtc_token_configured:
         try:
             from services.fmtc_offers_provider import fetch_fmtc_online_catalog
 
