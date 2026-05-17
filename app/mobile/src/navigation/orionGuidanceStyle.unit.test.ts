@@ -41,3 +41,18 @@ test('adds a short Orion buddy tail to preparatory ramp guidance', () => {
   assert.match(out, /^In half a mile, take the exit on the right\. /);
   assert.ok(out.length < 120);
 });
+
+test('adds clean personalized flavor to advance turn cues only', () => {
+  const turnStep: NavStep = { ...step, kind: 'turn_right', rawType: 'turn', displayInstruction: 'Turn right', instruction: 'Turn right' };
+  const out = orionizeNavigationUtterance('In 500 feet, turn right.', {
+    bucket: 'advance',
+    step: turnStep,
+    distanceMeters: 150,
+    drivingMode: 'sport',
+    userName: 'Ryan Ahmed',
+  });
+
+  assert.match(out, /^In 500 feet, turn right\. /);
+  assert.ok(out.length < 150);
+  assert.doesNotMatch(out, /crash|police|idiot|stupid|damn|hell/i);
+});

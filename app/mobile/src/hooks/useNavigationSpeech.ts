@@ -31,6 +31,7 @@ type Args = {
   currentStepIndex?: number;
   userCoord?: { lat: number; lng: number };
   navigationSteps?: NavStep[];
+  userName?: string;
 };
 
 function signalClause(signal: RoadSignal): string {
@@ -85,6 +86,8 @@ function buildUtterance(
   distanceMeters: number,
   bucket: 'preparatory' | 'advance' | 'imminent',
   metric: boolean,
+  drivingMode: DrivingMode,
+  userName?: string,
 ): string | null {
   if (!step || step.kind === 'arrive') return null;
 
@@ -103,7 +106,7 @@ function buildUtterance(
     const phrase = bucket === 'imminent'
       ? `${core}${chainSuffix}.`
       : `${distPart}, ${lowerFirst(core)}${chainSuffix}.`;
-    return orionizeNavigationUtterance(phrase, { bucket, step, distanceMeters: d });
+    return orionizeNavigationUtterance(phrase, { bucket, step, distanceMeters: d, drivingMode, userName });
   }
 
   const line = hudPhraseForManeuverKind(step.kind, step.roundaboutExitNumber);
@@ -114,11 +117,11 @@ function buildUtterance(
 
   if (bucket === 'imminent') {
     const phrase = `${sigClause}${line}${chainSuffix}.`;
-    return orionizeNavigationUtterance(phrase, { bucket, step, distanceMeters: d });
+    return orionizeNavigationUtterance(phrase, { bucket, step, distanceMeters: d, drivingMode, userName });
   }
 
   const phrase = `${distPart}, ${sigClause}${lowerFirst(line)}${chainSuffix}.`;
-  return orionizeNavigationUtterance(phrase, { bucket, step, distanceMeters: d });
+  return orionizeNavigationUtterance(phrase, { bucket, step, distanceMeters: d, drivingMode, userName });
 }
 
 /** After a step advances, suppress far/mid-distance cues so the next maneuver is not spoken until the driver settles. */
@@ -133,6 +136,7 @@ export function useNavigationSpeech({
   currentStepIndex,
   userCoord,
   navigationSteps,
+  userName,
 }: Args) {
   const lastKey = useRef<string | null>(null);
   const lastStepIndexRef = useRef<number | null>(null);
@@ -240,13 +244,13 @@ export function useNavigationSpeech({
     const key = `${speechStep.index}:${bucket}`;
     if (lastKey.current === key) return;
 
-    const phrase = buildUtterance(speechStep, d, bucket, metric);
+    const phrase = buildUtterance(speechStep, d, bucket, metric, drivingMode, userName);
     if (!phrase) return;
 
     setLastTurnByTurnPhrase(phrase);
     speakGuidance(phrase, drivingMode, localeTag);
     lastKey.current = key;
-  }, [progress, enabled, drivingMode, metric, localeTag, voiceT, aligned]);
+  }, [progress, enabled, drivingMode, metric, localeTag, voiceT, aligned, userName]);
 
   useEffect(() => {
     if (!enabled) {

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -80,6 +80,13 @@ const SUGGESTIONS = [
   'What are SnapRoad gems?',
 ];
 
+const ORION_QUICK_PROMPTS = [
+  { icon: 'restaurant-outline' as const, label: 'Dinner', prompt: 'Find a dinner spot near me with a good vibe.' },
+  { icon: 'speedometer-outline' as const, label: 'Coach me', prompt: 'Give me 3 ways to improve my SnapRoad score.' },
+  { icon: 'gift-outline' as const, label: 'Offers', prompt: 'Any useful offers near me right now?' },
+  { icon: 'navigate-outline' as const, label: 'Route read', prompt: 'What should I know about my current route?' },
+];
+
 export interface OrionContext {
   lat?: number;
   lng?: number;
@@ -136,6 +143,20 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
   const sheetBg = isLight ? colors.background : '#0D0D0F';
   const inputBg = isLight ? colors.surfaceSecondary : 'rgba(255,255,255,0.08)';
   const assistantBg = isLight ? colors.surfaceSecondary : 'rgba(255,255,255,0.08)';
+  const orionMood = context?.isNavigating
+    ? 'Navigation mode'
+    : context?.snapRoadTier
+      ? `${context.snapRoadTier} driver`
+      : 'Road buddy';
+  const driverFirstName = (context?.userName || '').trim().split(/\s+/)[0] || 'Driver';
+  const statChips = useMemo(
+    () => [
+      { icon: 'map-outline' as const, label: `${context?.totalTrips ?? 0} trips` },
+      { icon: 'diamond-outline' as const, label: `${context?.gems ?? 0} gems` },
+      { icon: 'shield-checkmark-outline' as const, label: `${context?.safetyScore ?? context?.snapRoadScore ?? '—'} score` },
+    ],
+    [context?.gems, context?.safetyScore, context?.snapRoadScore, context?.totalTrips],
+  );
 
   const [messages, setMessages] = useState<Message[]>([
     { id: '1', role: 'assistant', content: "Hey! I'm Orion, your SnapRoad co-pilot. Ask for place ideas, say “take me to …”, or tap a suggestion chip to start directions." },
@@ -380,30 +401,81 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={[styles.backdrop, { backgroundColor: isLight ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.5)' }]}>
         <KeyboardAvoidingView
-          style={[styles.sheet, { backgroundColor: sheetBg, paddingBottom: Math.max(insets.bottom, 12) }]}
+          style={[styles.sheet, { backgroundColor: sheetBg, paddingBottom: Math.max(insets.bottom, 12), borderColor: `${primary}33` }]}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <View style={[styles.handle, { backgroundColor: isLight ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.15)' }]} />
-          <View style={styles.header}>
-            <LinearGradient colors={[colors.ctaGradientStart, colors.ctaGradientEnd]} style={styles.avatar}>
-              <Ionicons name="sparkles" size={20} color="#fff" />
-            </LinearGradient>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={[styles.headerTitle, { color: text }]}>Orion</Text>
-              <Text style={[styles.headerSub, { color: sub }]}>
-                {isPremium ? 'Driving insights on every reply' : 'Voice & chat · say “take me to …” to navigate'}
-              </Text>
+          <LinearGradient
+            colors={isLight ? ['#FFFFFF', '#EEF6FF'] : ['#111827', '#07111F']}
+            style={[styles.hero, { borderColor: `${primary}26` }]}
+          >
+            <View style={styles.header}>
+              <LinearGradient colors={[colors.ctaGradientStart, colors.ctaGradientEnd]} style={styles.avatar}>
+                <Ionicons name="sparkles" size={22} color="#fff" />
+              </LinearGradient>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <View style={styles.titleRow}>
+                  <Text style={[styles.headerTitle, { color: text }]}>Orion</Text>
+                  <View style={[styles.livePill, { backgroundColor: `${primary}18`, borderColor: `${primary}35` }]}>
+                    <View style={[styles.liveDot, { backgroundColor: context?.isNavigating ? '#22C55E' : primary }]} />
+                    <Text style={[styles.liveText, { color: primary }]}>{orionMood}</Text>
+                  </View>
+                </View>
+                <Text style={[styles.headerSub, { color: sub }]}>
+                  {isPremium ? `Premium co-pilot for ${driverFirstName}` : `Co-pilot for ${driverFirstName} · voice, routes, offers`}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={onClose} style={[styles.closeBtn, { backgroundColor: isLight ? 'rgba(15,23,42,0.06)' : 'rgba(255,255,255,0.08)' }]} hitSlop={12}>
+                <Ionicons name="close" size={20} color={sub} />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>
-              <Ionicons name="close" size={22} color={sub} />
-            </TouchableOpacity>
-          </View>
+            <Text style={[styles.heroLine, { color: text }]}>
+              Sassy enough to be fun. Smart enough to keep the wheel the main character.
+            </Text>
+            <View style={styles.statRow}>
+              {statChips.map((chip) => (
+                <View key={chip.label} style={[styles.statChip, { backgroundColor: isLight ? 'rgba(255,255,255,0.72)' : 'rgba(255,255,255,0.08)', borderColor: `${primary}26` }]}>
+                  <Ionicons name={chip.icon} size={13} color={primary} />
+                  <Text style={[styles.statText, { color: text }]} numberOfLines={1}>{chip.label}</Text>
+                </View>
+              ))}
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickPromptRow}>
+              {ORION_QUICK_PROMPTS.map((item) => (
+                <TouchableOpacity
+                  key={item.label}
+                  style={[styles.quickPrompt, { backgroundColor: isLight ? 'rgba(255,255,255,0.82)' : 'rgba(255,255,255,0.08)', borderColor: `${primary}2e` }]}
+                  onPress={() => void sendMessage(item.prompt)}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name={item.icon} size={16} color={primary} />
+                  <Text style={[styles.quickPromptText, { color: text }]}>{item.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </LinearGradient>
+
+          {suggestionChips.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionChipsRow}>
+              {suggestionChips.map((place) => (
+                <TouchableOpacity
+                  key={`${place.name}-${place.lat}-${place.lng}`}
+                  style={[styles.placeChip, { backgroundColor: `${primary}12`, borderColor: `${primary}35` }]}
+                  onPress={() => onAction?.({ type: 'navigate', name: place.name, lat: place.lat, lng: place.lng, address: place.address })}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="location-outline" size={15} color={primary} />
+                  <Text style={[styles.placeChipText, { color: text }]} numberOfLines={1}>{place.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          ) : null}
 
           <FlatList
             ref={listRef}
             data={messages}
             keyExtractor={(m) => m.id}
-            style={{ flexGrow: 0 }}
+            style={styles.messageList}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={{ padding: 16, paddingBottom: 8 }}
             onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
@@ -411,7 +483,9 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
               <View
                 style={[
                   styles.bubble,
-                  item.role === 'user' ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start', backgroundColor: assistantBg, borderWidth: StyleSheet.hairlineWidth, borderColor: border },
+                  item.role === 'user'
+                    ? { alignSelf: 'flex-end', padding: 0, backgroundColor: 'transparent' }
+                    : { alignSelf: 'flex-start', backgroundColor: assistantBg, borderWidth: StyleSheet.hairlineWidth, borderColor: border },
                 ]}
               >
                 {item.role === 'user' ? (
@@ -419,7 +493,12 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
                     <Text style={styles.bubbleTextUser}>{item.content}</Text>
                   </LinearGradient>
                 ) : (
-                  <Text style={[styles.bubbleTextAsst, { color: text }]}>{item.content}</Text>
+                  <View style={styles.assistantBubbleInner}>
+                    <View style={[styles.assistantMiniIcon, { backgroundColor: `${primary}18` }]}>
+                      <Ionicons name="sparkles" size={12} color={primary} />
+                    </View>
+                    <Text style={[styles.bubbleTextAsst, { color: text }]}>{item.content}</Text>
+                  </View>
                 )}
               </View>
             )}
@@ -428,7 +507,7 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
           {isTyping && (
             <View style={styles.typingRow}>
               <ActivityIndicator size="small" color={primary} />
-              <Text style={{ color: sub, marginLeft: 8, fontSize: 13 }}>Orion is thinking…</Text>
+              <Text style={{ color: sub, marginLeft: 8, fontSize: 13 }}>Orion is cooking up something useful…</Text>
             </View>
           )}
 
@@ -452,39 +531,41 @@ export default function OrionChat({ visible, onClose, isPremium, context, onSugg
             </View>
           )}
 
-          <View style={[styles.inputRow, { backgroundColor: inputBg, borderColor: border }]}>
-            <TextInput
-              style={[styles.textInput, { color: text }]}
-              placeholder={isListening ? 'Speak now…' : 'Ask Orion…'}
-              placeholderTextColor={sub}
-              value={displayInput}
-              onChangeText={(t) => {
-                if (!isListening) setInput(t);
-              }}
-              editable={!isListening}
-              returnKeyType="send"
-              onSubmitEditing={() => void sendMessage(displayInput)}
-            />
-            {Voice ? (
+          <View style={[styles.inputShell, { borderColor: `${primary}22`, backgroundColor: isLight ? 'rgba(255,255,255,0.92)' : 'rgba(15,23,42,0.88)' }]}>
+            <View style={[styles.inputRow, { backgroundColor: inputBg, borderColor: border }]}>
+              <TextInput
+                style={[styles.textInput, { color: text }]}
+                placeholder={isListening ? 'Speak now…' : 'Ask Orion…'}
+                placeholderTextColor={sub}
+                value={displayInput}
+                onChangeText={(t) => {
+                  if (!isListening) setInput(t);
+                }}
+                editable={!isListening}
+                returnKeyType="send"
+                onSubmitEditing={() => void sendMessage(displayInput)}
+              />
+              {Voice ? (
+                <TouchableOpacity
+                  onPress={() => void handleMicPress()}
+                  style={[
+                    styles.iconBtn,
+                    { backgroundColor: isListening ? 'rgba(239,68,68,0.2)' : `${primary}18` },
+                  ]}
+                  accessibilityLabel={isListening ? 'Stop dictation' : 'Start voice input'}
+                >
+                  <Ionicons name={isListening ? 'stop-circle' : 'mic'} size={22} color={isListening ? '#EF4444' : primary} />
+                </TouchableOpacity>
+              ) : null}
               <TouchableOpacity
-                onPress={() => void handleMicPress()}
-                style={[
-                  styles.iconBtn,
-                  { backgroundColor: isListening ? 'rgba(239,68,68,0.2)' : `${primary}18` },
-                ]}
-                accessibilityLabel={isListening ? 'Stop dictation' : 'Start voice input'}
+                onPress={() => void sendMessage(displayInput)}
+                style={[styles.iconBtn, { backgroundColor: `${primary}22`, opacity: isTyping ? 0.55 : 1 }]}
+                disabled={isTyping}
+                accessibilityLabel="Send message"
               >
-                <Ionicons name={isListening ? 'stop-circle' : 'mic'} size={22} color={isListening ? '#EF4444' : primary} />
+                <Ionicons name="send" size={20} color={primary} />
               </TouchableOpacity>
-            ) : null}
-            <TouchableOpacity
-              onPress={() => void sendMessage(displayInput)}
-              style={[styles.iconBtn, { backgroundColor: `${primary}22`, opacity: isTyping ? 0.55 : 1 }]}
-              disabled={isTyping}
-              accessibilityLabel="Send message"
-            >
-              <Ionicons name="send" size={20} color={primary} />
-            </TouchableOpacity>
+            </View>
           </View>
         </KeyboardAvoidingView>
       </View>
@@ -496,15 +577,61 @@ const styles = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'flex-end' },
   sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '92%', borderTopWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(148,163,184,0.2)' },
   handle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 8 },
-  header: { flexDirection: 'row', alignItems: 'center', padding: 16, paddingTop: 12 },
+  hero: {
+    marginHorizontal: 12,
+    marginTop: 8,
+    borderRadius: 22,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingTop: 14, paddingBottom: 10 },
   avatar: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 23 },
   headerTitle: { fontSize: 17, fontWeight: '700' },
   headerSub: { fontSize: 12, marginTop: 2 },
-  closeBtn: { padding: 8 },
+  livePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    maxWidth: 140,
+  },
+  liveDot: { width: 6, height: 6, borderRadius: 3, marginRight: 5 },
+  liveText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+  heroLine: { fontSize: 13, lineHeight: 18, fontWeight: '600', paddingHorizontal: 14, paddingBottom: 12 },
+  statRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingBottom: 12 },
+  statChip: {
+    flex: 1,
+    minHeight: 34,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statText: { flex: 1, fontSize: 11, fontWeight: '800' },
+  quickPromptRow: { gap: 8, paddingHorizontal: 14, paddingBottom: 14 },
+  quickPrompt: {
+    height: 38,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  quickPromptText: { fontSize: 12, fontWeight: '800' },
+  closeBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  messageList: { flexGrow: 0, minHeight: 180 },
   bubble: { marginBottom: 8, maxWidth: '82%', borderRadius: 18, padding: 12 },
   userGrad: { borderRadius: 18, padding: 12 },
   bubbleTextUser: { color: '#fff', fontSize: 14, lineHeight: 20 },
-  bubbleTextAsst: { fontSize: 14, lineHeight: 20 },
+  bubbleTextAsst: { flex: 1, fontSize: 14, lineHeight: 20 },
+  assistantBubbleInner: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  assistantMiniIcon: { width: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center', marginTop: 1 },
   typingRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: 20, paddingBottom: 10 },
   suggestRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, paddingBottom: 12 },
   suggestChip: { borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6, borderWidth: StyleSheet.hairlineWidth },
@@ -520,11 +647,17 @@ const styles = StyleSheet.create({
     maxWidth: 220,
   },
   placeChipText: { fontSize: 13, fontWeight: '700', flexShrink: 1 },
+  inputShell: {
+    marginHorizontal: 12,
+    marginTop: 4,
+    marginBottom: 4,
+    borderRadius: 24,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 4,
+  },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 16,
-    marginBottom: 4,
     borderRadius: 22,
     paddingLeft: 14,
     paddingRight: 6,

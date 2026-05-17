@@ -758,6 +758,7 @@ export default function MapScreen() {
     currentStepIndex: nav.currentStepIndex,
     userCoord: nav.navigationProgressCoord,
     navigationSteps: nav.navigationSteps,
+    userName: user?.name,
   });
   const sdkStepGap = useSdkStepGapDisplay(nav.isNavigating, nav.navigationProgress);
 
