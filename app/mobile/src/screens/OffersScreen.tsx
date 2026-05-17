@@ -34,6 +34,7 @@ import {
 import type { OnlineOfferItem } from '../api/dto/offers';
 import type { Offer } from '../types';
 import { SocialScreenHeader } from '../components/social/SocialScreenHeader';
+import CommonModal from '../components/common/Modal';
 import { OfferDetailModal } from '../components/rewards/RewardsModals';
 import { OfferCategoryChips } from '../components/rewards/RewardsSections';
 import { displayOfferCategory } from '../lib/offerCategories';
@@ -42,7 +43,16 @@ import { offerHeroUri } from '../lib/offerHeroImage';
 type HubSection = 'local' | 'online';
 
 const winW = Dimensions.get('window').width;
-const ONLINE_CARD_W = Math.min(292, Math.round(winW * 0.78));
+/** Each horizontal shelf holds up to this many deals; load-more appends another shelf below. */
+const ONLINE_SHELF_CHUNK = 10;
+const ONLINE_SHELF_GAP = 8;
+/** Narrow product tiles (~2–2.5 visible) — scroll sideways within the shelf for all 10. */
+const ONLINE_SHELF_CARD_W = Math.min(148, Math.round(winW * 0.42));
+const ONLINE_SHELF_IMG_H = 102;
+const ONLINE_ROW_MIN_H = ONLINE_SHELF_IMG_H + 128;
+/** Amazon-style savings emphasis on tiles + detail sheet */
+const AMAZON_DEAL_RED = '#CC0C39';
+
 const LOCAL_CARD_W = Math.min(300, Math.round(winW * 0.82));
 const MARKET_ROW_MIN_H = Math.min(440, Math.round(Dimensions.get('window').height * 0.5));
 
@@ -198,6 +208,156 @@ function resolveDiscountChip(row: OnlineOfferItem): { label: string; bg: string;
   return null;
 }
 
+function chunkShelf<T>(items: T[], chunkSize: number): T[][] {
+  const rows: T[][] = [];
+  for (let i = 0; i < items.length; i += chunkSize) rows.push(items.slice(i, i + chunkSize));
+  return rows;
+}
+
+/** Slim marketplace sheet — tap a shelf tile to preview before opening the partner link. */
+function OnlineDealDetailSheet(props: {
+  row: OnlineOfferItem | null;
+  visible: boolean;
+  onClose: () => void;
+  primary: string;
+  text: string;
+  sub: string;
+}) {
+  const { row, visible, onClose, primary, text, sub } = props;
+  const [heroIdx, setHeroIdx] = useState(0);
+  const imgs = useMemo(() => (row ? normalizeOnlineGallery(row) : []), [row]);
+
+  useEffect(() => {
+    setHeroIdx(0);
+  }, [row?.id]);
+
+  const heroSlideW = Math.min(winW - 56, 340);
+
+  const onHeroScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const x = e.nativeEvent.contentOffset.x;
+    const next = Math.round(x / heroSlideW);
+    setHeroIdx(Math.max(0, Math.min(Math.max(imgs.length - 1, 0), next)));
+  };
+
+  const currency = row ? (row.currency || 'USD').toUpperCase() : 'USD';
+  const fmtPrice = (n: number) => {
+    try {
+      return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 2 }).format(n);
+    } catch {
+      return `${currency} ${n.toFixed(2)}`;
+    }
+  };
+
+  const body =
+    row &&
+    (() => {
+      const hasSale =
+        typeof row.sale_price === 'number' &&
+        row.sale_price > 0 &&
+        typeof row.regular_price === 'number' &&
+        row.regular_price > row.sale_price;
+      const showSinglePrice = !hasSale && typeof row.sale_price === 'number' && row.sale_price > 0;
+      const outboundUrl = row.source_url || row.affiliate_url || row.affiliate_tracking_url || '';
+      const expiry = formatExpiryShort(row.expires_at);
+      const chip = resolveDiscountChip(row);
+
+      return (
+        <>
+          <View style={{ borderRadius: 12, overflow: 'hidden', backgroundColor: `${primary}08`, borderWidth: StyleSheet.hairlineWidth, borderColor: `${primary}22` }}>
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={onHeroScroll}
+              scrollEventThrottle={16}
+              style={{ width: heroSlideW, height: 132 }}
+            >
+              {(imgs.length ? imgs : [null]).map((uri, i) => (
+                <View key={`${uri ?? 'ph'}-${i}`} style={{ width: heroSlideW, height: 132 }}>
+                  {uri ? (
+                    <Image source={{ uri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                  ) : (
+                    <LinearGradient colors={[`${primary}44`, `${primary}18`]} style={{ flex: 1 }} />
+                  )}
+                </View>
+              ))}
+            </ScrollView>
+            {imgs.length > 1 ? (
+              <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 4, paddingVertical: 8 }}>
+                {imgs.map((_, i) => (
+                  <View
+                    key={`mdot-${row.id}-${i}`}
+                    style={{
+                      width: i === heroIdx ? 12 : 5,
+                      height: 5,
+                      borderRadius: 3,
+                      backgroundColor: i === heroIdx ? primary : `${sub}66`,
+                    }}
+                  />
+                ))}
+              </View>
+            ) : null}
+          </View>
+
+          <Text style={{ color: sub, fontSize: 11, fontWeight: '700', letterSpacing: 0.4, marginTop: 14 }} numberOfLines={1}>
+            {row.merchant_name || row.merchant_domain || 'Partner'}
+          </Text>
+          <Text style={{ color: text, fontSize: 17, fontWeight: '800', marginTop: 5, lineHeight: 22 }} numberOfLines={3}>
+            {row.title}
+          </Text>
+
+          {chip ? (
+            <View style={{ alignSelf: 'flex-start', marginTop: 10, backgroundColor: chip.bg, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 }}>
+              <Text style={{ color: chip.fg, fontSize: 12, fontWeight: '900', letterSpacing: 0.3 }}>{chip.label}</Text>
+            </View>
+          ) : null}
+
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', gap: 10, marginTop: 14 }}>
+            {hasSale ? (
+              <>
+                <Text style={{ color: AMAZON_DEAL_RED, fontSize: 22, fontWeight: '900' }}>{fmtPrice(row.sale_price as number)}</Text>
+                <Text style={{ color: sub, fontSize: 14, fontWeight: '600', textDecorationLine: 'line-through' }}>
+                  {fmtPrice(row.regular_price as number)}
+                </Text>
+                <Text style={{ color: sub, fontSize: 11, fontWeight: '700' }}>List price</Text>
+              </>
+            ) : showSinglePrice ? (
+              <Text style={{ color: AMAZON_DEAL_RED, fontSize: 22, fontWeight: '900' }}>{fmtPrice(row.sale_price as number)}</Text>
+            ) : row.discount_label ? (
+              <Text style={{ color: text, fontSize: 15, fontWeight: '800' }}>{row.discount_label}</Text>
+            ) : null}
+          </View>
+
+          {row.description ? (
+            <Text style={{ color: sub, fontSize: 13, marginTop: 12, lineHeight: 19 }} numberOfLines={7}>
+              {row.description}
+            </Text>
+          ) : null}
+
+          {expiry ? (
+            <Text style={{ color: sub, fontSize: 11, marginTop: 12, fontWeight: '700' }}>Offer ends {expiry}</Text>
+          ) : null}
+
+          <TouchableOpacity activeOpacity={0.88} onPress={() => void safeOpenAffiliate(outboundUrl)} style={{ marginTop: 18 }}>
+            <LinearGradient colors={[primary, `${primary}cc`]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={{ borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}>
+              <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>Shop this deal</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+
+          <Text style={{ color: sub, fontSize: 10, marginTop: 12, lineHeight: 15, fontWeight: '600' }}>
+            Opens the retailer securely in your browser. Prices and availability are set by the partner.
+          </Text>
+        </>
+      );
+    })();
+
+  return (
+    <CommonModal visible={Boolean(visible && row)} onClose={onClose} scrollable>
+      {body}
+    </CommonModal>
+  );
+}
+
 function OffersSearchField(props: {
   value: string;
   onChangeText: (v: string) => void;
@@ -294,8 +454,11 @@ function OnlineDealCarouselCard(props: {
   text: string;
   sub: string;
   shadow: (elevation?: number) => ViewStyle;
+  cardWidth: number;
+  imageHeight: number;
+  onPress: () => void;
 }) {
-  const { row, colors, cardBg, text, sub, shadow } = props;
+  const { row, colors, cardBg, text, sub, shadow, cardWidth, imageHeight, onPress } = props;
   const [heroIdx, setHeroIdx] = useState(0);
   const imgs = useMemo(() => normalizeOnlineGallery(row), [row]);
 
@@ -317,126 +480,111 @@ function OnlineDealCarouselCard(props: {
     typeof row.regular_price === 'number' &&
     row.regular_price > row.sale_price;
   const showSinglePrice = !hasSale && typeof row.sale_price === 'number' && row.sale_price > 0;
-  const outboundUrl = row.source_url || row.affiliate_url || row.affiliate_tracking_url || '';
 
   const onHeroScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const x = e.nativeEvent.contentOffset.x;
-    const next = Math.round(x / ONLINE_CARD_W);
+    const next = Math.round(x / cardWidth);
     setHeroIdx(Math.max(0, Math.min(Math.max(imgs.length - 1, 0), next)));
   };
 
+  const chip = resolveDiscountChip(row);
+
   return (
     <TouchableOpacity
-      activeOpacity={0.86}
-      onPress={() => void safeOpenAffiliate(outboundUrl)}
+      activeOpacity={0.88}
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onPress();
+      }}
       style={{
-        width: ONLINE_CARD_W,
-        marginHorizontal: 8,
-        marginBottom: 4,
-        borderRadius: 18,
-        borderWidth: 1,
+        width: cardWidth,
+        borderRadius: 12,
+        borderWidth: StyleSheet.hairlineWidth,
         borderColor: colors.border,
         backgroundColor: cardBg,
         overflow: 'hidden',
-        ...shadow(6),
+        ...shadow(4),
       }}
     >
-      <View style={{ height: 136, backgroundColor: `${colors.primary}10` }}>
+      <View style={{ height: imageHeight, backgroundColor: `${colors.primary}08` }}>
         <ScrollView
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
           onMomentumScrollEnd={onHeroScroll}
           scrollEventThrottle={16}
-          style={{ width: ONLINE_CARD_W, height: 136 }}
+          style={{ width: cardWidth, height: imageHeight }}
         >
           {(imgs.length ? imgs : [null]).map((uri, i) => (
-            <View key={`${uri ?? 'ph'}-${i}`} style={{ width: ONLINE_CARD_W, height: 136 }}>
+            <View key={`${uri ?? 'ph'}-${i}`} style={{ width: cardWidth, height: imageHeight }}>
               {uri ? (
                 <Image source={{ uri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
               ) : (
-                <LinearGradient colors={[`${colors.rewardsGradientStart}77`, `${colors.primary}33`]} style={{ flex: 1 }} />
+                <LinearGradient colors={[`${colors.rewardsGradientStart}55`, `${colors.primary}28`]} style={{ flex: 1 }} />
               )}
             </View>
           ))}
         </ScrollView>
-        {row.featured ? (
+        {chip ? (
           <View
             style={{
               position: 'absolute',
-              left: 10,
-              top: 10,
-              backgroundColor: `${colors.primary}E6`,
-              paddingHorizontal: 8,
+              left: 6,
+              top: 6,
+              backgroundColor: chip.bg,
+              paddingHorizontal: 6,
               paddingVertical: 3,
-              borderRadius: 8,
+              borderRadius: 5,
+              maxWidth: cardWidth - 12,
             }}
           >
-            <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900', textTransform: 'uppercase' }}>Featured</Text>
+            <Text style={{ color: chip.fg, fontSize: chip.isStrong ? 11 : 9, fontWeight: '900' }} numberOfLines={1}>
+              {chip.label}
+            </Text>
           </View>
         ) : null}
-        {(() => {
-          const chip = resolveDiscountChip(row);
-          if (!chip) return null;
-          return (
-            <View
-              style={{
-                position: 'absolute',
-                top: 10,
-                right: 10,
-                backgroundColor: chip.bg,
-                paddingHorizontal: 9,
-                paddingVertical: 4,
-                borderRadius: 8,
-                shadowColor: '#000',
-                shadowOpacity: 0.22,
-                shadowRadius: 4,
-                shadowOffset: { width: 0, height: 1 },
-                elevation: 2,
-              }}
-            >
-              <Text style={{ color: chip.fg, fontSize: chip.isStrong ? 12 : 10, fontWeight: '900', letterSpacing: 0.4 }}>
-                {chip.label}
-              </Text>
-            </View>
-          );
-        })()}
         {imgs.length > 1 ? (
-          <View style={{ position: 'absolute', bottom: 8, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 5 }}>
+          <View style={{ position: 'absolute', bottom: 5, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 4 }}>
             {imgs.map((_, i) => (
               <View
                 key={`dot-${row.id}-${i}`}
                 style={{
-                  width: i === heroIdx ? 14 : 6,
-                  height: 6,
+                  width: i === heroIdx ? 10 : 5,
+                  height: 5,
                   borderRadius: 3,
-                  backgroundColor: i === heroIdx ? '#fff' : 'rgba(255,255,255,0.45)',
+                  backgroundColor: i === heroIdx ? '#fff' : 'rgba(255,255,255,0.5)',
                 }}
               />
             ))}
           </View>
         ) : null}
       </View>
-      <View style={{ paddingHorizontal: 13, paddingVertical: 12 }}>
-        <Text style={{ color: sub, fontSize: 10, fontWeight: '900' }} numberOfLines={1}>
+      <View style={{ paddingHorizontal: 9, paddingTop: 8, paddingBottom: 10 }}>
+        <Text style={{ color: sub, fontSize: 10, fontWeight: '700' }} numberOfLines={1}>
           {row.merchant_name || row.merchant_domain || 'Retailer'}
         </Text>
-        <Text style={{ color: text, fontSize: 15, fontWeight: '900', marginTop: 6 }} numberOfLines={3}>
+        <Text style={{ color: text, fontSize: 12, fontWeight: '700', marginTop: 4, lineHeight: 15 }} numberOfLines={2}>
           {row.title}
         </Text>
         {hasSale ? (
-          <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: 8, gap: 6 }}>
-            <Text style={{ color: text, fontSize: 14, fontWeight: '900' }}>{fmtPrice(row.sale_price as number)}</Text>
-            <Text style={{ color: sub, fontSize: 11, fontWeight: '700', textDecorationLine: 'line-through' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
+            <Text style={{ color: AMAZON_DEAL_RED, fontSize: 13, fontWeight: '900' }}>{fmtPrice(row.sale_price as number)}</Text>
+            <Text style={{ color: sub, fontSize: 11, fontWeight: '600', textDecorationLine: 'line-through' }}>
               {fmtPrice(row.regular_price as number)}
             </Text>
           </View>
         ) : showSinglePrice ? (
-          <Text style={{ color: text, fontSize: 14, fontWeight: '900', marginTop: 8 }}>
-            {fmtPrice(row.sale_price as number)}
+          <Text style={{ color: AMAZON_DEAL_RED, fontSize: 13, fontWeight: '900', marginTop: 6 }}>{fmtPrice(row.sale_price as number)}</Text>
+        ) : row.discount_label ? (
+          <Text style={{ color: AMAZON_DEAL_RED, fontSize: 11, fontWeight: '900', marginTop: 6 }} numberOfLines={1}>
+            {row.discount_label}
           </Text>
         ) : null}
-        {expiry ? <Text style={{ color: sub, fontSize: 10, marginTop: 8, fontWeight: '700' }}>Ends {expiry}</Text> : null}
+        {expiry ? (
+          <Text style={{ color: sub, fontSize: 9, marginTop: 5, fontWeight: '700' }} numberOfLines={1}>
+            Ends {expiry}
+          </Text>
+        ) : null}
       </View>
     </TouchableOpacity>
   );
@@ -504,6 +652,7 @@ export default function OffersScreen() {
   const [onlineQuickFilter, setOnlineQuickFilter] = useState<'all' | 'featured' | 'ending'>('all');
 
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
+  const [selectedOnlineOffer, setSelectedOnlineOffer] = useState<OnlineOfferItem | null>(null);
   const [redeemingOfferId, setRedeemingOfferId] = useState<string | null>(null);
   const [redeemQrByOfferId, setRedeemQrByOfferId] = useState<
     Record<string, { qr_token?: string; claim_code?: string; expires_at?: string }>
@@ -731,6 +880,8 @@ export default function OffersScreen() {
     }
     return out;
   }, [filteredOnlineItems]);
+
+  const onlineDealRows = useMemo(() => chunkShelf(onlineCarouselOrdered, ONLINE_SHELF_CHUNK), [onlineCarouselOrdered]);
 
   const onlineCarouselColors = useMemo(
     () => ({
@@ -1075,29 +1226,41 @@ export default function OffersScreen() {
             </View>
           ) : null}
 
-          {onlineCarouselOrdered.length > 0 ? (
+          {onlineDealRows.length > 0 ? (
             <>
               <Text style={{ color: text, fontSize: 13, fontWeight: '900', marginHorizontal: 16, marginTop: 14, marginBottom: 10 }}>
                 Online deals
               </Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={filteredOnlineItems.length > 3}
-                style={{ minHeight: MARKET_ROW_MIN_H }}
-                contentContainerStyle={{ paddingHorizontal: 8, alignItems: 'stretch', paddingVertical: 10, paddingBottom: 14 }}
-              >
-                {onlineCarouselOrdered.map((row) => (
-                  <OnlineDealCarouselCard
-                    key={row.id}
-                    row={row}
-                    colors={onlineCarouselColors}
-                    cardBg={cardBg}
-                    text={text}
-                    sub={sub}
-                    shadow={shadow}
-                  />
-                ))}
-              </ScrollView>
+              {onlineDealRows.map((chunk, rowIdx) => (
+                <View key={`online-shelf-${rowIdx}`} style={{ marginBottom: rowIdx === onlineDealRows.length - 1 ? 6 : 18 }}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={chunk.length > 2}
+                    style={{ minHeight: ONLINE_ROW_MIN_H }}
+                    contentContainerStyle={{
+                      paddingHorizontal: 14,
+                      gap: ONLINE_SHELF_GAP,
+                      alignItems: 'flex-start',
+                      paddingVertical: 6,
+                    }}
+                  >
+                    {chunk.map((row) => (
+                      <OnlineDealCarouselCard
+                        key={row.id}
+                        row={row}
+                        colors={onlineCarouselColors}
+                        cardBg={cardBg}
+                        text={text}
+                        sub={sub}
+                        shadow={shadow}
+                        cardWidth={ONLINE_SHELF_CARD_W}
+                        imageHeight={ONLINE_SHELF_IMG_H}
+                        onPress={() => setSelectedOnlineOffer(row)}
+                      />
+                    ))}
+                  </ScrollView>
+                </View>
+              ))}
             </>
           ) : null}
 
@@ -1138,6 +1301,14 @@ export default function OffersScreen() {
         </ScrollView>
       )}
 
+      <OnlineDealDetailSheet
+        row={selectedOnlineOffer}
+        visible={!!selectedOnlineOffer}
+        onClose={() => setSelectedOnlineOffer(null)}
+        primary={colors.primary}
+        text={text}
+        sub={sub}
+      />
       <OfferDetailModal
         selectedOffer={selectedOffer}
         redeemingOfferId={redeemingOfferId}
