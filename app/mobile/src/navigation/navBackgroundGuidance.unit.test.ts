@@ -44,12 +44,11 @@ function progress(overrides: Partial<NavigationProgress> = {}): NavigationProgre
   } as NavigationProgress;
 }
 
-test('buildBackgroundTurnNotificationContent returns a gray-card style turn prompt near maneuvers', () => {
+test('buildBackgroundTurnNotificationContent returns a maneuver-forward banner near turns', () => {
   const content = buildBackgroundTurnNotificationContent(progress());
   assert.ok(content);
-  assert.match(content.title, /^SnapRoad turn/);
-  assert.match(content.title, /ft/i);
-  assert.match(content.body, /Turn right on Summit Street/);
+  assert.match(content.title, /Turn right on Summit Street/);
+  assert.match(content.subtitle, /ft/i);
   assert.match(content.body, /Then continue/);
 });
 

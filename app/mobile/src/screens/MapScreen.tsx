@@ -156,6 +156,11 @@ import {
 } from '../navigation/turnCardModel';
 import { sdkGuidanceStabilityKey } from '../navigation/sdkGuidanceUiKeys';
 import { sdkManeuverDisplayDistanceFromProgress } from '../navigation/sdkNavBridgePayload';
+import {
+  formatSdkNavigationVoiceCue,
+  navigationVoiceCueBucket,
+  navigationVoiceCueKey,
+} from '../navigation/navVoiceCuePolicy';
 import { destinationCrowMeters, shouldAcceptFinalDestinationArrival } from '../navigation/navArrivalGuard';
 import { useTurnConfirmationUntil } from '../hooks/useTurnConfirmationWindow';
 import { useMapWeather, weatherOverlayFactor } from '../hooks/useMapWeather';
@@ -877,6 +882,11 @@ export default function MapScreen() {
    * When ElevenLabs is enabled we mute native Mapbox speech and replay the same instruction via the backend
    * so Orion/ElevenLabs owns the voice instead of Mapbox + Expo device TTS fighting each other.
    */
+  const sdkVoiceCueKeysRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!nav.isNavigating) sdkVoiceCueKeysRef.current.clear();
+  }, [nav.isNavigating]);
+
   const handleSdkVoiceInstruction = useCallback(
     (text?: string) => {
       const t = (text ?? '').trim();
@@ -888,10 +898,47 @@ export default function MapScreen() {
         !suppressHeadlessNavForNativeFullscreen &&
         !navVoiceMutedRef.current;
       if (substituteElevenLabs) {
-        speak(t, 'high', drivingMode, { rateSource: 'navigation_fixed', forceAllowDuringSdk: true });
+        const p = nav.sdkNavProgress;
+        const distanceMeters =
+          p?.distanceToNextManeuverMeters ?? nav.navigationProgress?.nextStepDistanceMeters ?? null;
+        const bucket = navigationVoiceCueBucket(distanceMeters);
+        if (!bucket) return;
+
+        const key = navigationVoiceCueKey({
+          legIndex: p?.legIndex ?? nav.navigationProgress?.nativeStepIdentity?.legIndex,
+          stepIndex:
+            p?.stepIndex ??
+            nav.navigationProgress?.nativeStepIdentity?.stepIndex ??
+            nav.navigationProgress?.nextStep?.index,
+          bucket,
+        });
+        if (sdkVoiceCueKeysRef.current.has(key)) return;
+        sdkVoiceCueKeysRef.current.add(key);
+
+        const phrase = formatSdkNavigationVoiceCue({
+          text: t,
+          bucket,
+          kind: nav.navigationProgress?.nextStep?.kind,
+          seed: key,
+          userName: user?.name,
+        });
+        if (phrase) {
+          speak(phrase, 'high', drivingMode, { rateSource: 'navigation_fixed', forceAllowDuringSdk: true });
+        }
       }
     },
-    [drivingMode, navLogicEffective, suppressHeadlessNavForNativeFullscreen],
+    [
+      drivingMode,
+      nav.sdkNavProgress,
+      nav.navigationProgress?.nativeStepIdentity?.legIndex,
+      nav.navigationProgress?.nativeStepIdentity?.stepIndex,
+      nav.navigationProgress?.nextStep?.index,
+      nav.navigationProgress?.nextStep?.kind,
+      nav.navigationProgress?.nextStepDistanceMeters,
+      navLogicEffective,
+      suppressHeadlessNavForNativeFullscreen,
+      user?.name,
+    ],
   );
 
   const sdkArrivalCallbackStreakRef = useRef(0);
@@ -5733,14 +5780,13 @@ export default function MapScreen() {
          * Headless Navigation SDK: maneuver copy from native banner + step (with gap hold for
          * empty-tick glitches). **Distance always** from the latest `onRouteProgressChanged`
          * payload via `sdkManeuverDisplayDistanceFromProgress` (same as `navSdkStore` + minimal
-         * adapter) — do not use `navigationProgressGuidance.banner` or gap snapshots here; that
-         * object is intentionally stable for text identity and can lag by a bucket or a frame.
+         * adapter). Keep copy, icon, lanes, and raw maneuver fields on the same live SDK tick;
+         * a stabilized guidance snapshot can lag a step change and show the previous turn.
          */
         if (instructionSrc === 'sdk') {
           const live = prog;
           const g = sdkStepGap;
-          const cardProg = nav.navigationProgressGuidance ?? live;
-          const b = cardProg.banner ?? null;
+          const b = live.banner ?? null;
           const primary = (g?.holdPrimary ?? (b?.primaryInstruction ?? '')).replace(/\s+/g, ' ').trim();
           const secondary =
             (g?.holdSecondary ?? b?.secondaryInstruction?.replace(/\s+/g, ' ').trim()) || undefined;

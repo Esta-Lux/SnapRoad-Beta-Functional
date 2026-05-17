@@ -26,10 +26,18 @@ function deterministicIndex(seed: string, length: number): number {
 }
 
 function buddyTail(ctx: OrionGuidanceContext): string {
-  if (ctx.bucket === 'imminent') return '';
-
   const name = (ctx.userName || '').trim().split(/\s+/)[0];
   const friendlyName = name && name.length <= 16 ? `, ${name}` : '';
+  if (ctx.bucket === 'imminent') {
+    const imminent = [
+      `Don't miss it now${friendlyName}. The road is not doing refunds.`,
+      'Right here. Blink responsibly.',
+      'This is the one. Main character lane, please.',
+      "Don't miss it now. I already did the paperwork emotionally.",
+    ];
+    return imminent[deterministicIndex(`${ctx.step.index}:${ctx.step.kind}:${ctx.bucket}`, imminent.length)] ?? '';
+  }
+
   const routeMemoryHint =
     ctx.bucket === 'preparatory' &&
     ctx.distanceMeters < 1200 &&
@@ -86,7 +94,6 @@ function buddyTail(ctx: OrionGuidanceContext): string {
 export function orionizeNavigationUtterance(base: string, ctx: OrionGuidanceContext): string {
   const clean = base.trim();
   if (!enabled() || !clean) return clean;
-  if (ctx.bucket === 'imminent') return clean;
 
   const tail = buddyTail(ctx);
   if (!tail) return clean;

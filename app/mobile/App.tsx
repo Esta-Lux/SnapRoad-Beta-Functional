@@ -267,6 +267,9 @@ async function registerForPushNotifications(): Promise<string | null> {
   }
   if (finalStatus !== 'granted') return null;
 
+  const { ensureSnapRoadAndroidNotificationChannels } = await import('./src/utils/pushNotifications');
+  await ensureSnapRoadAndroidNotificationChannels();
+
   const projectId = (Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined)?.eas?.projectId;
   const token = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
   return token.data ?? null;

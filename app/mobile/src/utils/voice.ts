@@ -262,6 +262,10 @@ export function speak(
     const channel = rateSource === 'navigation_fixed' ? 'navigation' : 'advisory';
     const spokenByElevenLabs = await trySpeakWithElevenLabs(phrase, channel);
     if (spokenByElevenLabs) return;
+    if (rateSource === 'navigation_fixed') {
+      onUtteranceFinished();
+      return;
+    }
     const voiceId = await getPreferredTtsVoiceIdentifier();
     Speech.speak(phrase, {
       rate: profile.rate,
@@ -283,7 +287,7 @@ export function speak(
 export function speakGuidance(
   phrase: string,
   mode: DrivingMode = 'adaptive',
-  language: string = 'en-US',
+  _language: string = 'en-US',
 ) {
   if (shouldSuppressJsTurnGuidance()) return;
   if (isSdkTripAuthoritative()) {
@@ -311,18 +315,7 @@ export function speakGuidance(
     await configureAudioSessionForSpeechOutput();
     const spokenByElevenLabs = await trySpeakWithElevenLabs(phrase, 'navigation');
     if (spokenByElevenLabs) return;
-    const voiceId = await getPreferredTtsVoiceIdentifier();
-    const profile = getTtsSpeechProfile(mode);
-    Speech.speak(phrase, {
-      rate: profile.rate,
-      pitch: profile.pitch,
-      volume: profile.volume,
-      language: language || profile.language,
-      ...(voiceId ? { voice: voiceId } : {}),
-      onDone: onUtteranceFinished,
-      onStopped: onUtteranceFinished,
-      onError: onUtteranceFinished,
-    });
+    onUtteranceFinished();
   })();
 }
 

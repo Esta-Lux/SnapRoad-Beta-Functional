@@ -40,7 +40,7 @@ import {
   tripGemsFromDurationMinutes,
 } from '../utils/tripGems';
 import { formatTripPlaceLabel } from '../utils/tripPlaceLabels';
-import { mergeTripCompleteResponse, unwrapTripCompleteData } from '../lib/tripComplete';
+import { mergeTripCompleteResponse, raceWithTimeout, unwrapTripCompleteData } from '../lib/tripComplete';
 import {
   estimateFuelCostUsd,
   estimateFuelGallons,
@@ -129,6 +129,7 @@ const ARRIVAL_TIGHT_CROW_METERS = 25;
 const ARRIVAL_TIGHT_ROUTE_MI = 0.03;
 const ARRIVAL_TERMINAL_ROUTE_METERS = 45;
 const ARRIVAL_TERMINAL_SECONDS = 30;
+const JS_NAV_TRIP_POST_TIMEOUT_MS = 2500;
 function applyTripCompleteProfileToUser(updateUser: (u: Partial<User>) => void, profile: unknown) {
   if (!profile || typeof profile !== 'object') return;
   const p = profile as Record<string, unknown>;
@@ -1389,13 +1390,13 @@ export function useDriveNavigation(params: {
       arrivedAtDestination,
     };
 
-    queueMicrotask(() => setTripSummary(summaryPayload));
-
     if (dynamicDest) {
+      setTripSummary(summaryPayload);
       return;
     }
 
     if (!qualifiesTrip) {
+      setTripSummary(summaryPayload);
       return;
     }
 
@@ -1403,33 +1404,42 @@ export function useDriveNavigation(params: {
       ? new Date(tripStartMs).toISOString()
       : new Date(now - durationSec * 1000).toISOString();
 
-    api.post('/api/trips/complete', {
-      distance_miles: roundedDist,
-      duration_seconds: durationSec,
-      safety_score: tripSafetyScore,
-      started_at: startedAt,
-      ended_at: endedAtIso,
-      origin: originName,
-      destination: destName,
-      avg_speed_mph: avgSpeed,
-      max_speed_mph: maxSpeed,
-      fuel_used_gallons: Math.round(estimateFuelGallons(roundedDist) * 1000) / 1000,
-      fuel_cost_estimate: Math.round(fuelCostUsd * 100) / 100,
-      mileage_value_estimate: Math.round(estimateMileageDeductionUsd(roundedDist) * 100) / 100,
-      hard_braking_events: hardBrakingCt,
-      hard_acceleration_events: hardAccelerationCt,
-      speeding_events: speedingCt,
-      incidents_reported: 0,
-      region_state: fuelCtx?.stateLabel,
-    }).then(async (res) => {
-      if (!res.success || !res.data) return;
-      setTripSummary((prev) => (prev ? mergeTripCompleteResponse(prev, res.data) : prev));
+    void (async () => {
+      const postPromise = api.post('/api/trips/complete', {
+        distance_miles: roundedDist,
+        duration_seconds: durationSec,
+        safety_score: tripSafetyScore,
+        started_at: startedAt,
+        ended_at: endedAtIso,
+        origin: originName,
+        destination: destName,
+        avg_speed_mph: avgSpeed,
+        max_speed_mph: maxSpeed,
+        fuel_used_gallons: Math.round(estimateFuelGallons(roundedDist) * 1000) / 1000,
+        fuel_cost_estimate: Math.round(fuelCostUsd * 100) / 100,
+        mileage_value_estimate: Math.round(estimateMileageDeductionUsd(roundedDist) * 100) / 100,
+        hard_braking_events: hardBrakingCt,
+        hard_acceleration_events: hardAccelerationCt,
+        speeding_events: speedingCt,
+        incidents_reported: 0,
+        region_state: fuelCtx?.stateLabel,
+      });
+      const res = await raceWithTimeout(postPromise, JS_NAV_TRIP_POST_TIMEOUT_MS);
+      if (!res?.success || !res.data) {
+        setTripSummary(summaryPayload);
+        return;
+      }
+
+      const merged = mergeTripCompleteResponse(summaryPayload, res.data);
+      setTripSummary(merged);
       const d = unwrapTripCompleteData(res.data);
       if (d.counted === false || d.trip_id == null) return;
       applyTripCompleteProfileToUser(updateUserRef.current, d.profile);
       await refreshUserFromServerRef.current();
       bumpStatsVersionRef.current();
-    }).catch(() => { /* offline — summary already shown */ });
+    })().catch(() => {
+      setTripSummary(summaryPayload);
+    });
   }, [navigationData, navigationProgressCoord, tripFuelContextRef]);
 
   const completeNavigationAtDestination = useCallback(() => {

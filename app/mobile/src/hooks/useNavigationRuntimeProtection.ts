@@ -4,20 +4,20 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as Notifications from 'expo-notifications';
 import type { NavigationProgress } from '../navigation/navModel';
 import { buildBackgroundTurnNotificationContent } from '../navigation/navBackgroundGuidance';
+import {
+  ANDROID_NAV_GUIDANCE_CHANNEL_ID,
+  ensureSnapRoadAndroidNotificationChannels,
+} from '../utils/pushNotifications';
 
 const KEEP_AWAKE_TAG = 'snaproad-active-navigation';
-const NAV_CHANNEL_ID = 'navigation-guidance';
 const NAV_NOTIFICATION_IDENTIFIER = 'snaproad-background-turn';
 
-async function ensureNavigationNotificationChannel() {
-  if (Platform.OS !== 'android') return;
-  await Notifications.setNotificationChannelAsync(NAV_CHANNEL_ID, {
-    name: 'Navigation guidance',
-    importance: Notifications.AndroidImportance.HIGH,
-    sound: 'default',
-    vibrationPattern: [0, 120],
-    lightColor: '#9CA3AF',
-  });
+async function requestNavigationGuidanceNotifyPermission(): Promise<boolean> {
+  const cur = await Notifications.getPermissionsAsync();
+  if (cur.status === 'granted') return true;
+  if (cur.status === 'denied' && cur.canAskAgain === false) return false;
+  const next = await Notifications.requestPermissionsAsync();
+  return next.status === 'granted';
 }
 
 async function canShowLocalNavigationNotification(): Promise<boolean> {
@@ -50,6 +50,15 @@ export function useNavigationRuntimeProtection(
     };
   }, [isNavigating]);
 
+  /** Warm notification permission + Android channels alongside commute alerts pipeline. */
+  useEffect(() => {
+    if (!isNavigating) return;
+    void (async () => {
+      await ensureSnapRoadAndroidNotificationChannels();
+      await requestNavigationGuidanceNotifyPermission();
+    })();
+  }, [isNavigating]);
+
   useEffect(() => {
     if (!isNavigating) return;
 
@@ -67,21 +76,25 @@ export function useNavigationRuntimeProtection(
       void (async () => {
         try {
           if (!(await canShowLocalNavigationNotification())) return;
-          await ensureNavigationNotificationChannel();
+          await ensureSnapRoadAndroidNotificationChannels();
           await Notifications.scheduleNotificationAsync({
             identifier: NAV_NOTIFICATION_IDENTIFIER,
             content: {
               title: content.title,
+              subtitle: content.subtitle,
               body: content.body,
               sound: true,
-              color: '#9CA3AF',
+              color: Platform.OS === 'android' ? '#64748B' : undefined,
               data: {
                 type: 'navigation_turn',
                 guidanceKey: content.guidanceKey,
                 distanceMeters: content.distanceMeters,
               },
             },
-            trigger: null,
+            trigger:
+              Platform.OS === 'android'
+                ? { channelId: ANDROID_NAV_GUIDANCE_CHANNEL_ID }
+                : null,
           });
         } catch {
           /* Notification permissions / OS state should never break active navigation. */

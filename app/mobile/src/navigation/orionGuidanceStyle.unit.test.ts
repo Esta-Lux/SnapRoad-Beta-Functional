@@ -30,9 +30,11 @@ const step: NavStep = {
   nextManeuverDistanceMeters: null,
 };
 
-test('keeps imminent guidance direct and unchanged', () => {
+test('keeps imminent guidance directional with short Orion character', () => {
   const phrase = 'Take the exit on the right.';
-  assert.equal(orionizeNavigationUtterance(phrase, { bucket: 'imminent', step, distanceMeters: 45 }), phrase);
+  const out = orionizeNavigationUtterance(phrase, { bucket: 'imminent', step, distanceMeters: 45 });
+  assert.match(out, /^Take the exit on the right\. /);
+  assert.ok(out.length < 120);
 });
 
 test('adds a short Orion buddy tail to preparatory ramp guidance', () => {

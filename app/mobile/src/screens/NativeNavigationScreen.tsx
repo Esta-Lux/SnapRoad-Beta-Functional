@@ -18,7 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigationMode } from '../contexts/NavigatingContext';
 import { useAuth } from '../contexts/AuthContext';
 import type { DrivingMode, Incident } from '../types';
-import { themePalettes, useTheme } from '../contexts/ThemeContext';
+import { themePalettes } from '../contexts/ThemeContext';
 import { DRIVING_MODES } from '../constants/modes';
 import {
   useNativeNavBridge,
@@ -72,7 +72,6 @@ export default function NativeNavigationScreen() {
   const route = useRoute<RouteProp<MapStackParamList, 'NativeNavigation'>>();
   const { setIsNavigating } = useNavigationMode();
   const { user } = useAuth();
-  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const screenFocused = useIsFocused();
   const didExitRef = useRef(false);
@@ -522,10 +521,13 @@ export default function NativeNavigationScreen() {
     embeddedAppTheme === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.18)';
   const chromeSurface =
     embeddedAppTheme === 'light' ? modeConfig.etaBarBg : modeConfig.etaBarBgDark;
-  const chromeText =
-    embeddedAppTheme === 'light' ? colors.text : modeConfig.etaValueColor;
-  const chromeSubtle =
-    embeddedAppTheme === 'light' ? colors.textSecondary : modeConfig.etaLabelColor;
+  /**
+   * Match native ETA strip ink — never tie this overlay to global ThemeContext text.
+   * Calm/adaptive use a light chrome surface while `embeddedAppTheme` is light; dark app theme
+   * would make `colors.text` white and Orion / incident lines disappear on that surface.
+   */
+  const chromeText = modeConfig.etaValueColor;
+  const chromeSubtle = modeConfig.etaLabelColor;
 
   return (
     <View

@@ -4,7 +4,11 @@ import { formatImperialManeuverDistance } from './turnCardModel';
 export const NAV_BACKGROUND_TURN_THRESHOLD_M = 260;
 
 export type BackgroundTurnNotificationContent = {
+  /** Bold headline — primary maneuver line (street / turn). */
   title: string;
+  /** Lock-screen subtitle (iOS) — distance-to-maneuver. */
+  subtitle: string;
+  /** Supporting line — connector street or nuance when distinct from title. */
   body: string;
   distanceMeters: number;
   guidanceKey: string;
@@ -38,9 +42,13 @@ export function buildBackgroundTurnNotificationContent(
   const guidanceKey = backgroundTurnGuidanceKey(progress);
   if (!guidanceKey) return null;
 
+  const secondaryUseful =
+    secondary !== 'Continue on route' && secondary !== primary && !primary.includes(secondary.slice(0, Math.min(24, secondary.length)));
+
   return {
-    title: `SnapRoad turn · ${distanceText}`,
-    body: secondary === 'Continue on route' ? primary : `${primary}. ${secondary}`,
+    title: primary,
+    subtitle: distanceText,
+    body: secondaryUseful ? secondary : `SnapRoad · ${distanceText}`,
     distanceMeters,
     guidanceKey,
   };

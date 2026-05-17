@@ -5,15 +5,8 @@ import { api } from '../api/client';
 
 type RegisterResult = { ok: true; token: string } | { ok: false; reason: string };
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+/** Android channel for live ETA-style background prompts (must match scheduling payloads). */
+export const ANDROID_NAV_GUIDANCE_CHANNEL_ID = 'navigation-guidance';
 
 function expoProjectId(): string | undefined {
   const extra = Constants.expoConfig?.extra as Record<string, unknown> | undefined;
@@ -21,6 +14,27 @@ function expoProjectId(): string | undefined {
   const fromExtra = typeof extra?.easProjectId === 'string' ? extra.easProjectId : undefined;
   const fromEas = typeof eas?.projectId === 'string' ? eas.projectId : undefined;
   return fromExtra || fromEas || Constants.easConfig?.projectId;
+}
+
+/** Registers channels used by commute server pushes and local navigation continuity prompts. */
+export async function ensureSnapRoadAndroidNotificationChannels(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  await Promise.all([
+    Notifications.setNotificationChannelAsync('commute-alerts', {
+      name: 'Commute alerts',
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: 'default',
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF6B2B',
+    }),
+    Notifications.setNotificationChannelAsync(ANDROID_NAV_GUIDANCE_CHANNEL_ID, {
+      name: 'Turn-by-turn',
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: 'default',
+      vibrationPattern: [0, 120],
+      lightColor: '#94A3B8',
+    }),
+  ]);
 }
 
 export async function registerCommutePushToken(): Promise<RegisterResult> {
@@ -32,15 +46,7 @@ export async function registerCommutePushToken(): Promise<RegisterResult> {
   }
   if (permission.status !== 'granted') return { ok: false, reason: 'permission_denied' };
 
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('commute-alerts', {
-      name: 'Commute alerts',
-      importance: Notifications.AndroidImportance.HIGH,
-      sound: 'default',
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#FF6B2B',
-    });
-  }
+  await ensureSnapRoadAndroidNotificationChannels();
 
   const projectId = expoProjectId();
   const tokenResponse = projectId

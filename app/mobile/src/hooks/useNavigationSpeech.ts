@@ -18,6 +18,7 @@ import { navLogicSdkEnabled } from '../navigation/navFeatureFlags';
 import { getVoiceNavTuning } from '../navigation/navModeProfile';
 import { getUpcomingManeuverStep } from '../navigation/routeGeometry';
 import { orionizeNavigationUtterance } from '../navigation/orionGuidanceStyle';
+import { NAV_VOICE_ADVANCE_MAX_M } from '../navigation/navVoiceCuePolicy';
 import { alongRouteDistanceMeters, haversineMeters } from '../utils/distance';
 import type { Coordinate } from '../types';
 
@@ -224,20 +225,16 @@ export function useNavigationSpeech({
 
     if (isNavigationGuidanceSuppressed()) return;
 
-    const { imminentM, advanceMaxM, advanceMinM, preparatoryMaxM } = voiceT;
+    const { imminentM } = voiceT;
 
-    let bucket: 'preparatory' | 'advance' | 'imminent' | null = null;
+    let bucket: 'advance' | 'imminent' | null = null;
     if (d <= imminentM) bucket = 'imminent';
-    else if (d <= advanceMaxM && d > advanceMinM) bucket = 'advance';
-    else if (d <= preparatoryMaxM && d > advanceMaxM) bucket = 'preparatory';
+    else if (d <= NAV_VOICE_ADVANCE_MAX_M && d > imminentM) bucket = 'advance';
 
     if (!bucket) return;
 
     const now = Date.now();
-    if (
-      (bucket === 'preparatory' || bucket === 'advance') &&
-      now < suppressFarVoiceUntilRef.current
-    ) {
+    if (bucket === 'advance' && now < suppressFarVoiceUntilRef.current) {
       return;
     }
 
