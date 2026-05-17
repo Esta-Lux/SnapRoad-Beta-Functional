@@ -130,6 +130,9 @@ function resolveRequestTimeoutMs(baseUrl: string): number {
   return 30000;
 }
 
+/** Cap cold-start profile fetch so the auth splash does not sit behind a 30–60s tunnel timeout. */
+const PROFILE_BOOTSTRAP_TIMEOUT_MS = 14_000;
+
 /** FastAPI returns JSON; tunnels and proxies often return HTML or empty bodies. */
 async function parseApiResponseBody(
   response: Response,
@@ -272,6 +275,7 @@ class ApiService {
     endpoint: string,
     options: RequestInit = {},
     retryCount = 0,
+    timeoutOverrideMs?: number,
   ): Promise<ApiResponse<T>> {
     const token = await this.getToken();
     const guestId = await getOrCreateGuestId();
@@ -285,7 +289,7 @@ class ApiService {
       ...(options.headers as Record<string, string>),
     };
 
-    const timeoutMs = resolveRequestTimeoutMs(apiBaseUrl);
+    const timeoutMs = timeoutOverrideMs ?? resolveRequestTimeoutMs(apiBaseUrl);
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -304,13 +308,30 @@ class ApiService {
       if (response.status === 401 && attachAuth) {
         const refreshedToken = await this.refreshTokenFromSupabase();
         if (refreshedToken) {
-          const retryResponse = await fetch(url, {
-            ...options,
-            headers: {
-              ...headers,
-              Authorization: `Bearer ${refreshedToken}`,
-            },
-          });
+          // Must share the primary timeout — an unbounded retry fetch caused infinite cold-start loading.
+          const retryController = new AbortController();
+          const retryTimer = setTimeout(() => retryController.abort(), timeoutMs);
+          let retryResponse: Response;
+          try {
+            retryResponse = await fetch(url, {
+              ...options,
+              headers: {
+                ...headers,
+                Authorization: `Bearer ${refreshedToken}`,
+              },
+              signal: retryController.signal,
+            });
+          } catch (retryErr) {
+            clearTimeout(retryTimer);
+            const isAbort = (retryErr as { name?: string })?.name === 'AbortError';
+            return {
+              success: false,
+              error: isAbort
+                ? `Request timed out (${timeoutMs}ms). Please try again.`
+                : 'Network error. Please check your connection and try again.',
+            };
+          }
+          clearTimeout(retryTimer);
           const retryParsed = await parseApiResponseBody(retryResponse);
           if (retryParsed.ok && retryResponse.ok) {
             return { success: true, data: retryParsed.data as T };
@@ -322,6 +343,11 @@ class ApiService {
               statusCode: retryResponse.status,
             };
           }
+          return {
+            success: false,
+            error: !retryParsed.ok ? retryParsed.error : 'Request failed',
+            statusCode: retryResponse.status,
+          };
         }
       }
 
@@ -379,10 +405,9 @@ class ApiService {
       return { success: true, data: data as T };
     } catch (error) {
       const isAbort = (error as { name?: string })?.name === 'AbortError';
-      const timeoutMs = resolveRequestTimeoutMs(apiBaseUrl);
       const method = (options.method ?? 'GET').toUpperCase();
       if (isAbort && method === 'GET' && retryCount < 1) {
-        return this.request<T>(endpoint, options, retryCount + 1);
+        return this.request<T>(endpoint, options, retryCount + 1, timeoutOverrideMs);
       }
       const msg = isAbort
         ? `Request timed out (${timeoutMs}ms). Please try again.`
@@ -439,6 +464,13 @@ class ApiService {
 
   async getProfile(): Promise<ApiResponse<Record<string, unknown>>> {
     return this.request('/api/user/profile');
+  }
+
+  /** Same as getProfile but capped for AuthProvider cold start (splash screen). */
+  async getProfileBootstrap(): Promise<ApiResponse<Record<string, unknown>>> {
+    const ceiling = resolveRequestTimeoutMs(apiBaseUrl);
+    const bootstrapMs = Math.min(PROFILE_BOOTSTRAP_TIMEOUT_MS, ceiling);
+    return this.request('/api/user/profile', {}, 0, bootstrapMs);
   }
 
   async get<T = unknown>(endpoint: string): Promise<ApiResponse<T>> {

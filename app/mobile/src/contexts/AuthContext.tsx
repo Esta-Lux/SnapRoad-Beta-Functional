@@ -165,43 +165,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const restoreSession = async () => {
-    const setGuestUser = async () => {
+    /** Ensures `user` is never left null after bootstrap (tabs assume a hydrated identity). */
+    let hydrated = false;
+    const settleGuest = async () => {
       setUser(guestUserFromId(await getOrCreateGuestId()));
+      hydrated = true;
     };
-    const token = await api.getToken();
-    if (!token) {
-      await setGuestUser();
-      setIsLoading(false);
-      return;
-    }
+
     try {
-      const res = await api.getProfile();
-      const payload = (res.data as { data?: Record<string, unknown> })?.data ?? res.data;
-      const apiUser = payload as Record<string, unknown> | undefined;
-      if (res.success && apiUser) {
-        const role = apiUser.role as string | undefined;
-        if (isStaffRole(role) && !allowStaffInDriverApp()) {
-          await api.setToken(null);
-          await setGuestUser();
-        } else {
-          setUser(mapApiUserToContext(apiUser));
-        }
-      } else {
-        const errMsg = (res as { error?: string }).error ?? '';
-        const statusCode = (res as { statusCode?: number }).statusCode;
-        const isAuthReject =
-          statusCode === 401 ||
-          errMsg === 'Session expired. Please sign in again.' ||
-          errMsg.toLowerCase().includes('token expired');
-        if (isAuthReject) {
-          await api.setToken(null);
-          await setGuestUser();
-        }
-        // Network errors / 5xx: keep token so the user isn't logged out offline
+      const token = await api.getToken();
+      if (!token) {
+        await settleGuest();
+        return;
       }
-    } catch {
-      // Network failure, timeout, backend down — keep the token for retry on next launch
+      try {
+        const res = await api.getProfileBootstrap();
+        const payload = (res.data as { data?: Record<string, unknown> })?.data ?? res.data;
+        const apiUser = payload as Record<string, unknown> | undefined;
+        if (res.success && apiUser) {
+          const role = apiUser.role as string | undefined;
+          if (isStaffRole(role) && !allowStaffInDriverApp()) {
+            await api.setToken(null);
+            await settleGuest();
+          } else {
+            setUser(mapApiUserToContext(apiUser));
+            hydrated = true;
+          }
+        } else {
+          const errMsg = (res as { error?: string }).error ?? '';
+          const statusCode = (res as { statusCode?: number }).statusCode;
+          const isAuthReject =
+            statusCode === 401 ||
+            errMsg === 'Session expired. Please sign in again.' ||
+            errMsg.toLowerCase().includes('token expired');
+          if (isAuthReject) {
+            await api.setToken(null);
+            await settleGuest();
+          }
+          // Network errors / 5xx: keep token — guest fallback in `finally` still unlocks the UI.
+        }
+      } catch {
+        // Network failure, timeout — keep token for retry on next launch.
+      }
     } finally {
+      if (!hydrated) {
+        await settleGuest();
+      }
       setIsLoading(false);
     }
   };
