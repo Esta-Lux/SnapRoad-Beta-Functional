@@ -630,7 +630,25 @@ export async function getMapboxDirections(
   }
   const data = await response.json();
   if (!data.routes?.length) throw new Error('No routes found');
-  return parseMapboxDirectionsRoute(data.routes[0], 'fastest');
+  const routes = data.routes as RawRoute[];
+  if (options?.alternatives && routes.length > 1) {
+    const parsed = routes.map((route) => parseMapboxDirectionsRoute(route, 'fastest'));
+    parsed.sort((a, b) => routeRankingPenalty(a, undefined) - routeRankingPenalty(b, undefined));
+    const best = parsed[0]!;
+    return {
+      ...best,
+      routeType: 'fastest',
+      routeLabel: fastestLabelForMode(undefined),
+      routeReason: fastestBaseReasonForMode(undefined),
+    };
+  }
+  const primary = parseMapboxDirectionsRoute(routes[0]!, 'fastest');
+  return {
+    ...primary,
+    routeType: 'fastest',
+    routeLabel: fastestLabelForMode(undefined),
+    routeReason: fastestBaseReasonForMode(undefined),
+  };
 }
 
 export function getModeDirectionsConfig(_mode: DrivingMode): { profile: DirectionsProfile; exclude?: string } {

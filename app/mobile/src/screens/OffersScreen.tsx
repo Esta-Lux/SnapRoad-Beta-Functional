@@ -648,12 +648,22 @@ export default function OffersScreen() {
     });
   }, [filteredOnlineByQuick, onlineSearchQuery]);
 
-  const onlineFeaturedRows = useMemo(() => filteredOnlineItems.filter((x) => x.featured), [filteredOnlineItems]);
-  const onlineFeaturedIds = useMemo(() => new Set(onlineFeaturedRows.map((x) => x.id)), [onlineFeaturedRows]);
-  const onlineBrowseRows = useMemo(() => {
-    if (onlineFeaturedRows.length === 0) return filteredOnlineItems;
-    return filteredOnlineItems.filter((x) => !onlineFeaturedIds.has(x.id));
-  }, [filteredOnlineItems, onlineFeaturedIds, onlineFeaturedRows.length]);
+  /** Single carousel order: featured first, then remaining deals (stable for horizontal scroll after load-more). */
+  const onlineCarouselOrdered = useMemo(() => {
+    const seen = new Set<string>();
+    const out: OnlineOfferItem[] = [];
+    for (const row of filteredOnlineItems) {
+      if (!row.featured || seen.has(row.id)) continue;
+      out.push(row);
+      seen.add(row.id);
+    }
+    for (const row of filteredOnlineItems) {
+      if (seen.has(row.id)) continue;
+      out.push(row);
+      seen.add(row.id);
+    }
+    return out;
+  }, [filteredOnlineItems]);
 
   const onlineCarouselColors = useMemo(
     () => ({
@@ -998,42 +1008,18 @@ export default function OffersScreen() {
             </View>
           ) : null}
 
-          {onlineFeaturedRows.length > 0 ? (
+          {onlineCarouselOrdered.length > 0 ? (
             <>
-              <Text style={{ color: text, fontSize: 13, fontWeight: '900', marginHorizontal: 16, marginTop: 14, marginBottom: 10 }}>Featured</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={{ minHeight: MARKET_ROW_MIN_H }}
-                contentContainerStyle={{ paddingHorizontal: 8, alignItems: 'stretch', paddingVertical: 10 }}
-              >
-                {onlineFeaturedRows.map((row) => (
-                  <OnlineDealCarouselCard
-                    key={row.id}
-                    row={row}
-                    colors={onlineCarouselColors}
-                    cardBg={cardBg}
-                    text={text}
-                    sub={sub}
-                    shadow={shadow}
-                  />
-                ))}
-              </ScrollView>
-            </>
-          ) : null}
-
-          {onlineBrowseRows.length > 0 ? (
-            <>
-              <Text style={{ color: text, fontSize: 13, fontWeight: '900', marginHorizontal: 16, marginTop: 8, marginBottom: 12 }}>
-                {onlineFeaturedRows.length > 0 ? 'More deals' : 'Deals'}
+              <Text style={{ color: text, fontSize: 13, fontWeight: '900', marginHorizontal: 16, marginTop: 14, marginBottom: 10 }}>
+                Online deals
               </Text>
               <ScrollView
                 horizontal
-                showsHorizontalScrollIndicator={false}
+                showsHorizontalScrollIndicator={filteredOnlineItems.length > 3}
                 style={{ minHeight: MARKET_ROW_MIN_H }}
-                contentContainerStyle={{ paddingHorizontal: 8, alignItems: 'stretch', paddingVertical: 10 }}
+                contentContainerStyle={{ paddingHorizontal: 8, alignItems: 'stretch', paddingVertical: 10, paddingBottom: 14 }}
               >
-                {onlineBrowseRows.map((row) => (
+                {onlineCarouselOrdered.map((row) => (
                   <OnlineDealCarouselCard
                     key={row.id}
                     row={row}

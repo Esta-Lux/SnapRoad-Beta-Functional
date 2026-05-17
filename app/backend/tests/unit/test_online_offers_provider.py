@@ -205,6 +205,65 @@ def test_fmtc_online_dedupes_same_site_duplicate_description(monkeypatch):
     assert "fmtc_102" not in ids
 
 
+def test_fmtc_offer_art_skips_merchant_logo_urls(monkeypatch):
+    monkeypatch.setenv("FMTC_API_TOKEN", "test-token")
+    sys.modules.pop("services.fmtc_offers_provider", None)
+    mod = importlib.reload(importlib.import_module("services.fmtc_offers_provider"))
+    logo_url = "https://cdn.fmtc.com/brands/logo-large.png"
+    creative_url = "https://cdn.fmtc.com/creatives/deal-banner.jpg"
+    monkeypatch.setattr(
+        mod,
+        "_load_feed",
+        lambda: (
+            [
+                {
+                    "id": 601,
+                    "merchant_id": 77,
+                    "merchant_name": "LogoMart",
+                    "status": "active",
+                    "label": "Winter sale",
+                    "description": "Warm coats",
+                    "image": logo_url,
+                    "images": [creative_url],
+                    "end_date": "2076-05-16T00:00:00Z",
+                    "affiliate_url": "https://track.example/x",
+                    "cascading_full_url": "https://logomart.example.com/x",
+                    "percent": 15,
+                    "categories": ["retail"],
+                    "locations": [],
+                },
+                {
+                    "id": 602,
+                    "merchant_id": 78,
+                    "merchant_name": "OnlyLogo",
+                    "status": "active",
+                    "label": "Logo only",
+                    "description": "No creative",
+                    "image": "https://cdn.fmtc.com/brands/only.png",
+                    "end_date": "2076-05-16T00:00:00Z",
+                    "affiliate_url": "https://track.example/y",
+                    "cascading_full_url": "https://onlylogo.example.com/y",
+                    "percent": 10,
+                    "categories": ["retail"],
+                    "locations": [],
+                },
+            ],
+            {
+                "77": {"logos": [{"size": "120x60", "image_url": logo_url}]},
+                "78": {"logos": [{"size": "120x60", "image_url": "https://cdn.fmtc.com/brands/only.png"}]},
+            },
+        ),
+    )
+
+    cat = mod.fetch_fmtc_online_catalog(category_slug=None, cursor=None)
+    by_id = {row["id"]: row for row in cat["items"]}
+    assert by_id["fmtc_601"]["image_url"] == creative_url
+    assert creative_url in by_id["fmtc_601"]["image_urls"]
+    assert logo_url not in by_id["fmtc_601"]["image_urls"]
+    assert by_id["fmtc_602"].get("image_url") is None
+    assert by_id["fmtc_602"]["image_urls"] == []
+
+
 def test_fmtc_local_requires_address_and_coordinates(monkeypatch):
     monkeypatch.setenv("FMTC_API_TOKEN", "test-token")
     sys.modules.pop("services.fmtc_offers_provider", None)

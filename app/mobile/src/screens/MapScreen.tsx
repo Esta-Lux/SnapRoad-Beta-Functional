@@ -3277,7 +3277,7 @@ export default function MapScreen() {
   // Incident polling — faster while incidents layer is on so pins appear quickly
   useEffect(() => {
     void fetchNearbyIncidents();
-    const ms = showIncidents ? (nav.isNavigating ? 8000 : 10000) : nav.isNavigating ? 15000 : 45000;
+    const ms = showIncidents ? (nav.isNavigating ? 5500 : 10000) : nav.isNavigating ? 15000 : 45000;
     reportPollRef.current = setInterval(() => void fetchNearbyIncidents(), ms);
     return () => {
       if (reportPollRef.current) clearInterval(reportPollRef.current);

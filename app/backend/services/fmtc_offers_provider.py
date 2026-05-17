@@ -170,47 +170,21 @@ def _deal_tracking_url(deal: dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _best_logo(
-    merchant: Optional[dict[str, Any]],
-    *,
-    prefer_screenshots: bool = False,
-) -> Optional[str]:
-    """Pick the largest merchant logo image.
-
-    FMTC merchant `logos` often include auto-generated ``/screenshots/`` URLs that look like
-    generic website captures. For **offer hero art** we deprioritize those unless nothing else exists.
-    """
+def _merchant_logo_urls(merchant: Optional[dict[str, Any]]) -> set[str]:
+    """All merchant logo URLs from FMTC (used to strip branding-only assets from offer galleries)."""
+    out: set[str] = set()
     if not merchant:
-        return None
+        return out
     logos = merchant.get("logos")
     if not isinstance(logos, list):
-        return None
-    best: tuple[float, str] | None = None
+        return out
     for logo in logos:
         if not isinstance(logo, dict):
             continue
         url = str(logo.get("image_url") or "").strip()
-        if not url.startswith(("http://", "https://")):
-            continue
-        width = int(_float_or_none(logo.get("width")) or 0)
-        height = int(_float_or_none(logo.get("height")) or 0)
-        if (width <= 0 or height <= 0) and logo.get("size"):
-            parts = str(logo.get("size") or "").lower().replace("×", "x").split("x", 1)
-            if len(parts) == 2:
-                width = int(_float_or_none(parts[0]) or 0)
-                height = int(_float_or_none(parts[1]) or 0)
-        score = float(width * height)
-        lower = url.lower()
-        is_shot = "/screenshots/" in lower or "screenshot" in lower
-        if prefer_screenshots:
-            if is_shot:
-                score += 1_000_000.0
-        else:
-            if is_shot:
-                score *= 0.01
-        if best is None or score > best[0]:
-            best = (score, url)
-    return best[1] if best else None
+        if url.startswith(("http://", "https://")):
+            out.add(url)
+    return out
 
 
 def _append_unique_urls(bucket: list[str], raw: Any) -> None:
@@ -267,12 +241,21 @@ def _deal_media_urls(deal: dict[str, Any]) -> list[str]:
 
 
 def _visual_for_deal(deal: dict[str, Any], merchant: Optional[dict[str, Any]]) -> tuple[Optional[str], list[str]]:
-    """Primary hero URL plus ordered gallery (deal creatives first, then merchant logo fallback)."""
-    media = _deal_media_urls(deal)
-    primary = media[0] if media else None
-    if not primary:
-        primary = _best_logo(merchant, prefer_screenshots=False)
-        return primary, ([primary] if primary else [])
+    """Hero + gallery from deal creatives only — never merchant logos as offer art."""
+
+    def looks_like_capture(u: str) -> bool:
+        lu = u.lower()
+        return "/screenshots/" in lu or "screenshot" in lu or "site-shot" in lu or "/site_shot" in lu
+
+    logo_urls = _merchant_logo_urls(merchant)
+    raw = _deal_media_urls(deal)
+    media = [u for u in raw if u not in logo_urls]
+    preferred = [u for u in media if not looks_like_capture(u)]
+    if preferred:
+        media = preferred
+    if not media:
+        return None, []
+    primary = media[0]
     return primary, media[:12]
 
 
@@ -400,7 +383,7 @@ def _deal_to_online_item(deal: dict[str, Any], merchant: Optional[dict[str, Any]
         "sale_price": sale,
         "currency": "USD",
         "asin": None,
-        "featured": bool(percent >= 20 or sale or hero),
+        "featured": bool(percent >= 20 or sale or bool(hero)),
     }
 
 

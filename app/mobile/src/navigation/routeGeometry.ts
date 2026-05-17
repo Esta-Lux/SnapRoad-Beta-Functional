@@ -93,13 +93,17 @@ function isActionableGuidanceStep(step: DirectionsStep | null | undefined, allow
   return true;
 }
 
-/** Next step used for on-map maneuver highlight (matches prior TurnSignal “upcoming” set). */
+/** Next maneuver step for banners / distance — prefers the active step index when it is actionable. */
 export function getUpcomingManeuverStep(
   steps: DirectionsStep[] | undefined,
   currentStepIndex: number,
 ): DirectionsStep | null {
   if (!steps?.length) return null;
-  const rest = steps.slice(currentStepIndex + 1);
+  const safeIdx = Math.max(0, Math.min(currentStepIndex, steps.length - 1));
+  const current = steps[safeIdx];
+  if (isActionableGuidanceStep(current, false)) return current;
+
+  const rest = steps.slice(safeIdx + 1);
   const actionable = rest.find((s) => isActionableGuidanceStep(s, false));
   if (actionable) return actionable;
   const arrival = rest.find((s) => isActionableGuidanceStep(s, true));
