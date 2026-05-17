@@ -1,5 +1,6 @@
 import * as Speech from 'expo-speech';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
+import Constants from 'expo-constants';
 import type { DrivingMode } from '../types';
 import { shouldSuppressJsTurnGuidance } from '../navigation/navVoiceGate';
 import { isSdkTripAuthoritative } from '../navigation/navSdkAuthority';
@@ -183,8 +184,11 @@ function onUtteranceFinished() {
 
 /** True when the bundle asks the backend for ElevenLabs audio (`/api/orion/voice/synthesize`). */
 export function elevenLabsVoiceIntentEnabled(): boolean {
-  const raw = String(process.env.EXPO_PUBLIC_ORION_ELEVENLABS_VOICE ?? '').trim().toLowerCase();
-  return raw === '1' || raw === 'true' || raw === 'on';
+  const extra = Constants.expoConfig?.extra as { orionElevenLabsVoiceEnabled?: boolean | string } | undefined;
+  const raw = String(
+    process.env.EXPO_PUBLIC_ORION_ELEVENLABS_VOICE ?? extra?.orionElevenLabsVoiceEnabled ?? '1',
+  ).trim().toLowerCase();
+  return raw !== '0' && raw !== 'false' && raw !== 'off';
 }
 
 async function trySpeakWithElevenLabs(

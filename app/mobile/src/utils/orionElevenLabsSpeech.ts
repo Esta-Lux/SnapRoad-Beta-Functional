@@ -1,5 +1,6 @@
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { File as FsFile, Paths } from 'expo-file-system';
+import Constants from 'expo-constants';
 import api from '../api/client';
 import { unwrapApiData } from '../api/dto/profileWallet';
 
@@ -19,8 +20,11 @@ type ElevenLabsSpeechOptions = {
 };
 
 function enabled(): boolean {
-  const raw = String(process.env.EXPO_PUBLIC_ORION_ELEVENLABS_VOICE ?? '').trim().toLowerCase();
-  return raw === '1' || raw === 'true' || raw === 'on';
+  const extra = Constants.expoConfig?.extra as { orionElevenLabsVoiceEnabled?: boolean | string } | undefined;
+  const raw = String(
+    process.env.EXPO_PUBLIC_ORION_ELEVENLABS_VOICE ?? extra?.orionElevenLabsVoiceEnabled ?? '1',
+  ).trim().toLowerCase();
+  return raw !== '0' && raw !== 'false' && raw !== 'off';
 }
 
 async function configurePlaybackSession(): Promise<void> {

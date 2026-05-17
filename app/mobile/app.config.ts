@@ -273,6 +273,11 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
       /** App Store premium subscription Product ID — must match App Store Connect + backend APPLE_IAP_PREMIUM_PRODUCT_ID. */
       appleIapPremiumProductId: resolveAppleIapPremiumProductId(),
       sentryDsn: envAny(["EXPO_PUBLIC_SENTRY_DSN", "SENTRY_DSN"]),
+      /** Public switch only; backend owns the private ElevenLabs API key and voice resolution. */
+      orionElevenLabsVoiceEnabled:
+        envAny(["EXPO_PUBLIC_ORION_ELEVENLABS_VOICE"], "1").trim().toLowerCase() !== "0" &&
+        envAny(["EXPO_PUBLIC_ORION_ELEVENLABS_VOICE"], "1").trim().toLowerCase() !== "false" &&
+        envAny(["EXPO_PUBLIC_ORION_ELEVENLABS_VOICE"], "1").trim().toLowerCase() !== "off",
       /** Expo dashboard / project page (overridable via EXPO_PUBLIC_EXPO_PROJECT_URL in eas.json). */
       expoProjectUrl: envAny(
         ["EXPO_PUBLIC_EXPO_PROJECT_URL"],

@@ -54,10 +54,8 @@ OPENAI_VISION_MODEL = os.environ.get("OPENAI_VISION_MODEL", "gpt-4o-mini")
 ELEVENLABS_API_KEY = (os.environ.get("ELEVENLABS_API_KEY") or "").strip()
 ELEVENLABS_API_BASE = (os.environ.get("ELEVENLABS_API_BASE") or "https://api.elevenlabs.io/v1").strip().rstrip("/")
 ELEVENLABS_MODEL_ID = (os.environ.get("ELEVENLABS_MODEL_ID") or "eleven_turbo_v2_5").strip()
-ORION_ELEVENLABS_VOICE_ID = (
-    os.environ.get("ORION_ELEVENLABS_VOICE_ID")
-    or "CwhRBWXzGAHq8TQ4Fs17"  # Roger - laid-back, casual, resonant male voice.
-).strip()
+ORION_ELEVENLABS_VOICE_ID = (os.environ.get("ORION_ELEVENLABS_VOICE_ID") or "").strip()
+ORION_ELEVENLABS_VOICE_NAME = (os.environ.get("ORION_ELEVENLABS_VOICE_NAME") or "Orion").strip()
 ORION_ELEVENLABS_OUTPUT_FORMAT = (
     os.environ.get("ORION_ELEVENLABS_OUTPUT_FORMAT") or "mp3_44100_128"
 ).strip()
