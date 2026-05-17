@@ -156,14 +156,14 @@ export default function expoConfig({ config }: { config: Record<string, unknown>
         NSLocationWhenInUseUsageDescription:
           "SnapRoad needs your location to show your position on the map and provide turn-by-turn navigation.",
         NSLocationAlwaysAndWhenInUseUsageDescription:
-          "Turn-by-turn navigation requires background location to update route guidance when your phone is locked.",
+          "SnapRoad only uses background location during active turn-by-turn navigation so route guidance can continue when your phone is locked.",
         NSCameraUsageDescription:
           "SnapRoad uses your camera to take photos of road hazards and incidents for community safety reports.",
         NSMicrophoneUsageDescription:
           "SnapRoad uses your microphone for voice commands with the Orion driving assistant.",
         NSSpeechRecognitionUsageDescription:
           "SnapRoad uses speech recognition to understand your voice commands during navigation.",
-        UIBackgroundModes: ["audio", "location", "fetch"],
+        UIBackgroundModes: ["audio", "location"],
         ITSAppUsesNonExemptEncryption: false,
         ...(_prod ? {} : {
           NSLocalNetworkUsageDescription:

@@ -66,6 +66,16 @@ function parseMyRedemptionsResponse(raw: unknown): UserOfferRedemption[] {
   return out;
 }
 
+function withSoftTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    promise
+      .then(resolve)
+      .catch(() => resolve(fallback))
+      .finally(() => clearTimeout(timer));
+  });
+}
+
 export default function RewardsScreen() {
   const navigation = useNavigation<RewardsStackScreenNavigationProp>();
   const rewardsFocused = useIsFocused();
@@ -116,12 +126,13 @@ export default function RewardsScreen() {
       const safeGet = async (url: string) => {
         try { return await api.get(url); } catch { return { success: false, data: null }; }
       };
+      const emptyRes: { success: false; data: null } = { success: false, data: null };
       const [profileRes, bRes, gRes, mineRes, sumRes] = await Promise.all([
-        api.getProfile().catch(() => ({ success: false, data: null })),
-        safeGet('/api/badges'),
-        safeGet('/api/gems/history'),
-        safeGet('/api/offers/my-redemptions'),
-        safeGet('/api/rewards/summary'),
+        withSoftTimeout(api.getProfile().catch(() => emptyRes), 7_000, emptyRes),
+        withSoftTimeout(safeGet('/api/badges'), 6_000, emptyRes),
+        withSoftTimeout(safeGet('/api/gems/history'), 5_000, emptyRes),
+        withSoftTimeout(safeGet('/api/offers/my-redemptions'), 5_000, emptyRes),
+        withSoftTimeout(safeGet('/api/rewards/summary'), 5_000, emptyRes),
       ]);
       // Each sub-endpoint can fail independently; on `initial` / `refresh` surface a
       // single summary banner so users aren't staring at empty sections wondering what

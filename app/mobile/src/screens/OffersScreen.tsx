@@ -805,12 +805,6 @@ export default function OffersScreen() {
     void fetchOnlinePage(null, 'reset');
   }, [section, fetchOnlinePage]);
 
-  useEffect(() => {
-    if (!isFocused || onlineBootstrapped.current) return;
-    onlineBootstrapped.current = true;
-    void fetchOnlinePage(null, 'reset');
-  }, [isFocused, fetchOnlinePage]);
-
   const localCategoryChoices = useMemo(() => [{ slug: null as string | null, label: 'All' }, ...offerCategories.map((c) => ({ slug: c.slug, label: c.label }))], [offerCategories]);
 
   const filteredLocalByCategory = useMemo(() => {

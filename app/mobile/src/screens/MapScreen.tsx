@@ -575,9 +575,9 @@ export default function MapScreen() {
   const { isLight, colors } = useTheme();
   const route = useRoute<RouteProp<MapStackParamList, 'MapMain' | 'MapRedeem'>>();
   const { user, updateUser, refreshUserFromServer, bumpStatsVersion } = useAuth();
-  /** Keep GPS alive on other tabs when logged in so passive + profile miles stay accurate (battery tradeoff). */
+  /** Keep GPS scoped to the map unless active navigation is running in the background. */
   const { location, heading, speed, accuracy, isLocating, permissionDenied } = useLocation(isNavActive, {
-    paused: !mapTabFocused && !ctxNavigating && !user?.id,
+    paused: !mapTabFocused && !ctxNavigating,
   });
 
   // ── Driving mode ──
@@ -1744,8 +1744,8 @@ export default function MapScreen() {
   }, [nav.fetchDirections, nav.setSelectedDestination]);
 
   usePassiveDriveGems({
-    enabled: Boolean(user?.id),
-    mapFocused: true,
+    enabled: false,
+    mapFocused: mapTabFocused,
     isNavigating: nav.isNavigating,
     location,
     speedMph: speed,
@@ -3055,7 +3055,7 @@ export default function MapScreen() {
   }, [user?.isPremium, nav.isNavigating]);
 
   useEffect(() => {
-    if (!user?.isPremium || !canPublishFriendLocation) return;
+    if (!user?.isPremium || !canPublishFriendLocation || !nav.isNavigating) return;
     const sharingOn = storage.getString(FRIEND_LIVE_SHARE_STORAGE_KEY) === '1';
     if (!sharingOn) return;
     const sharingMode = isAlwaysFollowMode(storage.getString(FRIEND_LIVE_SHARE_MODE_KEY)) ? 'always_follow' : 'while_using';
@@ -3104,14 +3104,15 @@ export default function MapScreen() {
   ]);
 
   useEffect(() => {
-    if (!user?.isPremium || !canPublishFriendLocation) return;
+    if (!user?.isPremium || !canPublishFriendLocation || !nav.isNavigating) return;
     let cancelled = false;
     const tick = () => {
       const sharingOn = storage.getString(FRIEND_LIVE_SHARE_STORAGE_KEY) === '1';
       if (!sharingOn) return;
+      const { isNavigating, destinationName } = mapLiveNavRef.current;
+      if (!isNavigating) return;
       const sharingMode = isAlwaysFollowMode(storage.getString(FRIEND_LIVE_SHARE_MODE_KEY)) ? 'always_follow' : 'while_using';
       const { lat, lng, heading: h, speed: sp } = mapLivePublishCoordsRef.current;
-      const { isNavigating, destinationName } = mapLiveNavRef.current;
       const rLat = Math.round(lat * 1000);
       const rLng = Math.round(lng * 1000);
       if (rLat === 0 && rLng === 0) return;
@@ -3147,7 +3148,7 @@ export default function MapScreen() {
       cancelled = true;
       clearInterval(id);
     };
-  }, [user?.isPremium, canPublishFriendLocation, shareLocEpoch]);
+  }, [user?.isPremium, canPublishFriendLocation, shareLocEpoch, nav.isNavigating]);
 
   /** OS background TaskManager reads AsyncStorage keys — mirror via syncFriendLiveShareBackgroundFromPolicy. */
   useEffect(() => {
@@ -3158,9 +3159,10 @@ export default function MapScreen() {
         sharingEnabled: sharingOn,
         canPublish: Boolean(user?.isPremium && canPublishFriendLocation),
         mode,
+        activeNavigation: nav.isNavigating,
       });
     })();
-  }, [user?.isPremium, canPublishFriendLocation, shareLocEpoch]);
+  }, [user?.isPremium, canPublishFriendLocation, shareLocEpoch, nav.isNavigating]);
 
   // Fix 1: On nav start (false→true), force follow + remount Camera (preview fitBounds leaves native
   // camera stuck until follow re-binds). useLayoutEffect bumps session key before paint; imperative

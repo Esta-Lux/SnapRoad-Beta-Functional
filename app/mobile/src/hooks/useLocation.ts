@@ -288,9 +288,9 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
 
     const accuracy = isNavigating
       ? Location.Accuracy.BestForNavigation
-      : Location.Accuracy.Highest;
-    const timeInterval = isNavigating ? 500 : 2000;
-    const distanceInterval = isNavigating ? 0.5 : 8;
+      : Location.Accuracy.Balanced;
+    const timeInterval = isNavigating ? 500 : 8000;
+    const distanceInterval = isNavigating ? 0.5 : 25;
 
     watchRef.current = await Location.watchPositionAsync(
       {
@@ -449,27 +449,26 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
       },
     );
 
-    headingSubRef.current = await Location.watchHeadingAsync((h) => {
-      const deg = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
-      if (typeof deg !== 'number' || !Number.isFinite(deg)) return;
-      setState((prev) => {
-        /** Same threshold as GPS course: above this, COG drives bearing; ignore compass jitter. */
-        if (prev.speed > 5) return prev;
-        /** Freeze heading entirely when nearly stopped — compass is too noisy to be useful. */
-        if (isNavigating && prev.speed < COMPASS_FREEZE_SPEED_MPH) return prev;
-        const compassAlpha =
-          isNavigating && prev.speed < 5
-            ? 0.07
-            : HEADING_SMOOTHING;
-        if (!hasHeadingRef.current) {
-          smoothedRef.current = deg;
-          hasHeadingRef.current = true;
-        } else {
-          smoothedRef.current = smoothHeading(smoothedRef.current, deg, compassAlpha);
-        }
-        return { ...prev, heading: smoothedRef.current };
+    if (isNavigating) {
+      headingSubRef.current = await Location.watchHeadingAsync((h) => {
+        const deg = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
+        if (typeof deg !== 'number' || !Number.isFinite(deg)) return;
+        setState((prev) => {
+          /** Same threshold as GPS course: above this, COG drives bearing; ignore compass jitter. */
+          if (prev.speed > 5) return prev;
+          /** Freeze heading entirely when nearly stopped — compass is too noisy to be useful. */
+          if (prev.speed < COMPASS_FREEZE_SPEED_MPH) return prev;
+          const compassAlpha = prev.speed < 5 ? 0.07 : HEADING_SMOOTHING;
+          if (!hasHeadingRef.current) {
+            smoothedRef.current = deg;
+            hasHeadingRef.current = true;
+          } else {
+            smoothedRef.current = smoothHeading(smoothedRef.current, deg, compassAlpha);
+          }
+          return { ...prev, heading: smoothedRef.current };
+        });
       });
-    });
+    }
   }, [isNavigating]);
 
   useEffect(() => {
@@ -503,7 +502,7 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
           const fix = await Location.getCurrentPositionAsync({
             accuracy: isNavigating
               ? Location.Accuracy.BestForNavigation
-              : Location.Accuracy.Highest,
+              : Location.Accuracy.Balanced,
           });
           const lat = fix.coords.latitude;
           const lng = fix.coords.longitude;

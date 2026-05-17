@@ -121,13 +121,32 @@ if (IS_PRODUCTION) {
   }
 }
 
+type ApiRequestOptions = RequestInit & {
+  timeoutMs?: number;
+  retryOnTimeout?: boolean;
+};
+
 /** Tunnels and HTTPS edge URLs are slower; LAN HTTP is usually fast. */
-function resolveRequestTimeoutMs(baseUrl: string): number {
+function resolveRequestTimeoutMs(baseUrl: string, endpoint = ''): number {
+  const u = baseUrl.toLowerCase();
+  const e = endpoint.toLowerCase();
+  if (e.startsWith('/api/places/autocomplete')) return 6_000;
+  if (e.startsWith('/api/places/details')) return 8_000;
+  if (e.startsWith('/api/offers/') || e.startsWith('/api/offers?')) return 8_000;
+  if (e.startsWith('/api/rewards/') || e.startsWith('/api/gems/') || e.startsWith('/api/badges')) return 8_000;
+  if (e.startsWith('/api/weather/') || e.startsWith('/api/traffic/') || e.startsWith('/api/map/')) return 7_000;
+  if (u.includes('loca.lt') || u.includes('ngrok') || u.includes('trycloudflare') || u.includes('tunnel')) {
+    return 20_000;
+  }
+  return 12_000;
+}
+
+function resolveUploadTimeoutMs(baseUrl: string): number {
   const u = baseUrl.toLowerCase();
   if (u.includes('loca.lt') || u.includes('ngrok') || u.includes('trycloudflare') || u.includes('tunnel')) {
-    return 60000;
+    return 60_000;
   }
-  return 30000;
+  return 30_000;
 }
 
 /** Cap cold-start profile fetch so the auth splash does not sit behind a 30–60s tunnel timeout. */
@@ -273,10 +292,11 @@ class ApiService {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {},
+    options: ApiRequestOptions = {},
     retryCount = 0,
     timeoutOverrideMs?: number,
   ): Promise<ApiResponse<T>> {
+    const { timeoutMs: optionTimeoutMs, retryOnTimeout = false, ...fetchOptions } = options;
     const token = await this.getToken();
     const guestId = await getOrCreateGuestId();
     const url = `${apiBaseUrl}${endpoint}`;
@@ -286,18 +306,22 @@ class ApiService {
       'Bypass-Tunnel-Reminder': 'true',
       'X-SnapRoad-Guest-Id': guestId,
       ...(attachAuth && token && { Authorization: `Bearer ${token}` }),
-      ...(options.headers as Record<string, string>),
+      ...(fetchOptions.headers as Record<string, string>),
     };
 
-    const timeoutMs = timeoutOverrideMs ?? resolveRequestTimeoutMs(apiBaseUrl);
+    const timeoutMs = timeoutOverrideMs ?? optionTimeoutMs ?? resolveRequestTimeoutMs(apiBaseUrl, endpoint);
+    const startedAt = Date.now();
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
       const response = await fetch(url, {
-        ...options,
+        ...fetchOptions,
         headers,
-        signal: options.signal ?? controller.signal,
+        signal: fetchOptions.signal ?? controller.signal,
       }).finally(() => clearTimeout(timeout));
+      if (!IS_PRODUCTION && Date.now() - startedAt > 5_000) {
+        console.warn(`[API] Slow request (${Date.now() - startedAt}ms): ${endpoint}`);
+      }
 
       const parsed = await parseApiResponseBody(response);
       if (!parsed.ok) {
@@ -314,7 +338,7 @@ class ApiService {
           let retryResponse: Response;
           try {
             retryResponse = await fetch(url, {
-              ...options,
+              ...fetchOptions,
               headers: {
                 ...headers,
                 Authorization: `Bearer ${refreshedToken}`,
@@ -405,8 +429,8 @@ class ApiService {
       return { success: true, data: data as T };
     } catch (error) {
       const isAbort = (error as { name?: string })?.name === 'AbortError';
-      const method = (options.method ?? 'GET').toUpperCase();
-      if (isAbort && method === 'GET' && retryCount < 1) {
+      const method = (fetchOptions.method ?? 'GET').toUpperCase();
+      if (isAbort && retryOnTimeout && method === 'GET' && retryCount < 1) {
         return this.request<T>(endpoint, options, retryCount + 1, timeoutOverrideMs);
       }
       const msg = isAbort
@@ -468,31 +492,33 @@ class ApiService {
 
   /** Same as getProfile but capped for AuthProvider cold start (splash screen). */
   async getProfileBootstrap(): Promise<ApiResponse<Record<string, unknown>>> {
-    const ceiling = resolveRequestTimeoutMs(apiBaseUrl);
+    const ceiling = resolveRequestTimeoutMs(apiBaseUrl, '/api/user/profile');
     const bootstrapMs = Math.min(PROFILE_BOOTSTRAP_TIMEOUT_MS, ceiling);
     return this.request('/api/user/profile', {}, 0, bootstrapMs);
   }
 
-  async get<T = unknown>(endpoint: string): Promise<ApiResponse<T>> {
-    return this.request<T>(endpoint);
+  async get<T = unknown>(endpoint: string, options?: ApiRequestOptions): Promise<ApiResponse<T>> {
+    return this.request<T>(endpoint, options);
   }
 
-  async post<T = unknown>(endpoint: string, body?: unknown): Promise<ApiResponse<T>> {
+  async post<T = unknown>(endpoint: string, body?: unknown, options?: ApiRequestOptions): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, {
+      ...options,
       method: 'POST',
       ...(body !== undefined && { body: JSON.stringify(body) }),
     });
   }
 
-  async put<T = unknown>(endpoint: string, body?: unknown): Promise<ApiResponse<T>> {
+  async put<T = unknown>(endpoint: string, body?: unknown, options?: ApiRequestOptions): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, {
+      ...options,
       method: 'PUT',
       ...(body !== undefined && { body: JSON.stringify(body) }),
     });
   }
 
-  async delete<T = unknown>(endpoint: string): Promise<ApiResponse<T>> {
-    return this.request<T>(endpoint, { method: 'DELETE' });
+  async delete<T = unknown>(endpoint: string, options?: ApiRequestOptions): Promise<ApiResponse<T>> {
+    return this.request<T>(endpoint, { ...options, method: 'DELETE' });
   }
 
   async upload<T = unknown>(endpoint: string, formData: FormData): Promise<ApiResponse<T>> {
@@ -503,7 +529,7 @@ class ApiService {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     };
 
-    const timeoutMs = resolveRequestTimeoutMs(apiBaseUrl);
+    const timeoutMs = resolveUploadTimeoutMs(apiBaseUrl);
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);

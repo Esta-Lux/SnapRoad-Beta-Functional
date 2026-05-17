@@ -115,18 +115,23 @@ export function OfferDetailModal({
 } & Pick<ThemeProps, 'cardBg' | 'text' | 'sub'>) {
   const overlay = isLight ? 'rgba(15,23,42,0.45)' : 'rgba(2,6,23,0.72)';
   const [remote, setRemote] = useState<Offer | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [hydrating, setHydrating] = useState(false);
 
   useEffect(() => {
     if (!selectedOffer?.id) {
       setRemote(null);
+      setHydrating(false);
       return;
     }
     let cancelled = false;
-    setLoading(true);
+    setRemote(null);
+    setHydrating(true);
     void (async () => {
       try {
-        const res = await api.get<Record<string, unknown>>(`/api/offers/${encodeURIComponent(String(selectedOffer.id))}`);
+        const res = await api.get<Record<string, unknown>>(
+          `/api/offers/${encodeURIComponent(String(selectedOffer.id))}`,
+          { timeoutMs: 5_000 },
+        );
         if (cancelled) return;
         const payload = (res.data as { data?: Offer })?.data ?? res.data;
         if (payload && typeof payload === 'object' && 'id' in (payload as object)) {
@@ -135,7 +140,7 @@ export function OfferDetailModal({
       } catch {
         if (!cancelled) setRemote(null);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setHydrating(false);
       }
     })();
     return () => {
@@ -229,8 +234,8 @@ export function OfferDetailModal({
                     <Text style={{ color: primary, fontSize: 26, fontWeight: '900' }}>{cost} gems</Text>
                   </View>
                 ) : null}
-                {loading ? <Skeleton width="100%" height={48} borderRadius={14} /> : null}
-                {!loading && isAffiliateOffer ? (
+                {hydrating && !offer ? <Skeleton width="100%" height={48} borderRadius={14} /> : null}
+                {isAffiliateOffer ? (
                   <TouchableOpacity
                     onPress={() => void Linking.openURL(affiliateUrl)}
                     activeOpacity={0.85}
@@ -245,7 +250,7 @@ export function OfferDetailModal({
                     </LinearGradient>
                   </TouchableOpacity>
                 ) : null}
-                {!loading && !isAffiliateOffer && (
+                {!isAffiliateOffer && (
                   <TouchableOpacity
                     disabled={redeemingOfferId === selectedOffer?.id}
                     onPress={() => selectedOffer && onRedeem({ ...selectedOffer, ...offer })}

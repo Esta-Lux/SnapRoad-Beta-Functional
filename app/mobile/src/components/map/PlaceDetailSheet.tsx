@@ -282,6 +282,24 @@ function normalizeDetail(placeId: string, d: Record<string, unknown>, summary?: 
   };
 }
 
+function detailFromSummary(placeId: string, summary?: Props['summary']): PlaceDetailData | null {
+  if (!summary?.name && summary?.lat == null && summary?.lng == null) return null;
+  return {
+    place_id: placeId,
+    name: summary?.name ?? 'Place',
+    address: '',
+    lat: summary?.lat,
+    lng: summary?.lng,
+    types: [],
+    open_now: null,
+    hours: [],
+    opening_hours: {},
+    reviews: [],
+    editorial_summary: '',
+    attributes: {},
+  };
+}
+
 export default function PlaceDetailSheet({
   placeId,
   summary,
@@ -300,7 +318,7 @@ export default function PlaceDetailSheet({
   onTravelProfileChange,
 }: Props) {
   const insets = useSafeAreaInsets();
-  const [data, setData] = useState<PlaceDetailData | null>(null);
+  const [data, setData] = useState<PlaceDetailData | null>(() => detailFromSummary(placeId, summary));
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAllHours, setShowAllHours] = useState(false);
@@ -363,17 +381,20 @@ export default function PlaceDetailSheet({
     setShowAllReviews(false);
   }, [placeId]);
 
-  // Fetch once per placeId. Do not depend on `summary`: parent often passes a new object each
-  // render; including it re-ran this on every GPS tick and toggled loading (sheet glitch).
+  // Fetch once per place identity/summary value. Use summary data immediately so a slow
+  // details endpoint never leaves the sheet blank.
   useEffect(() => {
     let cancelled = false;
+    const fallback = detailFromSummary(placeId, summary);
+    setData(fallback);
+    setPhotoUrls([]);
     (async () => {
       setLoading(true);
       try {
-        const res = await api.get<Record<string, unknown>>(`/api/places/details/${placeId}`);
+        const res = await api.get<Record<string, unknown>>(`/api/places/details/${placeId}`, { timeoutMs: 6_000 });
         if (!res.success || res.data == null) {
           if (!cancelled) {
-            setData(null);
+            setData(fallback);
             setPhotoUrls([]);
           }
           return;
@@ -386,14 +407,14 @@ export default function PlaceDetailSheet({
             setData(normalized);
             setPhotoUrls(buildPhotoUrls((d.photos as unknown[]) ?? [], api.getBaseUrl()));
           } else {
-            setData(null);
+            setData(fallback);
             setPhotoUrls([]);
           }
         }
       } catch (e) {
         console.warn('[PlaceDetailSheet] fetch error', e);
         if (!cancelled) {
-          setData(null);
+          setData(fallback);
           setPhotoUrls([]);
         }
       } finally {
@@ -401,7 +422,7 @@ export default function PlaceDetailSheet({
       }
     })();
     return () => { cancelled = true; };
-  }, [placeId]);
+  }, [placeId, summary?.lat, summary?.lng, summary?.name]);
 
   const panGesture = Gesture.Pan()
     .onStart(() => { startY.value = translateY.value; })
@@ -664,6 +685,7 @@ export default function PlaceDetailSheet({
               : initialPhotoUrl
                 ? [initialPhotoUrl]
                 : [];
+            const showLoading = loading && !place;
             const showError = !loading && !place;
 
             return (
@@ -717,7 +739,7 @@ export default function PlaceDetailSheet({
                   <Ionicons name="close" size={18} color={text2} />
                 </TouchableOpacity>
 
-                {loading || showError ? (
+                {showLoading || showError ? (
                   <View style={S.scrollFlex}>
                     {showError ? (
                       <View style={S.loadingWrap}>
@@ -1098,7 +1120,7 @@ export default function PlaceDetailSheet({
                   onPress={handleDirections}
                   activeOpacity={0.9}
                   style={S.directionsBtnWrap}
-                  disabled={loading || !place}
+                  disabled={!place}
                 >
                   <LinearGradient
                     colors={[ctaStart, ctaEnd]}

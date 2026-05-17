@@ -180,9 +180,10 @@ export async function syncFriendLiveShareBackgroundFromPolicy(opts: {
   sharingEnabled: boolean;
   canPublish: boolean;
   mode?: FriendLiveShareMode;
+  activeNavigation?: boolean;
 }): Promise<void> {
   await mirrorFriendLiveShareKeysFromLocalStorageAsync();
-  if (!opts.sharingEnabled || !opts.canPublish || opts.mode !== 'always_follow') {
+  if (!opts.activeNavigation || !opts.sharingEnabled || !opts.canPublish || opts.mode !== 'always_follow') {
     await stopFriendLiveShareBackgroundUpdates();
     return;
   }
