@@ -178,7 +178,7 @@ import { distanceAheadEffectiveMeters, isIncidentAheadSnapshot } from '../utils/
 import { useSmoothedNavFraction } from '../hooks/useSmoothedNavFraction';
 import { formatDuration } from '../utils/format';
 import { formatUsd } from '../utils/driveMetrics';
-import { speak, stopSpeaking } from '../utils/voice';
+import { elevenLabsVoiceIntentEnabled, speak, stopSpeaking } from '../utils/voice';
 import { maybeRequestStoreReviewAfterTrip } from '../utils/storeReview';
 import { api, API_BASE_URL } from '../api/client';
 import { absolutizeMediaUrl } from '../utils/mediaUrl';
@@ -606,6 +606,11 @@ export default function MapScreen() {
     storage.set('snaproad_nav_voice_muted', navVoiceMuted ? '1' : '0');
   }, [navVoiceMuted]);
 
+  const navVoiceMutedRef = useRef(navVoiceMuted);
+  useEffect(() => {
+    navVoiceMutedRef.current = navVoiceMuted;
+  }, [navVoiceMuted]);
+
   /** Unmuting is always safe. Muting clears JS TTS only — on headless SDK, native owns audio; avoid Speech.stop + session restore fighting Mapbox voice. */
   const handleNavVoiceToggle = useCallback(() => {
     setNavVoiceMuted((m) => {
@@ -867,14 +872,26 @@ export default function MapScreen() {
   );
 
   /**
-   * SDK `RouteVoiceController` plays turn-by-turn (Mapbox prosody on components like street names).
-   * We only ingest for HUD / repeat-last; do not mirror with Expo `Speech.speak` — that doubled voices.
+   * SDK turn cues: ingest for HUD / repeat-last.
+   * When ElevenLabs is enabled we mute native Mapbox speech and replay the same instruction via the backend
+   * so Orion/ElevenLabs owns the voice instead of Mapbox + Expo device TTS fighting each other.
    */
-  const handleSdkVoiceInstruction = useCallback((text?: string) => {
-    const t = (text ?? '').trim();
-    if (!t) return;
-    ingestSdkVoiceSubtitle(t);
-  }, []);
+  const handleSdkVoiceInstruction = useCallback(
+    (text?: string) => {
+      const t = (text ?? '').trim();
+      if (!t) return;
+      ingestSdkVoiceSubtitle(t);
+      const substituteElevenLabs =
+        elevenLabsVoiceIntentEnabled() &&
+        navLogicEffective &&
+        !suppressHeadlessNavForNativeFullscreen &&
+        !navVoiceMutedRef.current;
+      if (substituteElevenLabs) {
+        speak(t, 'high', drivingMode, { rateSource: 'navigation_fixed', forceAllowDuringSdk: true });
+      }
+    },
+    [drivingMode, navLogicEffective, suppressHeadlessNavForNativeFullscreen],
+  );
 
   const sdkArrivalCallbackStreakRef = useRef(0);
   useEffect(() => {
@@ -4944,7 +4961,12 @@ export default function MapScreen() {
           pointerEvents="none"
           navigationLogicOnly
           coordinates={navLogicCoords}
-          mute={navVoiceMuted}
+          mute={
+            navVoiceMuted ||
+            (navLogicEffective &&
+              !suppressHeadlessNavForNativeFullscreen &&
+              elevenLabsVoiceIntentEnabled())
+          }
           locale="en-US"
           routeProfile={routeProfileForPlatform()}
           drivingMode={drivingMode}
@@ -6429,38 +6451,29 @@ export default function MapScreen() {
             ) : null}
             <View style={[s.tripServiceCard, { backgroundColor: isLight ? 'rgba(37,99,235,0.08)' : 'rgba(96,165,250,0.12)', borderColor: colors.border }]}>
               <View style={{ flex: 1 }}>
-                <Text style={[s.tripServiceTitle, { color: colors.text }]}>Service-driver log</Text>
+                <Text style={[s.tripServiceTitle, { color: colors.text }]}>Synced to Insights & Recap</Text>
                 <Text style={[s.tripServiceSub, { color: colors.textSecondary }]}>
-                  Miles, drive time, safety, rewards, speeds, fuel cost, and route names were saved to Insights from this trip.
+                  This trip powers your profile dashboard — distance, drive time, safety, speeds, fuel, gems, XP, and route names.
                 </Text>
+                {activeTripSummary.profile_totals &&
+                (activeTripSummary.profile_totals.total_miles != null ||
+                  activeTripSummary.profile_totals.gems != null) ? (
+                  <Text style={{ color: colors.textTertiary, fontSize: 11, fontWeight: '700', marginTop: 8, lineHeight: 15 }}>
+                    {activeTripSummary.profile_totals.total_miles != null
+                      ? `Lifetime miles ${Number(activeTripSummary.profile_totals.total_miles).toFixed(1)} mi`
+                      : ''}
+                    {activeTripSummary.profile_totals.total_miles != null &&
+                    activeTripSummary.profile_totals.gems != null
+                      ? ' · '
+                      : ''}
+                    {activeTripSummary.profile_totals.gems != null
+                      ? `Gems balance ${activeTripSummary.profile_totals.gems}`
+                      : ''}
+                  </Text>
+                ) : null}
               </View>
-              <Ionicons name="briefcase-outline" size={22} color={colors.primary} />
+              <Ionicons name="analytics-outline" size={22} color={colors.primary} />
             </View>
-            {activeTripSummary.profile_totals &&
-            (activeTripSummary.profile_totals.total_miles != null ||
-              activeTripSummary.profile_totals.gems != null) ? (
-              <Text
-                style={{
-                  color: colors.textTertiary,
-                  fontSize: 12,
-                  fontWeight: '600',
-                  textAlign: 'center',
-                  marginTop: 10,
-                  lineHeight: 17,
-                }}
-              >
-                {activeTripSummary.profile_totals.total_miles != null
-                  ? `Lifetime miles: ${Number(activeTripSummary.profile_totals.total_miles).toFixed(1)} mi`
-                  : ''}
-                {activeTripSummary.profile_totals.total_miles != null &&
-                activeTripSummary.profile_totals.gems != null
-                  ? ' · '
-                  : ''}
-                {activeTripSummary.profile_totals.gems != null
-                  ? `Gems balance: ${activeTripSummary.profile_totals.gems}`
-                  : ''}
-              </Text>
-            ) : null}
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
               <TouchableOpacity style={[s.tripDone, { backgroundColor: 'rgba(59,130,246,0.12)', flex: 1 }]} onPress={openTripShare}>
                 <Text style={[s.tripDoneT, { color: colors.primary }]}>Share</Text>

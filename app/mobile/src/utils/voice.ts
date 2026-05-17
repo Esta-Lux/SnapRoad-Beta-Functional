@@ -181,7 +181,8 @@ function onUtteranceFinished() {
   void restoreDefaultAudioSession();
 }
 
-function elevenLabsVoiceEnabled(): boolean {
+/** True when the bundle asks the backend for ElevenLabs audio (`/api/orion/voice/synthesize`). */
+export function elevenLabsVoiceIntentEnabled(): boolean {
   const raw = String(process.env.EXPO_PUBLIC_ORION_ELEVENLABS_VOICE ?? '').trim().toLowerCase();
   return raw === '1' || raw === 'true' || raw === 'on';
 }
@@ -191,7 +192,7 @@ async function trySpeakWithElevenLabs(
   channel: OrionVoiceChannel,
   onFinish?: () => void,
 ): Promise<boolean> {
-  if (!elevenLabsVoiceEnabled()) return false;
+  if (!elevenLabsVoiceIntentEnabled()) return false;
   try {
     const { speakWithElevenLabs } = await import('./orionElevenLabsSpeech');
     return await speakWithElevenLabs(phrase, { channel, onFinish });

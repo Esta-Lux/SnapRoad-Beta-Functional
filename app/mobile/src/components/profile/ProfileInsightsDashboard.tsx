@@ -358,8 +358,11 @@ export default function ProfileInsightsDashboard({
       <View style={[styles.insightsSheetBody, { height: winH * 0.88 }]}>
       <ScrollView
         style={styles.insightsScroll}
-        contentContainerStyle={tripDetail ? styles.insightsScrollDimmed : undefined}
-        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          tripDetail ? styles.insightsScrollDimmed : undefined,
+          { paddingBottom: spacing.xl + 36 },
+        ]}
+        showsVerticalScrollIndicator
         keyboardShouldPersistTaps="handled"
         scrollEnabled={!tripDetail}
       >
@@ -512,10 +515,12 @@ export default function ProfileInsightsDashboard({
         </View>
         {sparkline()}
         <Text
-          style={[typography.caption, { color: colors.textTertiary, marginTop: 6, marginBottom: spacing.sm, lineHeight: 18 }]}
+          style={[typography.caption, { color: colors.textTertiary, marginTop: 6, marginBottom: spacing.md, lineHeight: 18 }]}
         >
           Trips, route savings, fuel cost, and safety reflect qualifying drives in this range. Deltas compare to the same length window before it.
         </Text>
+
+        <View style={[styles.sectionHairline, { backgroundColor: colors.border }]} />
 
         <View style={[styles.card, { borderColor: colors.border, backgroundColor: colors.card }]}>
           <Text style={{ color: colors.text, fontWeight: '800', marginBottom: 8 }}>Savings breakdown</Text>
@@ -545,19 +550,66 @@ export default function ProfileInsightsDashboard({
           </Text>
         </View>
 
-        {weeklyRecap.highlights && weeklyRecap.highlights.length > 0 ? (
-          <View style={[styles.card, { borderColor: colors.border, backgroundColor: colors.card }]}>
-            <Text style={{ color: colors.text, fontWeight: '800', marginBottom: 6 }}>This week (server)</Text>
-            {weeklyRecap.highlights.map((h) => (
-              <Text key={h} style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 4 }}>
-                • {h}
+        <View
+          style={[
+            styles.card,
+            { borderColor: colors.border, backgroundColor: colors.card, overflow: 'hidden' },
+          ]}
+        >
+          <LinearGradient
+            colors={[`${colors.primary}18`, 'transparent']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 110 }}
+          />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: spacing.sm }}>
+            <LinearGradient
+              colors={[colors.rewardsGradientStart, colors.rewardsGradientEnd]}
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 14,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Ionicons name="sparkles" size={20} color="#fff" />
+            </LinearGradient>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: colors.text, fontWeight: '900', fontSize: 15 }}>Orion insights</Text>
+              <Text style={{ color: colors.textSecondary, fontSize: 11, marginTop: 3, lineHeight: 15 }}>
+                Weekly recap from the server, live coaching, and score trends — keep scrolling for trips, gems, and badges.
               </Text>
-            ))}
+            </View>
           </View>
-        ) : null}
 
-        <View style={[styles.card, { borderColor: colors.border, backgroundColor: colors.card }]}>
-          <Text style={{ color: colors.text, fontWeight: '800', marginBottom: 8 }}>Orion insights</Text>
+          {weeklyRecap.highlights && weeklyRecap.highlights.length > 0 ? (
+            <View
+              style={[
+                styles.weekHighlightPanel,
+                { borderColor: `${colors.primary}40`, backgroundColor: colors.surfaceSecondary },
+              ]}
+            >
+              <Text
+                style={{
+                  color: colors.primary,
+                  fontSize: 10,
+                  fontWeight: '900',
+                  letterSpacing: 0.85,
+                  marginBottom: 8,
+                }}
+              >
+                WEEK HIGHLIGHTS (SERVER)
+              </Text>
+              {weeklyRecap.highlights.map((h) => (
+                <View key={h} style={{ flexDirection: 'row', gap: 8, marginBottom: 6 }}>
+                  <Text style={{ color: colors.primary, fontWeight: '800', marginTop: 1 }}>•</Text>
+                  <Text style={{ color: colors.text, fontSize: 13, lineHeight: 19, flex: 1 }}>{h}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
           {drivingLoading ? (
             <Text style={{ color: colors.textSecondary }}>Loading coaching…</Text>
           ) : drivingError ? (
@@ -602,24 +654,47 @@ export default function ProfileInsightsDashboard({
                 </View>
               ))}
               {drivingMetrics.length > 0 ? (
-                <View style={{ marginTop: spacing.sm }}>
-                  <Text style={{ color: colors.textSecondary, fontSize: 12, marginBottom: 6 }}>Metric scores (recent trips)</Text>
+                <View style={{ marginTop: spacing.md }}>
+                  <Text style={{ color: colors.text, fontWeight: '900', fontSize: 12, marginBottom: 10 }}>
+                    Driving score breakdown
+                  </Text>
+                  <Text style={{ color: colors.textTertiary, fontSize: 11, marginBottom: 10, lineHeight: 16 }}>
+                    Pulled from your recent qualifying trips — each bar is a normalized pillar we coach against on the road.
+                  </Text>
                   {drivingMetrics.map((m) => (
-                    <View key={m.id} style={{ marginBottom: 8 }}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                        <Text style={{ color: colors.text, fontSize: 12 }}>{m.name}</Text>
-                        <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '800' }}>{m.score}</Text>
+                    <View
+                      key={m.id}
+                      style={{
+                        marginBottom: 12,
+                        paddingVertical: 10,
+                        paddingHorizontal: 12,
+                        borderRadius: radius.md,
+                        borderWidth: StyleSheet.hairlineWidth,
+                        borderColor: colors.border,
+                        backgroundColor: colors.surfaceSecondary,
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>{m.name}</Text>
+                        <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '900' }}>{m.score}</Text>
                       </View>
-                      <View style={{ height: 4, borderRadius: 2, backgroundColor: colors.border, marginTop: 4 }}>
-                        <View
+                      <View style={{ height: 5, borderRadius: 3, backgroundColor: colors.border, marginTop: 10 }}>
+                        <LinearGradient
+                          colors={[colors.primary, colors.rewardsGradientEnd]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
                           style={{
                             width: `${Math.min(100, m.score)}%`,
                             height: '100%',
-                            borderRadius: 2,
-                            backgroundColor: colors.primary,
+                            borderRadius: 3,
                           }}
                         />
                       </View>
+                      {!!m.description && (
+                        <Text style={{ color: colors.textSecondary, fontSize: 11, marginTop: 8, lineHeight: 16 }}>
+                          {m.description}
+                        </Text>
+                      )}
                     </View>
                   ))}
                 </View>
@@ -1124,6 +1199,18 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     padding: 14,
+    marginBottom: 12,
+  },
+  sectionHairline: {
+    alignSelf: 'stretch',
+    height: StyleSheet.hairlineWidth,
+    marginBottom: 16,
+    opacity: 0.9,
+  },
+  weekHighlightPanel: {
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 12,
     marginBottom: 12,
   },
   savingsGrid: {

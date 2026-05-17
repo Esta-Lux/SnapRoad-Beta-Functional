@@ -1,5 +1,7 @@
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
+import { File as FsFile, Paths } from 'expo-file-system';
 import api from '../api/client';
+import { unwrapApiData } from '../api/dto/profileWallet';
 
 export type OrionVoiceChannel = 'orion' | 'navigation' | 'advisory';
 
@@ -53,6 +55,21 @@ async function restorePlaybackSession(): Promise<void> {
   }
 }
 
+function normalizeVoicePayload(raw: unknown): OrionVoiceResponse | null {
+  const unwrapped = unwrapApiData(raw);
+  const rec = unwrapped && typeof unwrapped === 'object' ? (unwrapped as OrionVoiceResponse) : null;
+  return rec;
+}
+
+async function deleteFsFileQuiet(uri: string): Promise<void> {
+  try {
+    const f = new FsFile(uri);
+    if (f.exists) f.delete();
+  } catch {
+    /* ignore */
+  }
+}
+
 export async function speakWithElevenLabs(
   text: string,
   options?: ElevenLabsSpeechOptions,
@@ -60,34 +77,45 @@ export async function speakWithElevenLabs(
   const clean = text.trim();
   if (!enabled() || !clean) return false;
 
+  let cacheUri: string | null = null;
   try {
-    const result = await api.post<OrionVoiceResponse>('/api/orion/voice/synthesize', {
+    const result = await api.post<unknown>('/api/orion/voice/synthesize', {
       text: clean,
       channel: options?.channel ?? 'orion',
     });
-    const data = result.data;
-    if (!result.success || !data?.success || !data.audio_base64) return false;
+    const data = normalizeVoicePayload(result.data);
+    if (!result.success || !data?.success || !data.audio_base64?.trim()) return false;
 
     await configurePlaybackSession();
-    const source = {
-      uri: `data:${data.mime_type || 'audio/mpeg'};base64,${data.audio_base64}`,
-    };
-    const { sound } = await Audio.Sound.createAsync(source, { shouldPlay: true });
+
+    /** Data-URI playback is flaky on some Android builds; cache MP3 bytes then play `file://`. */
+    const fsFile = new FsFile(
+      Paths.cache,
+      `orion-tts-${Date.now()}-${Math.random().toString(36).slice(2, 10)}.mp3`,
+    );
+    fsFile.create({ overwrite: true });
+    fsFile.write(data.audio_base64.trim(), { encoding: 'base64' });
+    cacheUri = fsFile.uri;
+
+    const { sound } = await Audio.Sound.createAsync({ uri: cacheUri }, { shouldPlay: true });
     sound.setOnPlaybackStatusUpdate((status) => {
       if (!status.isLoaded) {
         options?.onFinish?.();
         void restorePlaybackSession();
         void sound.unloadAsync();
+        void deleteFsFileQuiet(cacheUri!);
         return;
       }
       if (status.didJustFinish) {
         options?.onFinish?.();
         void restorePlaybackSession();
         void sound.unloadAsync();
+        void deleteFsFileQuiet(cacheUri!);
       }
     });
     return true;
   } catch {
+    if (cacheUri) void deleteFsFileQuiet(cacheUri);
     return false;
   }
 }
