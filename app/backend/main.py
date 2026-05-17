@@ -278,15 +278,17 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(referrals_router)
     app.include_router(orion_voice_router)
 
-def _build_health_response() -> dict:
-    if IS_PRODUCTION:
-        try:
-            sb = get_supabase()
-            sb.table("profiles").select("id").limit(1).execute()
-            return {"status": "ok"}
-        except Exception:
-            return {"status": "degraded"}
+def _production_supabase_readiness() -> dict:
+    """Supabase connectivity check — can block on network; use /health/ready, not /health."""
+    try:
+        sb = get_supabase()
+        sb.table("profiles").select("id").limit(1).execute()
+        return {"status": "ok", "ready": True}
+    except Exception:
+        return {"status": "degraded", "ready": False}
 
+
+def _build_health_response() -> dict:
     mapbox_ok = bool(mapbox_token_from_env())
     checks = {
         "database": "ok",
@@ -451,6 +453,17 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     def health():
+        # Liveness for Railway/load balancers: must answer immediately. Production used to ping
+        # Supabase here; stalls/timeouts caused deploy healthchecks to return 503 ("service unavailable").
+        if IS_PRODUCTION:
+            return {"status": "ok", "live": True}
+        return _build_health_response()
+
+    @app.get("/health/ready")
+    def health_ready():
+        """Readiness — includes Supabase round-trip (may be slow). Prefer /health for probes."""
+        if IS_PRODUCTION:
+            return _production_supabase_readiness()
         return _build_health_response()
 
     @app.get("/api/health")

@@ -14,5 +14,7 @@ dockerfilePath = "Dockerfile"
 
 [deploy]
 startCommand = "/docker-entrypoint.sh"
+# /health is non-blocking liveness (see main.py). /health/ready still checks Supabase for ops.
 healthcheckPath = "/health"
-healthcheckTimeout = 30
+# Cold import of the full FastAPI app can exceed 30s on small builders — Railway was failing deploys as "service unavailable".
+healthcheckTimeout = 120

@@ -69,4 +69,8 @@ def test_health_endpoint_structure():
     assert response.status_code == 200
     body = response.json()
     assert body.get("status") in ("ok", "degraded")
-    assert "checks" in body
+    # Development: detailed checks; production liveness: instant ok + live flag (no Supabase in probe).
+    if "checks" in body:
+        assert isinstance(body["checks"], dict)
+    else:
+        assert body.get("live") is True
