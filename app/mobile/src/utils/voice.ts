@@ -8,6 +8,7 @@ import type { LaneInfo, ManeuverKind, RoadSignal } from '../navigation/navModel'
 import { navLaneGuidanceUiEnabled } from '../navigation/navFeatureFlags';
 import { getPreferredTtsVoiceIdentifier } from './ttsVoicePreference';
 import { DRIVING_MODES } from '../constants/modes';
+import type { OrionVoiceChannel } from './orionElevenLabsSpeech';
 
 let lastSpokenPhrase = '';
 let lastSpokenAt = 0;
@@ -180,6 +181,25 @@ function onUtteranceFinished() {
   void restoreDefaultAudioSession();
 }
 
+function elevenLabsVoiceEnabled(): boolean {
+  const raw = String(process.env.EXPO_PUBLIC_ORION_ELEVENLABS_VOICE ?? '').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'on';
+}
+
+async function trySpeakWithElevenLabs(
+  phrase: string,
+  channel: OrionVoiceChannel,
+  onFinish?: () => void,
+): Promise<boolean> {
+  if (!elevenLabsVoiceEnabled()) return false;
+  try {
+    const { speakWithElevenLabs } = await import('./orionElevenLabsSpeech');
+    return await speakWithElevenLabs(phrase, { channel, onFinish });
+  } catch {
+    return false;
+  }
+}
+
 export function speak(
   phrase: string,
   priority: 'high' | 'normal' = 'normal',
@@ -234,6 +254,9 @@ export function speak(
 
   void (async () => {
     await configureAudioSessionForSpeechOutput();
+    const channel = rateSource === 'navigation_fixed' ? 'navigation' : 'advisory';
+    const spokenByElevenLabs = await trySpeakWithElevenLabs(phrase, channel);
+    if (spokenByElevenLabs) return;
     const voiceId = await getPreferredTtsVoiceIdentifier();
     Speech.speak(phrase, {
       rate: profile.rate,
@@ -281,6 +304,8 @@ export function speakGuidance(
   void (async () => {
     Speech.stop();
     await configureAudioSessionForSpeechOutput();
+    const spokenByElevenLabs = await trySpeakWithElevenLabs(phrase, 'navigation');
+    if (spokenByElevenLabs) return;
     const voiceId = await getPreferredTtsVoiceIdentifier();
     const profile = getTtsSpeechProfile(mode);
     Speech.speak(phrase, {
@@ -309,6 +334,8 @@ export function speakOrionReply(text: string, onFinish?: () => void, mode: Drivi
     try {
       Speech.stop();
       await configureAudioSessionForSpeechOutput();
+      const spokenByElevenLabs = await trySpeakWithElevenLabs(text.trim(), 'orion', onFinish);
+      if (spokenByElevenLabs) return;
       const voiceId = await getPreferredTtsVoiceIdentifier();
       const profile = getTtsSpeechProfile(mode);
       Speech.speak(text.trim(), {

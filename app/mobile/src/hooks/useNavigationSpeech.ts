@@ -17,6 +17,7 @@ import {
 import { navLogicSdkEnabled } from '../navigation/navFeatureFlags';
 import { getVoiceNavTuning } from '../navigation/navModeProfile';
 import { getUpcomingManeuverStep } from '../navigation/routeGeometry';
+import { orionizeNavigationUtterance } from '../navigation/orionGuidanceStyle';
 import { alongRouteDistanceMeters, haversineMeters } from '../utils/distance';
 import type { Coordinate } from '../types';
 
@@ -99,8 +100,10 @@ function buildUtterance(
     const core = hudPhraseForManeuverKind(step.kind, step.roundaboutExitNumber);
     const chain = bucket === 'imminent' ? chainPhrase(step) : '';
     const chainSuffix = chain ? `, ${chain}` : '';
-    if (bucket === 'imminent') return `${core}${chainSuffix}.`;
-    return `${distPart}, ${lowerFirst(core)}${chainSuffix}.`;
+    const phrase = bucket === 'imminent'
+      ? `${core}${chainSuffix}.`
+      : `${distPart}, ${lowerFirst(core)}${chainSuffix}.`;
+    return orionizeNavigationUtterance(phrase, { bucket, step, distanceMeters: d });
   }
 
   const line = hudPhraseForManeuverKind(step.kind, step.roundaboutExitNumber);
@@ -110,10 +113,12 @@ function buildUtterance(
   const chainSuffix = chain ? `, ${chain}` : '';
 
   if (bucket === 'imminent') {
-    return `${sigClause}${line}${chainSuffix}.`;
+    const phrase = `${sigClause}${line}${chainSuffix}.`;
+    return orionizeNavigationUtterance(phrase, { bucket, step, distanceMeters: d });
   }
 
-  return `${distPart}, ${sigClause}${lowerFirst(line)}${chainSuffix}.`;
+  const phrase = `${distPart}, ${sigClause}${lowerFirst(line)}${chainSuffix}.`;
+  return orionizeNavigationUtterance(phrase, { bucket, step, distanceMeters: d });
 }
 
 /** After a step advances, suppress far/mid-distance cues so the next maneuver is not spoken until the driver settles. */

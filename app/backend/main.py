@@ -70,6 +70,7 @@ from routes.legal import router as legal_router
 from routes.weather import router as weather_router
 from routes.gas_prices import router as gas_prices_router
 from routes.referrals import router as referrals_router
+from routes.orion_voice import router as orion_voice_router
 from config import (
     JWT_SECRET,
     SUPABASE_URL,
@@ -275,6 +276,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(weather_router)
     app.include_router(gas_prices_router)
     app.include_router(referrals_router)
+    app.include_router(orion_voice_router)
 
 def _build_health_response() -> dict:
     if IS_PRODUCTION:
@@ -349,6 +351,7 @@ def _build_env_check_response() -> dict:
         "orion_llm_configured": is_llm_configured(),
         "nvidia_configured": bool(NVIDIA_API_KEY),
         "openai_configured": bool((OPENAI_API_KEY or "").strip()),
+        "elevenlabs_configured": bool((os.environ.get("ELEVENLABS_API_KEY") or "").strip()),
         "ohgo_cameras_configured": bool((OHGO_API_KEY or "").strip()),
         "mapbox_routes_configured": bool(mapbox_token_from_env()),
     }
