@@ -88,7 +88,7 @@ import {
 import { nudgeBackgroundLocationAfterEnablingShare } from '../location/friendLocationPermissionUx';
 import OfferMarkers from '../components/map/OfferMarkers';
 import ReportMarkers from '../components/map/ReportMarkers';
-import FriendMarkers from '../components/map/FriendMarkers';
+// FriendMarkers import intentionally removed — friend pins are hidden on the map.
 import CameraMarkers from '../components/map/CameraMarkers';
 import GasPriceMarkers from '../components/map/GasPriceMarkers';
 import type { CameraLocation, CameraViewFeed } from '../components/map/CameraMarkers';
@@ -691,7 +691,7 @@ export default function MapScreen() {
     }, [user?.isPremium, friendTrackingEnabled, refreshFriendLocations]),
   );
 
-  const friendLocationsVisible = friendTrackingEnabled ? friendLocations : [];
+  // friendLocationsVisible removed — friend pins are not rendered on the map.
 
   const tabBarHeight = useBottomTabBarHeight();
   /** Nearest state's regular $/gal for trip-end fuel estimates + server `region_state`. */
@@ -5297,27 +5297,9 @@ export default function MapScreen() {
               referenceCoordinate={nav.isNavigating ? navDisplayCoord : null}
             />
           )}
-          <FriendMarkers
-            zoomLevel={mapZoomLevel}
-            friends={friendLocationsVisible}
-            onFriendTap={(f) => {
-              const fresh = isLiveShareFresh(f.isSharing, f.lastUpdated || undefined, f.lat, f.lng);
-              Alert.alert(f.name, 'What would you like to do?', [
-                {
-                  text: 'Navigate to',
-                  onPress: () =>
-                    beginFriendFollowNavigation({
-                      friendId: f.id,
-                      name: f.name,
-                      lat: f.lat,
-                      lng: f.lng,
-                      isLiveFresh: fresh,
-                    }),
-                },
-                { text: 'Cancel', style: 'cancel' },
-              ]);
-            }}
-          />
+          {/* Friend markers are intentionally hidden on the map. Friend tracking
+              still works via the Friends sheet / Live share toggles, but pins are
+              suppressed by product preference. */}
           {!nav.isNavigating && !nav.showRoutePreview && localStationGasMarkers.length > 0 && (
             <GasPriceMarkers
               points={localStationGasMarkers}

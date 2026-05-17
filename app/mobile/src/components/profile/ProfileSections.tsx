@@ -47,12 +47,10 @@ export function SectionHeader({ title, isLight }: { title: string; isLight: bool
 export function ProfileHeader({
   user,
   initials,
-  planName,
   level,
 }: {
   user: User | null;
   initials: string;
-  planName: string;
   level: number;
 }) {
   return (
@@ -63,10 +61,6 @@ export function ProfileHeader({
       <Text style={[styles.userName, { color: '#fff' }]}>{user?.name ?? 'Driver'}</Text>
       <View style={styles.headerLevelRow}>
         <Text style={styles.headerLevelText}>Level {level}</Text>
-        <View style={[styles.planBadge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-          <Ionicons name="diamond-outline" size={12} color="#fff" />
-          <Text style={styles.planBadgeText}>{planName}</Text>
-        </View>
       </View>
       <Text style={[styles.userEmail, { color: 'rgba(255,255,255,0.7)' }]}>{user?.email ?? ''}</Text>
     </LinearGradient>

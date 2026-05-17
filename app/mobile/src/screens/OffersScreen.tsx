@@ -142,6 +142,62 @@ function normalizeOnlineGallery(row: OnlineOfferItem): string[] {
   return out;
 }
 
+/**
+ * Amazon-style discount badge styling — color-coded by savings depth, plus a clean
+ * "% OFF" / "$X OFF" / "Code: XYZ" / "Sale" pill so users can scan deals at a glance.
+ */
+function resolveDiscountChip(row: OnlineOfferItem): { label: string; bg: string; fg: string; isStrong: boolean } | null {
+  const labelRaw = (row.discount_label || '').trim();
+  let pctMatch = labelRaw.match(/(\d+(?:\.\d+)?)\s*%\s*off/i);
+  let pct: number | null = pctMatch ? Math.round(Number(pctMatch[1])) : null;
+  if (
+    pct == null &&
+    typeof row.sale_price === 'number' &&
+    row.sale_price > 0 &&
+    typeof row.regular_price === 'number' &&
+    row.regular_price > row.sale_price
+  ) {
+    pct = Math.round(((row.regular_price - row.sale_price) / row.regular_price) * 100);
+  }
+
+  const palette = (depth: 'fire' | 'warm' | 'sale' | 'soft') => {
+    if (depth === 'fire') return { bg: '#B91C1C', fg: '#fff', isStrong: true };
+    if (depth === 'warm') return { bg: '#C2410C', fg: '#fff', isStrong: true };
+    if (depth === 'sale') return { bg: '#15803D', fg: '#fff', isStrong: false };
+    return { bg: '#1E293B', fg: '#fff', isStrong: false };
+  };
+
+  if (pct != null && Number.isFinite(pct) && pct > 0) {
+    const depth: 'fire' | 'warm' | 'sale' | 'soft' = pct >= 50 ? 'fire' : pct >= 25 ? 'warm' : pct >= 10 ? 'sale' : 'soft';
+    const c = palette(depth);
+    return { label: `-${pct}%`, ...c };
+  }
+  const dollarMatch = labelRaw.match(/\$\s*(\d+(?:[.,]\d+)?)\s*off/i);
+  if (dollarMatch) {
+    const c = palette('warm');
+    return { label: `-$${dollarMatch[1]} OFF`, ...c };
+  }
+  const codeMatch = labelRaw.match(/^code\s+(.+)$/i);
+  if (codeMatch) {
+    const c = palette('soft');
+    return { label: `CODE ${codeMatch[1]!.toUpperCase()}`, ...c };
+  }
+  if (
+    typeof row.sale_price === 'number' &&
+    row.sale_price > 0 &&
+    typeof row.regular_price === 'number' &&
+    row.regular_price > row.sale_price
+  ) {
+    const c = palette('sale');
+    return { label: 'SALE', ...c };
+  }
+  if (labelRaw) {
+    const c = palette('soft');
+    return { label: labelRaw.toUpperCase(), ...c };
+  }
+  return null;
+}
+
 function OffersSearchField(props: {
   value: string;
   onChangeText: (v: string) => void;
@@ -319,21 +375,32 @@ function OnlineDealCarouselCard(props: {
             <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900', textTransform: 'uppercase' }}>Featured</Text>
           </View>
         ) : null}
-        {row.discount_label ? (
-          <View
-            style={{
-              position: 'absolute',
-              bottom: 10,
-              right: 10,
-              backgroundColor: 'rgba(0,0,0,0.52)',
-              paddingHorizontal: 8,
-              paddingVertical: 4,
-              borderRadius: 8,
-            }}
-          >
-            <Text style={{ color: '#fff', fontSize: 10, fontWeight: '900' }}>{row.discount_label}</Text>
-          </View>
-        ) : null}
+        {(() => {
+          const chip = resolveDiscountChip(row);
+          if (!chip) return null;
+          return (
+            <View
+              style={{
+                position: 'absolute',
+                top: 10,
+                right: 10,
+                backgroundColor: chip.bg,
+                paddingHorizontal: 9,
+                paddingVertical: 4,
+                borderRadius: 8,
+                shadowColor: '#000',
+                shadowOpacity: 0.22,
+                shadowRadius: 4,
+                shadowOffset: { width: 0, height: 1 },
+                elevation: 2,
+              }}
+            >
+              <Text style={{ color: chip.fg, fontSize: chip.isStrong ? 12 : 10, fontWeight: '900', letterSpacing: 0.4 }}>
+                {chip.label}
+              </Text>
+            </View>
+          );
+        })()}
         {imgs.length > 1 ? (
           <View style={{ position: 'absolute', bottom: 8, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 5 }}>
             {imgs.map((_, i) => (
@@ -1041,10 +1108,31 @@ export default function OffersScreen() {
           {onlineNextCursor ? (
             <TouchableOpacity
               activeOpacity={0.88}
-              onPress={() => void fetchOnlinePage(onlineNextCursor, 'more')}
-              style={{ alignSelf: 'center', marginTop: 14, paddingHorizontal: 18, paddingVertical: 11, borderRadius: 999, backgroundColor: `${colors.primary}18`, borderWidth: 1, borderColor: `${colors.primary}45` }}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                void fetchOnlinePage(onlineNextCursor, 'more');
+              }}
+              style={{
+                alignSelf: 'center',
+                marginTop: 8,
+                marginBottom: 12,
+                paddingHorizontal: 22,
+                paddingVertical: 12,
+                borderRadius: 999,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 8,
+                backgroundColor: colors.primary,
+                shadowColor: colors.primary,
+                shadowOpacity: 0.28,
+                shadowRadius: 8,
+                shadowOffset: { width: 0, height: 3 },
+                elevation: 3,
+              }}
+              accessibilityLabel="Load 10 more deals"
             >
-              <Text style={{ color: colors.primary, fontWeight: '900' }}>Load more</Text>
+              <Ionicons name="add-circle-outline" size={18} color="#fff" />
+              <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14, letterSpacing: 0.3 }}>Load 10 more</Text>
             </TouchableOpacity>
           ) : null}
         </ScrollView>

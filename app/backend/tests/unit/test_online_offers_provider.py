@@ -78,6 +78,7 @@ def test_online_api_key_without_base_uses_fmtc_provider(monkeypatch):
 
 def test_fmtc_provider_filters_expired_and_maps_online_items(monkeypatch):
     monkeypatch.setenv("FMTC_API_TOKEN", "test-token")
+    monkeypatch.setenv("FMTC_SCRAPE_OG_IMAGES", "0")
     sys.modules.pop("services.fmtc_offers_provider", None)
     mod = importlib.reload(importlib.import_module("services.fmtc_offers_provider"))
     monkeypatch.setattr(
@@ -138,6 +139,7 @@ def test_fmtc_provider_filters_expired_and_maps_online_items(monkeypatch):
 
 def test_fmtc_online_dedupes_same_site_duplicate_description(monkeypatch):
     monkeypatch.setenv("FMTC_API_TOKEN", "test-token")
+    monkeypatch.setenv("FMTC_SCRAPE_OG_IMAGES", "0")
     sys.modules.pop("services.fmtc_offers_provider", None)
     mod = importlib.reload(importlib.import_module("services.fmtc_offers_provider"))
     monkeypatch.setattr(
@@ -207,6 +209,7 @@ def test_fmtc_online_dedupes_same_site_duplicate_description(monkeypatch):
 
 def test_fmtc_offer_art_skips_merchant_logo_urls(monkeypatch):
     monkeypatch.setenv("FMTC_API_TOKEN", "test-token")
+    monkeypatch.setenv("FMTC_SCRAPE_OG_IMAGES", "0")
     sys.modules.pop("services.fmtc_offers_provider", None)
     mod = importlib.reload(importlib.import_module("services.fmtc_offers_provider"))
     logo_url = "https://cdn.fmtc.com/brands/logo-large.png"
@@ -264,8 +267,88 @@ def test_fmtc_offer_art_skips_merchant_logo_urls(monkeypatch):
     assert by_id["fmtc_602"]["image_urls"] == []
 
 
+def test_fmtc_online_scrapes_og_image_when_feed_has_none(monkeypatch):
+    monkeypatch.setenv("FMTC_API_TOKEN", "test-token")
+    monkeypatch.setenv("FMTC_SCRAPE_OG_IMAGES", "1")
+    sys.modules.pop("services.fmtc_offers_provider", None)
+    mod = importlib.reload(importlib.import_module("services.fmtc_offers_provider"))
+    monkeypatch.setattr(
+        mod,
+        "_load_feed",
+        lambda: (
+            [
+                {
+                    "id": 701,
+                    "merchant_id": 88,
+                    "merchant_name": "ScrapeMart",
+                    "status": "active",
+                    "label": "No creative",
+                    "description": "Scraper fallback",
+                    "end_date": "2076-05-16T00:00:00Z",
+                    "affiliate_url": "https://track.example/z",
+                    "cascading_full_url": "https://scrapemart.example.com/p/123",
+                    "percent": 20,
+                    "categories": ["retail"],
+                    "locations": [],
+                }
+            ],
+            {},
+        ),
+    )
+
+    scrape_calls: list[str] = []
+
+    def fake_scrape(url: str, *, timeout: float = 0.0) -> str | None:
+        del timeout
+        scrape_calls.append(url)
+        return "https://cdn.scraped.example/og-image.jpg"
+
+    monkeypatch.setattr(mod, "_scrape_og_image", fake_scrape)
+
+    cat = mod.fetch_fmtc_online_catalog(category_slug=None, cursor=None)
+    assert cat["items"][0]["image_url"] == "https://cdn.scraped.example/og-image.jpg"
+    assert cat["items"][0]["image_urls"][0] == "https://cdn.scraped.example/og-image.jpg"
+    assert "https://scrapemart.example.com/p/123" in scrape_calls
+
+
+def test_fmtc_online_page_size_caps_at_ten(monkeypatch):
+    monkeypatch.setenv("FMTC_API_TOKEN", "test-token")
+    monkeypatch.setenv("FMTC_SCRAPE_OG_IMAGES", "0")
+    sys.modules.pop("services.fmtc_offers_provider", None)
+    mod = importlib.reload(importlib.import_module("services.fmtc_offers_provider"))
+    deals = []
+    for i in range(15):
+        deals.append(
+            {
+                "id": 800 + i,
+                "merchant_id": 90 + i,
+                "merchant_name": f"Shop{i}",
+                "status": "active",
+                "label": f"Deal {i}",
+                "description": f"Promo {i}",
+                "image": f"https://cdn.example.com/{i}.jpg",
+                "end_date": "2076-05-16T00:00:00Z",
+                "affiliate_url": f"https://track.example/{i}",
+                "cascading_full_url": f"https://shop{i}.example.com/",
+                "percent": 10 + i,
+                "categories": ["retail"],
+                "locations": [],
+            }
+        )
+    monkeypatch.setattr(mod, "_load_feed", lambda: (deals, {}))
+
+    first = mod.fetch_fmtc_online_catalog(category_slug=None, cursor=None)
+    assert len(first["items"]) == 10
+    assert first["next_cursor"] is not None
+
+    second = mod.fetch_fmtc_online_catalog(category_slug=None, cursor=first["next_cursor"])
+    assert len(second["items"]) == 5
+    assert second["next_cursor"] is None
+
+
 def test_fmtc_local_requires_address_and_coordinates(monkeypatch):
     monkeypatch.setenv("FMTC_API_TOKEN", "test-token")
+    monkeypatch.setenv("FMTC_SCRAPE_OG_IMAGES", "0")
     sys.modules.pop("services.fmtc_offers_provider", None)
     mod = importlib.reload(importlib.import_module("services.fmtc_offers_provider"))
     monkeypatch.setattr(

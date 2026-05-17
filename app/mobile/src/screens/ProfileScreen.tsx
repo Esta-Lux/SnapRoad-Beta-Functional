@@ -35,7 +35,6 @@ import {
   LevelProgressModal,
   NotificationsCard,
   PlacesCard,
-  PlanCard,
   ProfileHeader,
   ProfileBadgeItem,
   ProfileGemTxItem,
@@ -50,19 +49,11 @@ import {
   VehicleCard,
 } from '../components/profile/ProfileSections';
 import type { ProfileOverviewActionItem } from '../components/profile/types';
-import { ProfileStatsStrip, ProfileTabBar } from '../components/profile/ProfileScreenBlocks';
+import { ProfileTabBar } from '../components/profile/ProfileScreenBlocks';
 import { registerCommutePushToken } from '../utils/pushNotifications';
 import { mapProfileTripHistoryItem, recentTripsListFromPayload } from '../components/profile/tripHistoryMapping';
 import { sanitizeTripSpeedMph } from '../utils/driveMetrics';
 import { FAMILY_MODE_LAUNCH_ENABLED } from '../config/launchFlags';
-
-const FREE_PLAN_CONFIG = {
-  name: 'Free',
-  price: '$0',
-  features: [
-    'Navigation, cameras, local offers, online deals, wallet, and driving insights are included during launch.',
-  ],
-};
 
 export default function ProfileScreen() {
   const navigation = useNavigation<ProfileStackScreenNavigationProp>();
@@ -162,7 +153,7 @@ export default function ProfileScreen() {
   });
 
   const openPlanOptions = useCallback(() => {
-    Alert.alert('SnapRoad is free', 'Plans and in-app purchases are paused during launch. Enjoy the full app.');
+    Alert.alert('Already included', 'Everything in this section is available with your current account.');
   }, []);
 
   const handleDeleteAccount = useCallback(async () => {
@@ -538,7 +529,6 @@ export default function ProfileScreen() {
     }
   }, []);
 
-  const planConfig = FREE_PLAN_CONFIG;
   const initials = (user?.name ?? 'U').split(' ').filter(Boolean).map((n) => n[0]).join('').slice(0, 2).toUpperCase();
   const badgeTotal = badgeRows.length || 1;
   const actionRows: ProfileOverviewActionItem[] = [
@@ -546,7 +536,7 @@ export default function ProfileScreen() {
       key: 'share_location',
       icon: 'locate-outline',
       label: 'Share My Location',
-      value: 'Available during launch',
+      value: 'Tap to share your current spot',
       onPress: async () => {
         const { lat, lng } = location;
         const coords =
@@ -621,16 +611,7 @@ export default function ProfileScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={() => loadData('refresh')} tintColor="#3B82F6" />
         }
       >
-        <ProfileHeader user={user} initials={initials} planName={planConfig.name} level={user?.level ?? 1} />
-        <ProfileStatsStrip
-          cardBg={cardBg}
-          text={text}
-          sub={sub}
-          gems={user?.gems ?? 0}
-          safetyScore={user?.safetyScore ?? 0}
-          trips={user?.totalTrips ?? 0}
-          miles={Math.round(user?.totalMiles ?? 0)}
-        />
+        <ProfileHeader user={user} initials={initials} level={user?.level ?? 1} />
         {isGuest ? (
           <View style={[styles.guestAccountCard, { backgroundColor: cardBg, borderColor: colors.border }]}>
             <View style={{ flex: 1, paddingRight: 10 }}>
@@ -799,9 +780,6 @@ export default function ProfileScreen() {
               </View>
               <Ionicons name="chevron-forward" size={18} color={sub} />
             </TouchableOpacity>
-
-            <SectionHeader title="Launch Access" isLight={isLight} />
-            <PlanCard cardBg={cardBg} text={text} sub={sub} planName={planConfig.name} planPrice={planConfig.price} planFeatures={planConfig.features} currentPlan="free" onUpgrade={openPlanOptions} />
 
             <SectionHeader title="Vehicle" isLight={isLight} />
             <VehicleCard
