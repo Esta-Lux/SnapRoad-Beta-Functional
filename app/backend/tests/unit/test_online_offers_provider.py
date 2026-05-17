@@ -107,7 +107,14 @@ def test_fmtc_provider_filters_expired_and_maps_online_items(monkeypatch):
                     "categories": ["automotive"],
                 },
             ],
-            {"10": {"logos": [{"width": 600, "height": 450, "image_url": "https://img.example.com/logo.png"}]}},
+            {
+                "10": {
+                    "logos": [
+                        {"size": "120x60", "image_url": "https://img.example.com/logo-small.png"},
+                        {"size": "600x450", "image_url": "https://img.example.com/screenshot.png"},
+                    ]
+                }
+            },
         ),
     )
 
@@ -117,7 +124,9 @@ def test_fmtc_provider_filters_expired_and_maps_online_items(monkeypatch):
     assert len(cat["items"]) == 1
     assert cat["items"][0]["id"] == "fmtc_1"
     assert cat["items"][0]["discount_label"] == "25% off"
-    assert cat["items"][0]["image_url"] == "https://img.example.com/logo.png"
+    assert cat["items"][0]["image_url"] == "https://img.example.com/screenshot.png"
+    assert cat["items"][0]["affiliate_url"] == "https://road.example.com/item"
+    assert cat["items"][0]["affiliate_tracking_url"] == "https://example.com/aff"
 
 
 def test_fmtc_local_requires_address_and_coordinates(monkeypatch):
@@ -136,6 +145,7 @@ def test_fmtc_local_requires_address_and_coordinates(monkeypatch):
                     "label": "Airport parking deal",
                     "end_date": "2076-05-16T00:00:00Z",
                     "affiliate_url": "https://example.com/parking",
+                    "cascading_full_url": "https://parking.example.com/deal",
                     "categories": ["local-deals-travel"],
                     "locations": [
                         {"id": "cmh", "address": "1 Airport Rd, Columbus, OH", "lat": 39.999, "lng": -82.888},
@@ -152,4 +162,5 @@ def test_fmtc_local_requires_address_and_coordinates(monkeypatch):
     assert len(rows) == 1
     assert rows[0]["id"] == "fmtc_7_cmh"
     assert rows[0]["offer_source"] == "fmtc"
+    assert rows[0]["offer_url"] == "https://parking.example.com/deal"
     assert rows[0]["affiliate_tracking_url"] == "https://example.com/parking"

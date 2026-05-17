@@ -17,6 +17,7 @@ export type OnlineOfferItem = {
   image_url?: string;
   expires_at?: string;
   affiliate_url?: string;
+  affiliate_tracking_url?: string;
   /**
    * Original product page the admin pasted into the unfurler. Used for "view on
    * <merchant>" affordances and audit; mobile clients fall back to it if
@@ -121,6 +122,7 @@ export function parseOnlineOffersCatalog(payload: unknown): OnlineOffersCatalog 
         image_url: o.image_url != null ? String(o.image_url) : undefined,
         expires_at: o.expires_at != null ? String(o.expires_at) : undefined,
         affiliate_url: o.affiliate_url != null ? String(o.affiliate_url) : undefined,
+        affiliate_tracking_url: o.affiliate_tracking_url != null ? String(o.affiliate_tracking_url) : undefined,
         source_url: o.source_url != null ? String(o.source_url) : undefined,
         regular_price: Number.isFinite(regular) && regular >= 0 ? regular : undefined,
         sale_price: Number.isFinite(sale) && sale >= 0 ? sale : undefined,

@@ -145,8 +145,25 @@ def _domain_from_url(url: Optional[str]) -> Optional[str]:
     return host[4:] if host.startswith("www.") else host
 
 
-def _deal_url(deal: dict[str, Any]) -> Optional[str]:
-    for key in ("affiliate_url", "fmtc_url", "cascading_full_url"):
+def _valid_http_url(value: Any) -> Optional[str]:
+    url = str(value or "").strip()
+    return url if url.startswith(("http://", "https://")) else None
+
+
+def _deal_destination_url(deal: dict[str, Any], merchant: Optional[dict[str, Any]] = None) -> Optional[str]:
+    """Customer-facing page for the actual offer/merchant experience."""
+    for key in ("cascading_full_url", "source_url", "url"):
+        url = _valid_http_url(deal.get(key))
+        if url:
+            return url
+    if merchant:
+        return _valid_http_url(merchant.get("homepage"))
+    return None
+
+
+def _deal_tracking_url(deal: dict[str, Any]) -> Optional[str]:
+    """Network/FMT tracking URL retained for attribution, but not used as display URL."""
+    for key in ("affiliate_url", "subaffiliate_url", "freshreach_url", "skimlinks_url", "fmtc_url"):
         value = str(deal.get(key) or "").strip()
         if value.startswith(("http://", "https://")):
             return value
@@ -168,7 +185,14 @@ def _best_logo(merchant: Optional[dict[str, Any]]) -> Optional[str]:
             continue
         width = int(_float_or_none(logo.get("width")) or 0)
         height = int(_float_or_none(logo.get("height")) or 0)
+        if (width <= 0 or height <= 0) and logo.get("size"):
+            parts = str(logo.get("size") or "").lower().replace("×", "x").split("x", 1)
+            if len(parts) == 2:
+                width = int(_float_or_none(parts[0]) or 0)
+                height = int(_float_or_none(parts[1]) or 0)
         score = width * height
+        if "/screenshots/" in url:
+            score += 1_000_000
         if best is None or score > best[0]:
             best = (score, url)
     return best[1] if best else None
@@ -240,7 +264,8 @@ def _merchant_for_deal(deal: dict[str, Any], merchants: dict[str, dict[str, Any]
 
 def _deal_to_online_item(deal: dict[str, Any], merchant: Optional[dict[str, Any]]) -> dict[str, Any]:
     category_slug, category_label = _best_category(deal)
-    source_url = str(deal.get("cascading_full_url") or "").strip() or None
+    source_url = _deal_destination_url(deal, merchant)
+    tracking_url = _deal_tracking_url(deal)
     merchant_domain = _domain_from_url(source_url) or _domain_from_url(str(merchant.get("homepage") or "") if merchant else None)
     sale = _money_or_none(deal.get("sale_price"))
     regular = _money_or_none(deal.get("was_price"))
@@ -256,7 +281,8 @@ def _deal_to_online_item(deal: dict[str, Any], merchant: Optional[dict[str, Any]
         "discount_label": _discount_label(deal),
         "image_url": _image_for_deal(deal, merchant),
         "expires_at": deal.get("end_date"),
-        "affiliate_url": _deal_url(deal),
+        "affiliate_url": source_url,
+        "affiliate_tracking_url": tracking_url,
         "source_url": source_url,
         "regular_price": regular,
         "sale_price": sale,
@@ -291,6 +317,8 @@ def _deal_to_local_offers(deal: dict[str, Any], merchant: Optional[dict[str, Any
     out: list[dict[str, Any]] = []
     category_slug, category_label = _best_category(deal, local=True)
     percent = int(round(_float_or_none(deal.get("percent")) or 0))
+    destination_url = _deal_destination_url(deal, merchant)
+    tracking_url = _deal_tracking_url(deal)
     for idx, loc in enumerate(_locations_for_deal(deal)):
         lat = _float_or_none(loc.get("lat") or loc.get("latitude"))
         lng = _float_or_none(loc.get("lng") or loc.get("lon") or loc.get("longitude"))
@@ -316,8 +344,8 @@ def _deal_to_local_offers(deal: dict[str, Any], merchant: Optional[dict[str, Any
                 "lng": lng,
                 "business_type": category_slug,
                 "category_label": category_label,
-                "offer_url": _deal_url(deal),
-                "affiliate_tracking_url": _deal_url(deal),
+                "offer_url": destination_url,
+                "affiliate_tracking_url": tracking_url,
                 "expires_at": deal.get("end_date"),
                 "is_admin_offer": True,
                 "created_by": "fmtc",

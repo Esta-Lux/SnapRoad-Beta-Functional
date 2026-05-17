@@ -499,7 +499,7 @@ export default function OffersScreen() {
       typeof row.regular_price === 'number' &&
       row.regular_price > row.sale_price;
     const showSinglePrice = !hasSale && typeof row.sale_price === 'number' && row.sale_price > 0;
-    const outboundUrl = row.affiliate_url || row.source_url || '';
+    const outboundUrl = row.source_url || row.affiliate_url || row.affiliate_tracking_url || '';
     return (
       <TouchableOpacity
         key={row.id}
@@ -690,7 +690,7 @@ export default function OffersScreen() {
                   <TouchableOpacity
                     key={row.id}
                     activeOpacity={0.88}
-                    onPress={() => void safeOpenAffiliate(row.affiliate_url || '')}
+                    onPress={() => void safeOpenAffiliate(row.source_url || row.affiliate_url || row.affiliate_tracking_url || '')}
                     style={{ width: 220, marginHorizontal: 4, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, overflow: 'hidden', ...shadow(6) }}
                   >
                     <View style={{ height: 120, backgroundColor: `${colors.primary}10` }}>

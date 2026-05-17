@@ -65,6 +65,7 @@ test('parseOnlineOffersCatalog hydrates regular_price/sale_price/currency for pa
           merchant_domain: 'acme.example',
           source_url: 'https://acme.example/p/earbuds',
           affiliate_url: 'https://acme.example/p/earbuds?aff=snaproad',
+          affiliate_tracking_url: 'https://network.example/click/acme',
           image_url: 'https://cdn.acme.example/hero.jpg',
           regular_price: 129.99,
           sale_price: 79.99,
@@ -86,6 +87,7 @@ test('parseOnlineOffersCatalog hydrates regular_price/sale_price/currency for pa
   // Currency is normalised to upper-case so the mobile Intl formatter accepts it.
   assert.equal(item.currency, 'USD');
   assert.equal(item.source_url, 'https://acme.example/p/earbuds');
+  assert.equal(item.affiliate_tracking_url, 'https://network.example/click/acme');
   assert.equal(item.asin, 'B0CHX1W1XY');
   assert.equal(item.featured, true);
 });

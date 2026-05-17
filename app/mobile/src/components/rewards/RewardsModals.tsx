@@ -157,7 +157,7 @@ export function OfferDetailModal({
   const mi = offer?.distance_km != null ? (Number(offer.distance_km) * 0.621371).toFixed(1) : null;
   const heroUri = offerHeroUri(offer ?? null);
   const qrValue = redeemExtras?.qr_token || redeemExtras?.qr_code_value || redeemExtras?.claim_code;
-  const affiliateUrl = String(offer?.affiliate_tracking_url || offer?.offer_url || '').trim();
+  const affiliateUrl = String(offer?.offer_url || offer?.affiliate_tracking_url || '').trim();
   const isAffiliateOffer = Boolean(affiliateUrl) && String(offer?.offer_source || '').toLowerCase() === 'fmtc';
   const discountText = Number(offer?.discount_percent || 0) > 0 ? `${offer?.discount_percent ?? 0}% off` : isAffiliateOffer ? 'Partner deal' : `${offer?.discount_percent ?? 0}% off`;
 
