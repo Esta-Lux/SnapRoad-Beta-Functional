@@ -15,6 +15,8 @@ export type OnlineOfferItem = {
   category_label?: string;
   discount_label?: string;
   image_url?: string;
+  /** Additional hero/gallery URLs when the catalog supplies them (FMTC, admin JSON). */
+  image_urls?: string[];
   expires_at?: string;
   affiliate_url?: string;
   affiliate_tracking_url?: string;
@@ -120,6 +122,16 @@ export function parseOnlineOffersCatalog(payload: unknown): OnlineOffersCatalog 
         category_label: o.category_label != null ? String(o.category_label) : undefined,
         discount_label: o.discount_label != null ? String(o.discount_label) : undefined,
         image_url: o.image_url != null ? String(o.image_url) : undefined,
+        image_urls: (() => {
+          const raw = o.image_urls;
+          if (!Array.isArray(raw)) return undefined;
+          const urls: string[] = [];
+          for (const u of raw) {
+            const s = typeof u === 'string' ? u.trim() : '';
+            if (s.startsWith('http://') || s.startsWith('https://')) urls.push(s);
+          }
+          return urls.length ? urls : undefined;
+        })(),
         expires_at: o.expires_at != null ? String(o.expires_at) : undefined,
         affiliate_url: o.affiliate_url != null ? String(o.affiliate_url) : undefined,
         affiliate_tracking_url: o.affiliate_tracking_url != null ? String(o.affiliate_tracking_url) : undefined,

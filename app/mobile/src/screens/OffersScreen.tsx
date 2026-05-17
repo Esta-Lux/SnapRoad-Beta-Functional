@@ -8,6 +8,11 @@ import {
   Image,
   RefreshControl,
   ActivityIndicator,
+  TextInput,
+  Dimensions,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
+  type ViewStyle,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import * as WebBrowser from 'expo-web-browser';
@@ -35,6 +40,23 @@ import { displayOfferCategory } from '../lib/offerCategories';
 import { offerHeroUri } from '../lib/offerHeroImage';
 
 type HubSection = 'local' | 'online';
+
+const winW = Dimensions.get('window').width;
+const ONLINE_CARD_W = Math.min(292, Math.round(winW * 0.78));
+const LOCAL_CARD_W = Math.min(300, Math.round(winW * 0.82));
+const MARKET_ROW_MIN_H = Math.min(440, Math.round(Dimensions.get('window').height * 0.5));
+
+const LOCAL_SHELF_CHOICES = [
+  { key: 'all', label: 'All' },
+  { key: 'featured', label: 'Featured picks' },
+  { key: 'partners', label: 'Nearby partners' },
+] as const;
+
+const ONLINE_SHELF_CHOICES = [
+  { key: 'all', label: 'All deals' },
+  { key: 'featured', label: 'Featured' },
+  { key: 'ending', label: 'Ending soon' },
+] as const;
 
 const ONLINE_CATEGORY_LABELS: Record<string, string> = {
   fashion: 'Fashion',
@@ -108,6 +130,251 @@ async function safeOpenAffiliate(url: string) {
   }
 }
 
+function normalizeOnlineGallery(row: OnlineOfferItem): string[] {
+  const primary = row.image_url?.trim();
+  const extras = row.image_urls ?? [];
+  const out: string[] = [];
+  if (primary?.startsWith('http://') || primary?.startsWith('https://')) out.push(primary);
+  for (const u of extras) {
+    const s = typeof u === 'string' ? u.trim() : '';
+    if ((s.startsWith('http://') || s.startsWith('https://')) && !out.includes(s)) out.push(s);
+  }
+  return out;
+}
+
+function OffersSearchField(props: {
+  value: string;
+  onChangeText: (v: string) => void;
+  placeholder: string;
+  cardBg: string;
+  border: string;
+  text: string;
+  sub: string;
+}) {
+  const { value, onChangeText, placeholder, cardBg, border, text, sub } = props;
+  return (
+    <View
+      style={{
+        marginHorizontal: 16,
+        marginBottom: 10,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        paddingHorizontal: 14,
+        paddingVertical: 11,
+        borderRadius: 14,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: border,
+        backgroundColor: cardBg,
+      }}
+    >
+      <Ionicons name="search" size={18} color={sub} />
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={sub}
+        style={{ flex: 1, color: text, fontSize: 15, fontWeight: '600', paddingVertical: 0 }}
+        autoCapitalize="none"
+        autoCorrect={false}
+        clearButtonMode="never"
+      />
+      {value.trim().length > 0 ? (
+        <TouchableOpacity onPress={() => onChangeText('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Ionicons name="close-circle" size={20} color={sub} />
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+}
+
+function ShelfQuickChips(props: {
+  choices: { key: string; label: string }[];
+  activeKey: string;
+  onSelect: (key: string) => void;
+  cardBg: string;
+  text: string;
+  border: string;
+  primary: string;
+}) {
+  const { choices, activeKey, onSelect, cardBg, text, border, primary } = props;
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingBottom: 12 }}
+    >
+      {choices.map((c) => {
+        const active = c.key === activeKey;
+        return (
+          <TouchableOpacity
+            key={c.key}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onSelect(c.key);
+            }}
+            activeOpacity={0.85}
+            style={{
+              paddingHorizontal: 14,
+              paddingVertical: 9,
+              borderRadius: 999,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: active ? primary : border,
+              backgroundColor: active ? `${primary}18` : cardBg,
+            }}
+          >
+            <Text style={{ color: active ? primary : text, fontSize: 12, fontWeight: '800' }}>{c.label}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+function OnlineDealCarouselCard(props: {
+  row: OnlineOfferItem;
+  colors: { border: string; primary: string; rewardsGradientStart: string };
+  cardBg: string;
+  text: string;
+  sub: string;
+  shadow: (elevation?: number) => ViewStyle;
+}) {
+  const { row, colors, cardBg, text, sub, shadow } = props;
+  const [heroIdx, setHeroIdx] = useState(0);
+  const imgs = useMemo(() => normalizeOnlineGallery(row), [row]);
+
+  useEffect(() => {
+    setHeroIdx(0);
+  }, [row.id]);
+  const expiry = formatExpiryShort(row.expires_at);
+  const currency = (row.currency || 'USD').toUpperCase();
+  const fmtPrice = (n: number) => {
+    try {
+      return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 2 }).format(n);
+    } catch {
+      return `${currency} ${n.toFixed(2)}`;
+    }
+  };
+  const hasSale =
+    typeof row.sale_price === 'number' &&
+    row.sale_price > 0 &&
+    typeof row.regular_price === 'number' &&
+    row.regular_price > row.sale_price;
+  const showSinglePrice = !hasSale && typeof row.sale_price === 'number' && row.sale_price > 0;
+  const outboundUrl = row.source_url || row.affiliate_url || row.affiliate_tracking_url || '';
+
+  const onHeroScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const x = e.nativeEvent.contentOffset.x;
+    const next = Math.round(x / ONLINE_CARD_W);
+    setHeroIdx(Math.max(0, Math.min(Math.max(imgs.length - 1, 0), next)));
+  };
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.86}
+      onPress={() => void safeOpenAffiliate(outboundUrl)}
+      style={{
+        width: ONLINE_CARD_W,
+        marginHorizontal: 8,
+        marginBottom: 4,
+        borderRadius: 18,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: cardBg,
+        overflow: 'hidden',
+        ...shadow(6),
+      }}
+    >
+      <View style={{ height: 136, backgroundColor: `${colors.primary}10` }}>
+        <ScrollView
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={onHeroScroll}
+          scrollEventThrottle={16}
+          style={{ width: ONLINE_CARD_W, height: 136 }}
+        >
+          {(imgs.length ? imgs : [null]).map((uri, i) => (
+            <View key={`${uri ?? 'ph'}-${i}`} style={{ width: ONLINE_CARD_W, height: 136 }}>
+              {uri ? (
+                <Image source={{ uri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+              ) : (
+                <LinearGradient colors={[`${colors.rewardsGradientStart}77`, `${colors.primary}33`]} style={{ flex: 1 }} />
+              )}
+            </View>
+          ))}
+        </ScrollView>
+        {row.featured ? (
+          <View
+            style={{
+              position: 'absolute',
+              left: 10,
+              top: 10,
+              backgroundColor: `${colors.primary}E6`,
+              paddingHorizontal: 8,
+              paddingVertical: 3,
+              borderRadius: 8,
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900', textTransform: 'uppercase' }}>Featured</Text>
+          </View>
+        ) : null}
+        {row.discount_label ? (
+          <View
+            style={{
+              position: 'absolute',
+              bottom: 10,
+              right: 10,
+              backgroundColor: 'rgba(0,0,0,0.52)',
+              paddingHorizontal: 8,
+              paddingVertical: 4,
+              borderRadius: 8,
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 10, fontWeight: '900' }}>{row.discount_label}</Text>
+          </View>
+        ) : null}
+        {imgs.length > 1 ? (
+          <View style={{ position: 'absolute', bottom: 8, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 5 }}>
+            {imgs.map((_, i) => (
+              <View
+                key={`dot-${row.id}-${i}`}
+                style={{
+                  width: i === heroIdx ? 14 : 6,
+                  height: 6,
+                  borderRadius: 3,
+                  backgroundColor: i === heroIdx ? '#fff' : 'rgba(255,255,255,0.45)',
+                }}
+              />
+            ))}
+          </View>
+        ) : null}
+      </View>
+      <View style={{ paddingHorizontal: 13, paddingVertical: 12 }}>
+        <Text style={{ color: sub, fontSize: 10, fontWeight: '900' }} numberOfLines={1}>
+          {row.merchant_name || row.merchant_domain || 'Retailer'}
+        </Text>
+        <Text style={{ color: text, fontSize: 15, fontWeight: '900', marginTop: 6 }} numberOfLines={3}>
+          {row.title}
+        </Text>
+        {hasSale ? (
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: 8, gap: 6 }}>
+            <Text style={{ color: text, fontSize: 14, fontWeight: '900' }}>{fmtPrice(row.sale_price as number)}</Text>
+            <Text style={{ color: sub, fontSize: 11, fontWeight: '700', textDecorationLine: 'line-through' }}>
+              {fmtPrice(row.regular_price as number)}
+            </Text>
+          </View>
+        ) : showSinglePrice ? (
+          <Text style={{ color: text, fontSize: 14, fontWeight: '900', marginTop: 8 }}>
+            {fmtPrice(row.sale_price as number)}
+          </Text>
+        ) : null}
+        {expiry ? <Text style={{ color: sub, fontSize: 10, marginTop: 8, fontWeight: '700' }}>Ends {expiry}</Text> : null}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 export default function OffersScreen() {
   const skipFirstFocusRef = useRef(true);
   const lastSilentOffersFetchAt = useRef(0);
@@ -163,6 +430,11 @@ export default function OffersScreen() {
   const [onlineSlug, setOnlineSlug] = useState<string | null>(null);
   const [onlineLoadingMore, setOnlineLoadingMore] = useState(false);
   const [onlineBanner, setOnlineBanner] = useState<string | null>(null);
+
+  const [localSearchQuery, setLocalSearchQuery] = useState('');
+  const [onlineSearchQuery, setOnlineSearchQuery] = useState('');
+  const [localShelfFilter, setLocalShelfFilter] = useState<'all' | 'featured' | 'partners'>('all');
+  const [onlineQuickFilter, setOnlineQuickFilter] = useState<'all' | 'featured' | 'ending'>('all');
 
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
   const [redeemingOfferId, setRedeemingOfferId] = useState<string | null>(null);
@@ -325,20 +597,72 @@ export default function OffersScreen() {
 
   const localCategoryChoices = useMemo(() => [{ slug: null as string | null, label: 'All' }, ...offerCategories.map((c) => ({ slug: c.slug, label: c.label }))], [offerCategories]);
 
-  const filteredLocal = useMemo(() => {
+  const filteredLocalByCategory = useMemo(() => {
     if (!localCategorySlug) return localOffers;
     return localOffers.filter((o) => String(o.business_type || 'other') === localCategorySlug);
   }, [localOffers, localCategorySlug]);
 
-  const partnerLocal = useMemo(() => filteredLocal.filter((o) => !o.is_admin_offer), [filteredLocal]);
-  const featuredLocal = useMemo(() => filteredLocal.filter((o) => Boolean(o.is_admin_offer)), [filteredLocal]);
+  const filteredLocalByShelf = useMemo(() => {
+    if (localShelfFilter === 'featured') return filteredLocalByCategory.filter((o) => Boolean(o.is_admin_offer));
+    if (localShelfFilter === 'partners') return filteredLocalByCategory.filter((o) => !o.is_admin_offer);
+    return filteredLocalByCategory;
+  }, [filteredLocalByCategory, localShelfFilter]);
 
-  const filteredOnlineItems = useMemo(
+  const filteredLocal = useMemo(() => {
+    const q = localSearchQuery.trim().toLowerCase();
+    if (!q) return filteredLocalByShelf;
+    return filteredLocalByShelf.filter((o) => {
+      const blob = `${o.title ?? ''} ${o.business_name ?? ''} ${o.description ?? ''} ${o.address ?? ''}`.toLowerCase();
+      return blob.includes(q);
+    });
+  }, [filteredLocalByShelf, localSearchQuery]);
+
+  const featuredLocal = useMemo(() => filteredLocal.filter((o) => Boolean(o.is_admin_offer)), [filteredLocal]);
+  const partnerLocal = useMemo(() => filteredLocal.filter((o) => !o.is_admin_offer), [filteredLocal]);
+
+  const filteredOnlineByCategory = useMemo(
     () => (onlineSlug ? onlineItems.filter((x) => inferOnlineCategory(x).slug === onlineSlug) : onlineItems),
     [onlineItems, onlineSlug],
   );
-  const onlineFeatured = useMemo(() => filteredOnlineItems.filter((x) => x.featured), [filteredOnlineItems]);
-  const onlineAll = useMemo(() => filteredOnlineItems, [filteredOnlineItems]);
+
+  const filteredOnlineByQuick = useMemo(() => {
+    let rows = filteredOnlineByCategory;
+    if (onlineQuickFilter === 'featured') rows = rows.filter((x) => x.featured);
+    if (onlineQuickFilter === 'ending') {
+      const weekAhead = Date.now() + 7 * 86400000;
+      rows = rows.filter((x) => {
+        if (!x.expires_at) return false;
+        const t = new Date(x.expires_at).getTime();
+        return Number.isFinite(t) && t <= weekAhead && t > Date.now();
+      });
+    }
+    return rows;
+  }, [filteredOnlineByCategory, onlineQuickFilter]);
+
+  const filteredOnlineItems = useMemo(() => {
+    const q = onlineSearchQuery.trim().toLowerCase();
+    if (!q) return filteredOnlineByQuick;
+    return filteredOnlineByQuick.filter((row) => {
+      const blob = `${row.title} ${row.description ?? ''} ${row.merchant_name ?? ''} ${row.merchant_domain ?? ''} ${row.discount_label ?? ''}`.toLowerCase();
+      return blob.includes(q);
+    });
+  }, [filteredOnlineByQuick, onlineSearchQuery]);
+
+  const onlineFeaturedRows = useMemo(() => filteredOnlineItems.filter((x) => x.featured), [filteredOnlineItems]);
+  const onlineFeaturedIds = useMemo(() => new Set(onlineFeaturedRows.map((x) => x.id)), [onlineFeaturedRows]);
+  const onlineBrowseRows = useMemo(() => {
+    if (onlineFeaturedRows.length === 0) return filteredOnlineItems;
+    return filteredOnlineItems.filter((x) => !onlineFeaturedIds.has(x.id));
+  }, [filteredOnlineItems, onlineFeaturedIds, onlineFeaturedRows.length]);
+
+  const onlineCarouselColors = useMemo(
+    () => ({
+      border: colors.border,
+      primary: colors.primary,
+      rewardsGradientStart: colors.rewardsGradientStart,
+    }),
+    [colors.border, colors.primary, colors.rewardsGradientStart],
+  );
 
   const onlineChipChoices = useMemo(
     () => [{ slug: null as string | null, label: 'All' }, ...onlineCategories.map((c) => ({ slug: c.slug, label: c.label }))],
@@ -422,8 +746,8 @@ export default function OffersScreen() {
         }}
         style={[
           {
-            width: 300,
-            marginBottom: 12,
+            width: LOCAL_CARD_W,
+            marginBottom: 4,
             borderRadius: 18,
             overflow: 'hidden',
             borderWidth: 1,
@@ -482,86 +806,6 @@ export default function OffersScreen() {
       </TouchableOpacity>
     );
   };
-
-  const renderOnlineCard = (row: OnlineOfferItem) => {
-    const expiry = formatExpiryShort(row.expires_at);
-    const currency = (row.currency || 'USD').toUpperCase();
-    const fmtPrice = (n: number) => {
-      try {
-        return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 2 }).format(n);
-      } catch {
-        return `${currency} ${n.toFixed(2)}`;
-      }
-    };
-    const hasSale =
-      typeof row.sale_price === 'number' &&
-      row.sale_price > 0 &&
-      typeof row.regular_price === 'number' &&
-      row.regular_price > row.sale_price;
-    const showSinglePrice = !hasSale && typeof row.sale_price === 'number' && row.sale_price > 0;
-    const outboundUrl = row.source_url || row.affiliate_url || row.affiliate_tracking_url || '';
-    return (
-      <TouchableOpacity
-        key={row.id}
-        activeOpacity={0.86}
-        onPress={() => void safeOpenAffiliate(outboundUrl)}
-        style={{
-          width: 220,
-          marginHorizontal: 6,
-          marginBottom: 12,
-          borderRadius: 16,
-          borderWidth: 1,
-          borderColor: colors.border,
-          backgroundColor: cardBg,
-          overflow: 'hidden',
-          ...shadow(4),
-        }}
-      >
-        <View style={{ height: 110, backgroundColor: `${colors.primary}10` }}>
-          {row.image_url ? (
-            <Image source={{ uri: row.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-          ) : (
-            <LinearGradient colors={[`${colors.rewardsGradientStart}66`, `${colors.primary}22`]} style={{ flex: 1 }} />
-          )}
-          {row.featured ? (
-            <View style={{ position: 'absolute', left: 8, top: 8, backgroundColor: `${colors.primary}E6`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
-              <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900', textTransform: 'uppercase' }}>Featured</Text>
-            </View>
-          ) : null}
-          {row.discount_label ? (
-            <View style={{ position: 'absolute', bottom: 8, right: 8, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
-              <Text style={{ color: '#fff', fontSize: 10, fontWeight: '900' }}>{row.discount_label}</Text>
-            </View>
-          ) : null}
-        </View>
-        <View style={{ padding: 12 }}>
-          <Text style={{ color: sub, fontSize: 10, fontWeight: '900' }} numberOfLines={1}>
-            {row.merchant_name || row.merchant_domain || 'Retailer'}
-          </Text>
-          <Text style={{ color: text, fontSize: 14, fontWeight: '900', marginTop: 6 }} numberOfLines={3}>
-            {row.title}
-          </Text>
-          {hasSale ? (
-            <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: 8, gap: 6 }}>
-              <Text style={{ color: text, fontSize: 14, fontWeight: '900' }}>{fmtPrice(row.sale_price as number)}</Text>
-              <Text
-                style={{ color: sub, fontSize: 11, fontWeight: '700', textDecorationLine: 'line-through' }}
-              >
-                {fmtPrice(row.regular_price as number)}
-              </Text>
-            </View>
-          ) : showSinglePrice ? (
-            <Text style={{ color: text, fontSize: 14, fontWeight: '900', marginTop: 8 }}>
-              {fmtPrice(row.sale_price as number)}
-            </Text>
-          ) : null}
-          {expiry ? <Text style={{ color: sub, fontSize: 10, marginTop: 8, fontWeight: '700' }}>Ends {expiry}</Text> : null}
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
-
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: bg }} edges={['top']}>
@@ -628,9 +872,29 @@ export default function OffersScreen() {
             </View>
           ) : null}
 
-          <View style={{ marginTop: 8 }}>
+          <OffersSearchField
+            value={localSearchQuery}
+            onChangeText={setLocalSearchQuery}
+            placeholder="Search local offers…"
+            cardBg={cardBg}
+            border={colors.border}
+            text={text}
+            sub={sub}
+          />
+
+          <View style={{ marginTop: 4 }}>
             <OfferCategoryChips choices={localCategoryChoices} selectedSlug={localCategorySlug} onSelect={setLocalCategorySlug} {...rt} />
           </View>
+
+          <ShelfQuickChips
+            choices={[...LOCAL_SHELF_CHOICES]}
+            activeKey={localShelfFilter}
+            onSelect={(k) => setLocalShelfFilter(k as 'all' | 'featured' | 'partners')}
+            cardBg={cardBg}
+            text={text}
+            border={colors.border}
+            primary={colors.primary}
+          />
 
           {loadingLocalBootstrap ? (
             <View style={{ paddingVertical: 40, alignItems: 'center' }}>
@@ -639,7 +903,12 @@ export default function OffersScreen() {
           ) : featuredLocal.length > 0 ? (
             <>
               <Text style={{ color: text, fontSize: 13, fontWeight: '900', marginHorizontal: 16, marginTop: 14, marginBottom: 8 }}>Featured</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12, paddingBottom: 8 }}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ minHeight: MARKET_ROW_MIN_H }}
+                contentContainerStyle={{ paddingHorizontal: 16, gap: 12, alignItems: 'stretch', paddingVertical: 10 }}
+              >
                 {featuredLocal.map(renderLocalCard)}
               </ScrollView>
             </>
@@ -648,7 +917,12 @@ export default function OffersScreen() {
           {!loadingLocalBootstrap && partnerLocal.length > 0 ? (
             <>
               <Text style={{ color: text, fontSize: 13, fontWeight: '900', marginHorizontal: 16, marginTop: 8, marginBottom: 8 }}>Nearby</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12, paddingBottom: 8 }}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ minHeight: MARKET_ROW_MIN_H }}
+                contentContainerStyle={{ paddingHorizontal: 16, gap: 12, alignItems: 'stretch', paddingVertical: 10 }}
+              >
                 {partnerLocal.map(renderLocalCard)}
               </ScrollView>
             </>
@@ -659,7 +933,7 @@ export default function OffersScreen() {
               <Ionicons name="ticket-outline" size={40} color={sub} style={{ opacity: 0.5 }} />
               <Text style={{ color: text, fontWeight: '800', marginTop: 14 }}>No offers in this area</Text>
               <Text style={{ color: sub, textAlign: 'center', marginTop: 10, fontWeight: '600', lineHeight: 18 }}>
-                Try another category chip or widen your travels — listings update from partner locations nearby.
+                Try search, category chips, or shelf filters — listings update from partner locations nearby.
               </Text>
             </View>
           ) : null}
@@ -675,45 +949,104 @@ export default function OffersScreen() {
               <Text style={{ color: colors.warning, fontSize: 13, fontWeight: '700' }}>{onlineBanner}</Text>
             </View>
           ) : null}
-          <OfferCategoryChips
-            choices={onlineChipChoices}
-            selectedSlug={onlineSlug}
-            onSelect={setOnlineSlug}
-            {...rt}
+
+          <OffersSearchField
+            value={onlineSearchQuery}
+            onChangeText={setOnlineSearchQuery}
+            placeholder="Search online deals…"
+            cardBg={cardBg}
+            border={colors.border}
+            text={text}
+            sub={sub}
           />
 
-          {onlineFeatured.length > 0 ? (
+          <OfferCategoryChips choices={onlineChipChoices} selectedSlug={onlineSlug} onSelect={setOnlineSlug} {...rt} />
+
+          <ShelfQuickChips
+            choices={[...ONLINE_SHELF_CHOICES]}
+            activeKey={onlineQuickFilter}
+            onSelect={(k) => setOnlineQuickFilter(k as 'all' | 'featured' | 'ending')}
+            cardBg={cardBg}
+            text={text}
+            border={colors.border}
+            primary={colors.primary}
+          />
+
+          {refreshingOnline && onlineItems.length === 0 ? (
+            <View style={{ paddingVertical: 28, alignItems: 'center' }}>
+              <ActivityIndicator color={colors.primary} />
+            </View>
+          ) : null}
+
+          {!refreshingOnline && onlineItems.length === 0 ? (
+            <View style={{ marginHorizontal: 16, marginTop: 16, alignItems: 'center', padding: 24 }}>
+              <Ionicons name="globe-outline" size={40} color={sub} style={{ opacity: 0.5 }} />
+              <Text style={{ color: text, fontWeight: '800', marginTop: 14 }}>No online deals yet</Text>
+              <Text style={{ color: sub, textAlign: 'center', marginTop: 10, fontWeight: '600', lineHeight: 18 }}>
+                Pull to refresh — deals load from our partner catalog when available.
+              </Text>
+            </View>
+          ) : null}
+
+          {!refreshingOnline && onlineItems.length > 0 && filteredOnlineItems.length === 0 ? (
+            <View style={{ marginHorizontal: 16, marginTop: 12, alignItems: 'center', padding: 20 }}>
+              <Ionicons name="search-outline" size={36} color={sub} style={{ opacity: 0.55 }} />
+              <Text style={{ color: text, fontWeight: '800', marginTop: 12 }}>No matches</Text>
+              <Text style={{ color: sub, textAlign: 'center', marginTop: 8, fontWeight: '600', lineHeight: 18 }}>
+                Adjust search or chips — broad filters usually surface more listings.
+              </Text>
+            </View>
+          ) : null}
+
+          {onlineFeaturedRows.length > 0 ? (
             <>
               <Text style={{ color: text, fontSize: 13, fontWeight: '900', marginHorizontal: 16, marginTop: 14, marginBottom: 10 }}>Featured</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12, gap: 10, paddingBottom: 12 }}>
-                {onlineFeatured.map((row) => (
-                  <TouchableOpacity
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ minHeight: MARKET_ROW_MIN_H }}
+                contentContainerStyle={{ paddingHorizontal: 8, alignItems: 'stretch', paddingVertical: 10 }}
+              >
+                {onlineFeaturedRows.map((row) => (
+                  <OnlineDealCarouselCard
                     key={row.id}
-                    activeOpacity={0.88}
-                    onPress={() => void safeOpenAffiliate(row.source_url || row.affiliate_url || row.affiliate_tracking_url || '')}
-                    style={{ width: 220, marginHorizontal: 4, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: cardBg, overflow: 'hidden', ...shadow(6) }}
-                  >
-                    <View style={{ height: 120, backgroundColor: `${colors.primary}10` }}>
-                      {row.image_url ? (
-                        <Image source={{ uri: row.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-                      ) : (
-                        <LinearGradient colors={[`${colors.primary}77`, `${colors.ctaGradientEnd}33`]} style={{ flex: 1 }} />
-                      )}
-                    </View>
-                    <View style={{ padding: 12 }}>
-                      <Text style={{ color: sub, fontSize: 10 }} numberOfLines={1}>{row.merchant_domain}</Text>
-                      <Text style={{ color: text, fontSize: 14, fontWeight: '900' }} numberOfLines={2}>{row.title}</Text>
-                    </View>
-                  </TouchableOpacity>
+                    row={row}
+                    colors={onlineCarouselColors}
+                    cardBg={cardBg}
+                    text={text}
+                    sub={sub}
+                    shadow={shadow}
+                  />
                 ))}
               </ScrollView>
             </>
           ) : null}
 
-          <Text style={{ color: text, fontSize: 13, fontWeight: '900', marginHorizontal: 16, marginTop: 8, marginBottom: 12 }}>All deals</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 10, gap: 6, paddingBottom: 8 }}>
-            {onlineAll.map(renderOnlineCard)}
-          </ScrollView>
+          {onlineBrowseRows.length > 0 ? (
+            <>
+              <Text style={{ color: text, fontSize: 13, fontWeight: '900', marginHorizontal: 16, marginTop: 8, marginBottom: 12 }}>
+                {onlineFeaturedRows.length > 0 ? 'More deals' : 'Deals'}
+              </Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ minHeight: MARKET_ROW_MIN_H }}
+                contentContainerStyle={{ paddingHorizontal: 8, alignItems: 'stretch', paddingVertical: 10 }}
+              >
+                {onlineBrowseRows.map((row) => (
+                  <OnlineDealCarouselCard
+                    key={row.id}
+                    row={row}
+                    colors={onlineCarouselColors}
+                    cardBg={cardBg}
+                    text={text}
+                    sub={sub}
+                    shadow={shadow}
+                  />
+                ))}
+              </ScrollView>
+            </>
+          ) : null}
 
           {onlineLoadingMore ? (
             <ActivityIndicator style={{ marginTop: 8 }} color={colors.primary} />

@@ -91,6 +91,17 @@ def _row_to_item(row: dict[str, Any]) -> dict[str, Any]:
     sale = _coerce_price(row.get("sale_price"))
     discount_label = (row.get("discount_label") or "").strip() or _autodetect_discount_label(regular, sale)
     affiliate_url = (row.get("affiliate_url") or "").strip() or (row.get("source_url") or "").strip() or None
+    hero = row.get("image_url")
+    hero_s = str(hero).strip() if hero else ""
+    img_urls = row.get("image_urls") if isinstance(row.get("image_urls"), list) else None
+    gallery: list[str] = []
+    if img_urls:
+        for u in img_urls:
+            us = str(u or "").strip()
+            if us.startswith(("http://", "https://")) and us not in gallery:
+                gallery.append(us)
+    if hero_s.startswith(("http://", "https://")) and hero_s not in gallery:
+        gallery.insert(0, hero_s)
     return {
         "id": str(row.get("id") or ""),
         "title": row.get("title") or "Offer",
@@ -100,7 +111,8 @@ def _row_to_item(row: dict[str, Any]) -> dict[str, Any]:
         "category_slug": row.get("category_slug"),
         "category_label": _category_label_for_slug(row.get("category_slug"), row.get("category_label")),
         "discount_label": discount_label,
-        "image_url": row.get("image_url"),
+        "image_url": hero_s or None,
+        "image_urls": gallery if gallery else ([hero_s] if hero_s.startswith(("http://", "https://")) else []),
         "expires_at": row.get("expires_at"),
         "affiliate_url": affiliate_url,
         "source_url": row.get("source_url"),

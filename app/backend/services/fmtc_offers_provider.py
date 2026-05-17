@@ -170,18 +170,27 @@ def _deal_tracking_url(deal: dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _best_logo(merchant: Optional[dict[str, Any]]) -> Optional[str]:
+def _best_logo(
+    merchant: Optional[dict[str, Any]],
+    *,
+    prefer_screenshots: bool = False,
+) -> Optional[str]:
+    """Pick the largest merchant logo image.
+
+    FMTC merchant `logos` often include auto-generated ``/screenshots/`` URLs that look like
+    generic website captures. For **offer hero art** we deprioritize those unless nothing else exists.
+    """
     if not merchant:
         return None
     logos = merchant.get("logos")
     if not isinstance(logos, list):
         return None
-    best: tuple[int, str] | None = None
+    best: tuple[float, str] | None = None
     for logo in logos:
         if not isinstance(logo, dict):
             continue
         url = str(logo.get("image_url") or "").strip()
-        if not url:
+        if not url.startswith(("http://", "https://")):
             continue
         width = int(_float_or_none(logo.get("width")) or 0)
         height = int(_float_or_none(logo.get("height")) or 0)
@@ -190,19 +199,86 @@ def _best_logo(merchant: Optional[dict[str, Any]]) -> Optional[str]:
             if len(parts) == 2:
                 width = int(_float_or_none(parts[0]) or 0)
                 height = int(_float_or_none(parts[1]) or 0)
-        score = width * height
-        if "/screenshots/" in url:
-            score += 1_000_000
+        score = float(width * height)
+        lower = url.lower()
+        is_shot = "/screenshots/" in lower or "screenshot" in lower
+        if prefer_screenshots:
+            if is_shot:
+                score += 1_000_000.0
+        else:
+            if is_shot:
+                score *= 0.01
         if best is None or score > best[0]:
             best = (score, url)
     return best[1] if best else None
 
 
+def _append_unique_urls(bucket: list[str], raw: Any) -> None:
+    if isinstance(raw, str):
+        u = raw.strip()
+        if u.startswith(("http://", "https://")) and u not in bucket:
+            bucket.append(u)
+        return
+    if isinstance(raw, list):
+        for x in raw:
+            _append_unique_urls(bucket, x)
+        return
+    if isinstance(raw, dict):
+        for key in (
+            "image_url",
+            "url",
+            "src",
+            "href",
+            "large",
+            "medium",
+            "small",
+            "thumbnail",
+            "banner",
+            "full",
+        ):
+            _append_unique_urls(bucket, raw.get(key))
+
+
+def _deal_media_urls(deal: dict[str, Any]) -> list[str]:
+    """Collect explicit creative / photo URLs from the deal payload (FMTC varies by advertiser)."""
+    out: list[str] = []
+    for key in (
+        "image",
+        "images",
+        "coupon_image",
+        "banner_image",
+        "thumbnail_url",
+        "creative_image",
+        "secondary_image",
+        "picture",
+        "pictures",
+        "photos",
+        "gallery",
+        "deal_images",
+        "creative_images",
+        "creatives",
+    ):
+        _append_unique_urls(out, deal.get(key))
+    meta = deal.get("metadata")
+    if isinstance(meta, dict):
+        for mk in ("image", "images", "banner", "creative_url", "photo"):
+            _append_unique_urls(out, meta.get(mk))
+    return out
+
+
+def _visual_for_deal(deal: dict[str, Any], merchant: Optional[dict[str, Any]]) -> tuple[Optional[str], list[str]]:
+    """Primary hero URL plus ordered gallery (deal creatives first, then merchant logo fallback)."""
+    media = _deal_media_urls(deal)
+    primary = media[0] if media else None
+    if not primary:
+        primary = _best_logo(merchant, prefer_screenshots=False)
+        return primary, ([primary] if primary else [])
+    return primary, media[:12]
+
+
 def _image_for_deal(deal: dict[str, Any], merchant: Optional[dict[str, Any]]) -> Optional[str]:
-    image = str(deal.get("image") or "").strip()
-    if image.startswith(("http://", "https://")):
-        return image
-    return _best_logo(merchant)
+    hero, _gallery = _visual_for_deal(deal, merchant)
+    return hero
 
 
 def _discount_label(deal: dict[str, Any]) -> str:
@@ -262,6 +338,40 @@ def _merchant_for_deal(deal: dict[str, Any], merchants: dict[str, dict[str, Any]
     return merchants.get(mid)
 
 
+def _normalized_domain_and_description(item: dict[str, Any]) -> tuple[str, str]:
+    domain = str(item.get("merchant_domain") or item.get("merchant_name") or "").strip().lower()
+    desc_src = str(item.get("description") or "").strip().lower()
+    if not desc_src:
+        desc_src = str(item.get("title") or "").strip().lower()
+    return domain, " ".join(desc_src.split())
+
+
+def _dedupe_online_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One listing per retailer when copy matches; distinct descriptions stay separate."""
+
+    def rank(it: dict[str, Any]) -> tuple[float, float, int, float]:
+        featured = 1.0 if it.get("featured") else 0.0
+        sale = float(_money_or_none(it.get("sale_price")) or 0)
+        regular = float(_money_or_none(it.get("regular_price")) or 0)
+        savings = regular - sale if regular > 0 and sale > 0 and regular > sale else 0.0
+        imgs = it.get("image_urls") if isinstance(it.get("image_urls"), list) else []
+        img_ct = len(imgs)
+        return (featured, savings, float(img_ct), sale)
+
+    scored = sorted(items, key=rank, reverse=True)
+    seen: set[tuple[str, str]] = set()
+    out: list[dict[str, Any]] = []
+    for it in scored:
+        dom, desc = _normalized_domain_and_description(it)
+        site_key = dom or str(it.get("id") or "")
+        fingerprint = (site_key, desc)
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        out.append(it)
+    return out
+
+
 def _deal_to_online_item(deal: dict[str, Any], merchant: Optional[dict[str, Any]]) -> dict[str, Any]:
     category_slug, category_label = _best_category(deal)
     source_url = _deal_destination_url(deal, merchant)
@@ -270,6 +380,7 @@ def _deal_to_online_item(deal: dict[str, Any], merchant: Optional[dict[str, Any]
     sale = _money_or_none(deal.get("sale_price"))
     regular = _money_or_none(deal.get("was_price"))
     percent = _float_or_none(deal.get("percent")) or 0
+    hero, gallery = _visual_for_deal(deal, merchant)
     return {
         "id": f"fmtc_{deal.get('id')}",
         "title": str(deal.get("label") or deal.get("merchant_name") or "Online deal").strip(),
@@ -279,7 +390,8 @@ def _deal_to_online_item(deal: dict[str, Any], merchant: Optional[dict[str, Any]
         "category_slug": category_slug,
         "category_label": category_label,
         "discount_label": _discount_label(deal),
-        "image_url": _image_for_deal(deal, merchant),
+        "image_url": hero,
+        "image_urls": gallery,
         "expires_at": deal.get("end_date"),
         "affiliate_url": source_url,
         "affiliate_tracking_url": tracking_url,
@@ -288,7 +400,7 @@ def _deal_to_online_item(deal: dict[str, Any], merchant: Optional[dict[str, Any]
         "sale_price": sale,
         "currency": "USD",
         "asin": None,
-        "featured": bool(percent >= 20 or sale or _image_for_deal(deal, merchant)),
+        "featured": bool(percent >= 20 or sale or hero),
     }
 
 
@@ -365,6 +477,7 @@ def fetch_fmtc_online_catalog(*, category_slug: Optional[str] = None, cursor: Op
     deals, merchants = _load_feed()
     active = [d for d in deals if _is_active_deal(d)]
     items = [_deal_to_online_item(d, _merchant_for_deal(d, merchants)) for d in active]
+    items = _dedupe_online_items(items)
     if category_slug:
         items = [it for it in items if str(it.get("category_slug") or "") == category_slug]
     offset = _decode_cursor(cursor)

@@ -91,6 +91,9 @@ def test_fmtc_provider_filters_expired_and_maps_online_items(monkeypatch):
                     "merchant_name": "Road Store",
                     "status": "active",
                     "label": "Save 25% on road kits",
+                    "description": "Stock up before your next trip",
+                    "image": "https://cdn.example.com/road-offer.jpg",
+                    "images": ["https://cdn.example.com/alt1.jpg"],
                     "end_date": "2076-05-16T00:00:00Z",
                     "affiliate_url": "https://example.com/aff",
                     "cascading_full_url": "https://road.example.com/item",
@@ -124,9 +127,82 @@ def test_fmtc_provider_filters_expired_and_maps_online_items(monkeypatch):
     assert len(cat["items"]) == 1
     assert cat["items"][0]["id"] == "fmtc_1"
     assert cat["items"][0]["discount_label"] == "25% off"
-    assert cat["items"][0]["image_url"] == "https://img.example.com/screenshot.png"
+    assert cat["items"][0]["image_url"] == "https://cdn.example.com/road-offer.jpg"
+    assert cat["items"][0]["image_urls"][:2] == [
+        "https://cdn.example.com/road-offer.jpg",
+        "https://cdn.example.com/alt1.jpg",
+    ]
     assert cat["items"][0]["affiliate_url"] == "https://road.example.com/item"
     assert cat["items"][0]["affiliate_tracking_url"] == "https://example.com/aff"
+
+
+def test_fmtc_online_dedupes_same_site_duplicate_description(monkeypatch):
+    monkeypatch.setenv("FMTC_API_TOKEN", "test-token")
+    sys.modules.pop("services.fmtc_offers_provider", None)
+    mod = importlib.reload(importlib.import_module("services.fmtc_offers_provider"))
+    monkeypatch.setattr(
+        mod,
+        "_load_feed",
+        lambda: (
+            [
+                {
+                    "id": 101,
+                    "merchant_id": 99,
+                    "merchant_name": "DupMart",
+                    "status": "active",
+                    "label": "Offer A",
+                    "description": "Same promo copy",
+                    "image": "https://cdn.example.com/a.jpg",
+                    "images": ["https://cdn.example.com/a2.jpg"],
+                    "end_date": "2076-05-16T00:00:00Z",
+                    "affiliate_url": "https://track.example/a",
+                    "cascading_full_url": "https://dupmart.example.com/a",
+                    "percent": 25,
+                    "categories": ["retail"],
+                    "locations": [],
+                },
+                {
+                    "id": 102,
+                    "merchant_id": 99,
+                    "merchant_name": "DupMart",
+                    "status": "active",
+                    "label": "Offer B",
+                    "description": "Same promo copy",
+                    "image": "https://cdn.example.com/b.jpg",
+                    "end_date": "2076-05-16T00:00:00Z",
+                    "affiliate_url": "https://track.example/b",
+                    "cascading_full_url": "https://dupmart.example.com/b",
+                    "percent": 25,
+                    "categories": ["retail"],
+                    "locations": [],
+                },
+                {
+                    "id": 103,
+                    "merchant_id": 99,
+                    "merchant_name": "DupMart",
+                    "status": "active",
+                    "label": "Offer C",
+                    "description": "Different headline",
+                    "image": "https://cdn.example.com/c.jpg",
+                    "end_date": "2076-05-16T00:00:00Z",
+                    "affiliate_url": "https://track.example/c",
+                    "cascading_full_url": "https://dupmart.example.com/c",
+                    "percent": 25,
+                    "categories": ["retail"],
+                    "locations": [],
+                },
+            ],
+            {},
+        ),
+    )
+
+    cat = mod.fetch_fmtc_online_catalog(category_slug=None, cursor=None)
+    ids = {row["id"] for row in cat["items"]}
+
+    assert len(cat["items"]) == 2
+    assert "fmtc_101" in ids
+    assert "fmtc_103" in ids
+    assert "fmtc_102" not in ids
 
 
 def test_fmtc_local_requires_address_and_coordinates(monkeypatch):
