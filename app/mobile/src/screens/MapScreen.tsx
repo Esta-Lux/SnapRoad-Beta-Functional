@@ -196,6 +196,12 @@ import { parseLiveLocationUpdate } from '../api/dto/realtime';
 import OrionChat, { type OrionPlaceSuggestion } from '../components/orion/OrionChat';
 import OrionQuickMic from '../components/orion/OrionQuickMic';
 import { useOrionCompanion } from '../orion/companion/useOrionCompanion';
+import {
+  buildOrionNavVoiceSnapshot,
+  getOrionCompanionMemory,
+  requestOrionAdvisorySpeech,
+} from '../orion/companion';
+import type { OrionHudLineMeta } from '../orion/companion/types';
 import TripSummaryModal from '../components/common/Modal';
 import { useNavigationMode } from '../contexts/NavigatingContext';
 import { useCameraController } from '../hooks/useCameraController';
@@ -2278,7 +2284,10 @@ export default function MapScreen() {
   const handledRedeemRouteRef = useRef<string | null>(null);
   const [showOrion, setShowOrion] = useState(false);
   const [orionPendingSuggestions, setOrionPendingSuggestions] = useState<OrionPlaceSuggestion[]>([]);
-  const [orionQuickReply, setOrionQuickReply] = useState<string | null>(null);
+  const [orionHudLine, setOrionHudLine] = useState<OrionHudLineMeta | null>(null);
+  const pushOrionHud = useCallback((meta: OrionHudLineMeta) => {
+    setOrionHudLine(meta);
+  }, []);
   const [showMenu, setShowMenu] = useState(false);
   const [currentAddress, setCurrentAddress] = useState<string>('');
   const [recentSearches, setRecentSearches] = useState<GeocodeResult[]>([]);
@@ -3364,7 +3373,20 @@ export default function MapScreen() {
       void hapticOfferNearby();
       // Advisory rate source: during an SDK-authoritative trip, voice.ts defers this line
       // for a few seconds after a native turn cue so the two TTS streams don't overlap.
-      speak(`Orion: SnapRoad offer nearby — ${name}.`, 'normal', drivingMode, { rateSource: 'advisory' });
+      requestOrionAdvisorySpeech({
+        message: `Orion: SnapRoad offer nearby — ${name}.`,
+        category: 'offer',
+        priority: 'normal',
+        drivingMode,
+        voiceMuted: navVoiceMuted,
+        navVoice: buildOrionNavVoiceSnapshot(nav.navigationProgress?.nextStepDistanceMeters),
+        memory: getOrionCompanionMemory(),
+        rawContext: {
+          isNavigating: true,
+          nextStepDistanceMeters: nav.navigationProgress?.nextStepDistanceMeters,
+        },
+        onUiLine: pushOrionHud,
+      });
       break;
     }
   }, [nav.isNavigating, recommendedNearbyOffers, location.lat, location.lng, drivingMode]);
@@ -3406,13 +3428,24 @@ export default function MapScreen() {
     if (announcedRef.current.has(annKey)) return;
     announcedRef.current.add(annKey);
 
-    if (isNearBand) {
-      void hapticHazardAhead();
-      speak('Police reported ahead.', 'high', drivingMode, { rateSource: 'advisory' });
-    } else {
-      void hapticHazardAhead();
-      speak('Police reported about two miles ahead.', 'high', drivingMode, { rateSource: 'advisory' });
-    }
+    const policeMsg = isNearBand
+      ? 'Police reported ahead.'
+      : 'Police reported about two miles ahead.';
+    void hapticHazardAhead();
+    requestOrionAdvisorySpeech({
+      message: policeMsg,
+      category: 'police',
+      priority: 'urgent',
+      drivingMode,
+      voiceMuted: navVoiceMuted,
+      navVoice: buildOrionNavVoiceSnapshot(nav.navigationProgress?.nextStepDistanceMeters),
+      memory: getOrionCompanionMemory(),
+      rawContext: {
+        isNavigating: true,
+        nextStepDistanceMeters: nav.navigationProgress?.nextStepDistanceMeters,
+      },
+      onUiLine: pushOrionHud,
+    });
     setActiveReportCard(pick.inc);
     if (reportCardTimeoutRef.current) clearTimeout(reportCardTimeoutRef.current);
     reportCardTimeoutRef.current = setTimeout(() => setActiveReportCard(null), isNearBand ? 8000 : 10000);
@@ -3470,12 +3503,20 @@ export default function MapScreen() {
         const name = offer.business_name || 'a nearby store';
         const distance = typeof offer.distance_miles === 'number' ? offer.distance_miles : 0.5;
         // Advisory rate source: held around native turn cues, otherwise spoken at driving-mode rate.
-        speak(
-          `There's a ${offer.discount_percent}% off offer at ${name}, about ${distance.toFixed(1)} miles ahead. Would you like me to add a stop?`,
-          'normal',
+        requestOrionAdvisorySpeech({
+          message: `There's a ${offer.discount_percent}% off offer at ${name}, about ${distance.toFixed(1)} miles ahead. Would you like me to add a stop?`,
+          category: 'offer',
+          priority: 'normal',
           drivingMode,
-          { rateSource: 'advisory' },
-        );
+          voiceMuted: navVoiceMuted,
+          navVoice: buildOrionNavVoiceSnapshot(nav.navigationProgress?.nextStepDistanceMeters),
+          memory: getOrionCompanionMemory(),
+          rawContext: {
+            isNavigating: true,
+            nextStepDistanceMeters: nav.navigationProgress?.nextStepDistanceMeters,
+          },
+          onUiLine: pushOrionHud,
+        });
       })
       .catch((e) => logMapDataIssue('GET /api/navigation/nearby-offers', e));
   }, [nav.isNavigating, location.lat, location.lng, drivingMode]);
@@ -3493,7 +3534,20 @@ export default function MapScreen() {
       const n = hp[0];
       announcedRef.current.add(`amb:${n.id}`);
       setActiveReportCard(n);
-      speak(`Caution: ${n.title} reported ahead.`, 'normal', drivingMode);
+      requestOrionAdvisorySpeech({
+        message: `Caution: ${n.title} reported ahead.`,
+        category: 'safety',
+        priority: 'urgent',
+        drivingMode,
+        voiceMuted: navVoiceMuted,
+        navVoice: buildOrionNavVoiceSnapshot(nav.navigationProgress?.nextStepDistanceMeters),
+        memory: getOrionCompanionMemory(),
+        rawContext: {
+          isNavigating: nav.isNavigating,
+          nextStepDistanceMeters: nav.navigationProgress?.nextStepDistanceMeters,
+        },
+        onUiLine: pushOrionHud,
+      });
       if (reportCardTimeoutRef.current) clearTimeout(reportCardTimeoutRef.current);
       reportCardTimeoutRef.current = setTimeout(() => setActiveReportCard(null), 8000);
     }
@@ -4156,10 +4210,16 @@ export default function MapScreen() {
   ]);
 
   useEffect(() => {
-    if (!orionQuickReply) return;
-    const t = setTimeout(() => setOrionQuickReply(null), nav.isNavigating ? 5500 : 4200);
+    if (!orionHudLine) return;
+    const ms =
+      orionHudLine.source === 'companion' && nav.isNavigating
+        ? 7000
+        : nav.isNavigating
+          ? 5500
+          : 4200;
+    const t = setTimeout(() => setOrionHudLine(null), ms);
     return () => clearTimeout(t);
-  }, [orionQuickReply, nav.isNavigating]);
+  }, [orionHudLine, nav.isNavigating]);
 
   const orionContext = useMemo(() => ({
     lat: location.lat,
@@ -4234,27 +4294,27 @@ export default function MapScreen() {
       return {
         isNavigating: nav.isNavigating,
         speedMph: speed,
-        etaMinutes: orionCurrentRoute?.remainingMinutes ?? null,
-        distanceMiles: orionCurrentRoute?.distanceMiles ?? null,
+        etaMinutes: orionCurrentRoute?.remainingMinutes ?? undefined,
+        distanceMiles: orionCurrentRoute?.distanceMiles ?? undefined,
         trafficLevel: navCongestionSevere ? 'severe' : 'light',
         congestionNearManeuver: navCongestionSevere,
-        currentRoad: orionCurrentRoute?.currentStep ?? null,
-        nextManeuver: orionCurrentRoute?.nextStep ?? null,
-        nextStepDistanceMeters: nav.navigationProgress?.nextStepDistanceMeters ?? null,
+        currentRoad: orionCurrentRoute?.currentStep ?? undefined,
+        nextManeuver: orionCurrentRoute?.nextStep ?? undefined,
+        nextStepDistanceMeters: nav.navigationProgress?.nextStepDistanceMeters ?? undefined,
         rerouteDetected: nav.isRerouting,
         incidentNearby: false,
         driveDurationMinutes: tripMs / 60_000,
         gemsEarned: user?.gems,
         gemsEarnedThisTrip: gemOverlayAmount,
-        destination: nav.navigationData?.destination?.name ?? orionCurrentRoute?.destination ?? null,
-        userName: user?.name || user?.email || null,
-        tripId: navigationTripIdRef.current || null,
-        weather: mapWeather.summary ?? null,
+        destination: nav.navigationData?.destination?.name ?? orionCurrentRoute?.destination ?? undefined,
+        userName: user?.name || user?.email || undefined,
+        tripId: navigationTripIdRef.current || undefined,
+        weather: mapWeather.summary ?? undefined,
         voiceMuted: navVoiceMuted,
         drivingMode,
       };
     },
-    onCompanionLine: setOrionQuickReply,
+    onCompanionLine: pushOrionHud,
   });
 
   useEffect(() => {
@@ -5810,7 +5870,7 @@ export default function MapScreen() {
                     context={orionContext}
                     onOpenChat={() => setShowOrion(true)}
                     onSuggestions={(items) => setOrionPendingSuggestions(items)}
-                    onReply={(text) => setOrionQuickReply(text)}
+                    onReply={(text) => pushOrionHud({ text, source: 'advisory' })}
                     onAction={(action: {
                       type: string;
                       name?: string;
@@ -6731,7 +6791,7 @@ export default function MapScreen() {
         </TouchableOpacity>
       )}
 
-      {nav.isNavigating && !!orionQuickReply && (
+      {nav.isNavigating && !!orionHudLine?.text && (
         <View
           style={[
             s.orionReplyStrip,
@@ -6743,9 +6803,24 @@ export default function MapScreen() {
           ]}
         >
           <Ionicons name="sparkles" size={14} color={colors.primary} />
-          <Text style={[s.orionReplyStripText, { color: colors.text }]} numberOfLines={2}>
-            {orionQuickReply}
-          </Text>
+          <View style={{ flex: 1, marginLeft: 6 }}>
+            {orionHudLine.source === 'companion' && orionHudLine.mood ? (
+              <Text
+                style={{
+                  color: colors.primary,
+                  fontSize: 10,
+                  fontWeight: '700',
+                  textTransform: 'capitalize',
+                  marginBottom: 2,
+                }}
+              >
+                Orion · {orionHudLine.mood}
+              </Text>
+            ) : null}
+            <Text style={[s.orionReplyStripText, { color: colors.text }]} numberOfLines={2}>
+              {orionHudLine.text}
+            </Text>
+          </View>
         </View>
       )}
 

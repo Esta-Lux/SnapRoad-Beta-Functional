@@ -1,5 +1,6 @@
 import type { NavStep } from './navModel';
 import type { DrivingMode } from '../types';
+import { shouldSkipOrionBuddyTail } from '../orion/companion/buddyTailPolicy';
 
 export type GuidanceBucket = 'preparatory' | 'advance' | 'imminent';
 
@@ -94,6 +95,8 @@ function buddyTail(ctx: OrionGuidanceContext): string {
 export function orionizeNavigationUtterance(base: string, ctx: OrionGuidanceContext): string {
   const clean = base.trim();
   if (!enabled() || !clean) return clean;
+
+  if (shouldSkipOrionBuddyTail(ctx.bucket)) return clean;
 
   const tail = buddyTail(ctx);
   if (!tail) return clean;

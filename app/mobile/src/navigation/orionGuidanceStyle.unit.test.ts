@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { NavStep } from './navModel';
+import { getOrionCompanionMemory, resetOrionTripSession } from '../orion/companion/orionCompanionShared';
 import { orionizeNavigationUtterance } from './orionGuidanceStyle';
 
 const step: NavStep = {
@@ -57,4 +58,42 @@ test('adds clean personalized flavor to advance turn cues only', () => {
   assert.match(out, /^In 500 feet, turn right\. /);
   assert.ok(out.length < 150);
   assert.doesNotMatch(out, /crash|police|idiot|stupid|damn|hell/i);
+});
+
+test('skips buddy tail when companion spoke recently', () => {
+  const prev = process.env.EXPO_PUBLIC_ORION_COMPANION_V1;
+  process.env.EXPO_PUBLIC_ORION_COMPANION_V1 = '1';
+  resetOrionTripSession();
+  const memory = getOrionCompanionMemory();
+  memory.clear();
+  memory.recordSpoken(
+    {
+      shouldSpeak: true,
+      message: 'Trip on. About 12 min if traffic behaves.',
+      category: 'trip',
+      mood: 'focused',
+      priority: 'normal',
+      eventType: 'drive_started',
+    },
+    Date.now(),
+  );
+
+  const turnStep: NavStep = {
+    ...step,
+    kind: 'turn_right',
+    rawType: 'turn',
+    displayInstruction: 'Turn right',
+    instruction: 'Turn right',
+  };
+  const phrase = 'In 500 feet, turn right.';
+  const out = orionizeNavigationUtterance(phrase, {
+    bucket: 'advance',
+    step: turnStep,
+    distanceMeters: 150,
+    drivingMode: 'adaptive',
+  });
+
+  assert.equal(out, phrase);
+  if (prev === undefined) delete process.env.EXPO_PUBLIC_ORION_COMPANION_V1;
+  else process.env.EXPO_PUBLIC_ORION_COMPANION_V1 = prev;
 });

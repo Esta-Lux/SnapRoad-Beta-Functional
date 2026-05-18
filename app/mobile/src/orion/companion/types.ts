@@ -6,6 +6,8 @@ export type OrionTrafficLevel = 'light' | 'moderate' | 'heavy' | 'severe' | 'unk
 
 export type OrionTimeOfDay = 'morning' | 'afternoon' | 'evening' | 'night';
 
+export type OrionTripPhase = 'opening' | 'cruising' | 'stressed' | 'closing';
+
 export type OrionCompanionEventType =
   | 'drive_started'
   | 'smooth_drive'
@@ -25,7 +27,12 @@ export type OrionMessageCategory =
   | 'reroute'
   | 'reward'
   | 'safety'
-  | 'checkin';
+  | 'checkin'
+  | 'offer'
+  | 'police';
+
+/** Categories used by MapScreen advisories and the companion engine. */
+export type OrionAdvisoryCategory = OrionMessageCategory;
 
 export type OrionDriveContextInput = {
   isNavigating?: boolean;
@@ -108,4 +115,14 @@ export type DialogueVariant = {
   id: string;
   template: string;
   moods?: OrionMood[];
+  phases?: OrionTripPhase[];
+  maxStress?: OrionStressLevel;
+  /** When true, only if session.flags.openedWithLine */
+  requiresOpenedWithLine?: boolean;
+};
+
+export type OrionHudLineMeta = {
+  text: string;
+  mood?: OrionMood;
+  source: 'companion' | 'advisory';
 };

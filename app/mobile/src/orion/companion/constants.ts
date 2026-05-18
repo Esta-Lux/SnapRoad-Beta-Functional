@@ -16,7 +16,12 @@ export const CATEGORY_COOLDOWN_MS: Record<OrionMessageCategory, number> = {
   safety: 2 * 60 * 1000,
   trip: 4 * 60 * 1000,
   checkin: 30 * 60 * 1000,
+  offer: 8 * 60 * 1000,
+  police: 5 * 60 * 1000,
 };
+
+/** Skip nav buddy tails after a companion line in this window. */
+export const BUDDY_TAIL_SUPPRESS_AFTER_COMPANION_MS = 2 * 60 * 1000;
 
 /** Per-event probability to speak when cadence otherwise allows (bias toward silence). */
 export const EVENT_SPEAK_PROBABILITY: Record<string, number> = {

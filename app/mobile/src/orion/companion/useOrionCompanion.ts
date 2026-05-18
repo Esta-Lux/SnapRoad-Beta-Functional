@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { DrivingMode } from '../../types';
-import { speak } from '../../utils/voice';
-import { isNavigationGuidanceSuppressed } from '../../navigation/navigationGuidanceMemory';
-import { msSinceLastSdkVoice } from '../../navigation/navSdkStore';
-import { navigationVoiceCueBucket } from '../../navigation/navVoiceCuePolicy';
-import { ADVISORY_SDK_HOLDOFF_MS, LONG_DRIVE_MIN_MINUTES, SMOOTH_DRIVE_MIN_MINUTES } from './constants';
+import { LONG_DRIVE_MIN_MINUTES, SMOOTH_DRIVE_MIN_MINUTES } from './constants';
+import { buildOrionNavVoiceSnapshot } from './orionNavVoiceSnapshot';
 import { evaluateOrionCompanion } from './OrionCompanionEngine';
-import { OrionMemoryEngine } from './OrionMemoryEngine';
+import {
+  getOrionCompanionMemory,
+  getOrionTripSession,
+  initOrionTripSession,
+  resetOrionTripSession,
+} from './orionCompanionShared';
+import { deliverCompanionSpeech } from './OrionSpeechCoordinator';
 import { orionCompanionV1Enabled } from './orionCompanionFlags';
-import type { OrionCompanionEventType, OrionDriveContextInput } from './types';
+import type { OrionCompanionEventType, OrionDriveContextInput, OrionHudLineMeta } from './types';
 
 export type OrionCompanionSnapshot = OrionDriveContextInput & {
   voiceMuted?: boolean;
@@ -18,10 +21,8 @@ export type OrionCompanionSnapshot = OrionDriveContextInput & {
 export type UseOrionCompanionArgs = {
   enabled?: boolean;
   getSnapshot: () => OrionCompanionSnapshot;
-  onCompanionLine?: (text: string) => void;
+  onCompanionLine?: (meta: OrionHudLineMeta) => void;
 };
-
-const memorySingleton = new OrionMemoryEngine();
 
 export function useOrionCompanion({
   enabled = orionCompanionV1Enabled(),
@@ -46,6 +47,11 @@ export function useOrionCompanion({
     onLineRef.current = onCompanionLine;
   }, [onCompanionLine]);
 
+  const buildNavVoice = useCallback(
+    (raw: OrionDriveContextInput) => buildOrionNavVoiceSnapshot(raw.nextStepDistanceMeters),
+    [],
+  );
+
   const emitOrionEvent = useCallback(
     async (event: OrionCompanionEventType, overrides?: Partial<OrionDriveContextInput>) => {
       if (!enabled) return;
@@ -58,31 +64,29 @@ export function useOrionCompanion({
         nowMs: overrides?.nowMs ?? Date.now(),
       };
 
-      const distM = raw.nextStepDistanceMeters;
-      const bucket = navigationVoiceCueBucket(distM ?? null);
-      const imminent =
-        bucket === 'imminent' ||
-        (typeof distM === 'number' && Number.isFinite(distM) && distM <= 88);
+      const memory = getOrionCompanionMemory();
+      const session = getOrionTripSession();
 
       const result = await evaluateOrionCompanion(event, raw, {
-        memory: memorySingleton,
-        navVoice: {
-          guidanceSuppressed: isNavigationGuidanceSuppressed(),
-          msSinceLastSdkVoice: msSinceLastSdkVoice(),
-          advisorySdkHoldoffMs: ADVISORY_SDK_HOLDOFF_MS,
-          imminentManeuver: imminent,
-        },
+        memory,
+        session,
+        navVoice: buildNavVoice(raw),
       });
 
       if (!result.shouldSpeak || !result.message) return;
 
       const mode = snap.drivingMode ?? 'adaptive';
-      const priority = result.priority === 'urgent' ? 'high' : 'normal';
-      speak(result.message, priority, mode, { rateSource: 'advisory' });
-      memorySingleton.recordSpoken(result, raw.nowMs ?? Date.now());
-      onLineRef.current?.(result.message);
+      deliverCompanionSpeech({
+        result,
+        drivingMode: mode,
+        voiceMuted: snap.voiceMuted,
+        navVoice: buildNavVoice(raw),
+        memory,
+        rawContext: raw,
+        onUiLine: (meta) => onLineRef.current?.(meta),
+      });
     },
-    [enabled],
+    [enabled, buildNavVoice],
   );
 
   const resetTripSession = useCallback(() => {
@@ -92,12 +96,14 @@ export function useOrionCompanion({
     arrivalEmittedRef.current = false;
     smoothEmittedRef.current = false;
     longDriveEmittedRef.current = false;
+    resetOrionTripSession();
   }, []);
 
   const onNavigationStarted = useCallback(
     (tripId: string) => {
       if (!enabled) return;
       resetTripSession();
+      initOrionTripSession(tripId);
       tripStartedRef.current = true;
       const fire = () => {
         if (driveStartedEmittedRef.current) return;
@@ -190,6 +196,7 @@ export function useOrionCompanion({
     onRewardEarned,
     onHeavyTraffic,
     resetTripSession,
-    memory: memorySingleton,
+    memory: getOrionCompanionMemory(),
+    buildNavVoice,
   };
 }

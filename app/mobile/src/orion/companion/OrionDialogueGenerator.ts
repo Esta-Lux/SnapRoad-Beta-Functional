@@ -5,6 +5,7 @@ import {
 } from './constants';
 import type { OrionMemoryEngine } from './OrionMemoryEngine';
 import { getPersonalityKnobs } from './OrionPersonalityEngine';
+import type { OrionTripSession } from './OrionTripSession';
 import type { LlmDialogueProvider } from './llmDialogueProvider';
 import { fillDialogueTemplate, normalizeMessageKey, truncateToMaxWords } from './templateFill';
 import type {
@@ -13,7 +14,15 @@ import type {
   OrionCompanionResult,
   OrionDriveContext,
   OrionMood,
+  OrionStressLevel,
+  OrionTripPhase,
 } from './types';
+
+const STRESS_RANK: Record<OrionStressLevel, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+};
 
 function recentMessageKeys(memory: OrionMemoryEngine, limit = 12): Set<string> {
   const keys = new Set<string>();
@@ -24,11 +33,29 @@ function recentMessageKeys(memory: OrionMemoryEngine, limit = 12): Set<string> {
   return keys;
 }
 
+function stressAllowsVariant(stress: OrionStressLevel, variant: DialogueVariant): boolean {
+  if (!variant.maxStress) return true;
+  return STRESS_RANK[stress] <= STRESS_RANK[variant.maxStress];
+}
+
+function phaseAllowsVariant(phase: OrionTripPhase, variant: DialogueVariant): boolean {
+  if (!variant.phases?.length) return true;
+  return variant.phases.includes(phase);
+}
+
+function sessionAllowsVariant(session: OrionTripSession | undefined, variant: DialogueVariant): boolean {
+  if (!variant.requiresOpenedWithLine) return true;
+  return Boolean(session?.flags.openedWithLine);
+}
+
 function pickVariant(
   event: OrionCompanionEventType,
   ctx: OrionDriveContext,
   mood: OrionMood,
   memory: OrionMemoryEngine,
+  phase: OrionTripPhase,
+  stress: OrionStressLevel,
+  session: OrionTripSession | undefined,
   seed: string,
 ): DialogueVariant | null {
   const pool = DIALOGUE_VARIANTS[event] ?? [];
@@ -36,12 +63,20 @@ function pickVariant(
 
   const recent = recentMessageKeys(memory);
   const moodFiltered = pool.filter((v) => !v.moods?.length || v.moods.includes(mood));
-  const candidates = (moodFiltered.length > 0 ? moodFiltered : pool).filter((v) => {
+  const arcFiltered = moodFiltered.filter(
+    (v) =>
+      phaseAllowsVariant(phase, v) &&
+      stressAllowsVariant(stress, v) &&
+      sessionAllowsVariant(session, v),
+  );
+  const base = arcFiltered.length > 0 ? arcFiltered : moodFiltered;
+
+  const candidates = base.filter((v) => {
     const filled = fillDialogueTemplate(v.template, ctx);
     return !recent.has(normalizeMessageKey(filled));
   });
 
-  const list = candidates.length > 0 ? candidates : moodFiltered.length > 0 ? moodFiltered : pool;
+  const list = candidates.length > 0 ? candidates : base;
 
   let hash = 0;
   for (let i = 0; i < seed.length; i += 1) {
@@ -50,18 +85,28 @@ function pickVariant(
   return list[hash % list.length] ?? list[0] ?? null;
 }
 
-export function generateCompanionMessageSync(args: {
+export type GenerateMessageArgs = {
   event: OrionCompanionEventType;
   ctx: OrionDriveContext;
   mood: OrionMood;
   memory: OrionMemoryEngine;
-}): { message: string | null; category: string; priority: OrionCompanionResult['priority'] } {
-  const { event, ctx, mood, memory } = args;
+  phase: OrionTripPhase;
+  stress: OrionStressLevel;
+  session?: OrionTripSession;
+  llm?: LlmDialogueProvider;
+};
+
+export function generateCompanionMessageSync(args: GenerateMessageArgs): {
+  message: string | null;
+  category: string;
+  priority: OrionCompanionResult['priority'];
+} {
+  const { event, ctx, mood, memory, phase, stress, session } = args;
   const category = EVENT_CATEGORY[event] ?? 'trip';
   const priority = EVENT_DEFAULT_PRIORITY[event] ?? 'normal';
 
-  const seed = `${ctx.tripId ?? 'trip'}:${event}:${ctx.nowMs}:${mood}`;
-  const variant = pickVariant(event, ctx, mood, memory, seed);
+  const seed = `${ctx.tripId ?? 'trip'}:${event}:${phase}:${ctx.nowMs}:${mood}`;
+  const variant = pickVariant(event, ctx, mood, memory, phase, stress, session, seed);
   if (!variant) {
     return { message: null, category, priority };
   }
@@ -75,32 +120,27 @@ export function generateCompanionMessageSync(args: {
   };
 }
 
-export async function generateCompanionMessage(args: {
-  event: OrionCompanionEventType;
-  ctx: OrionDriveContext;
-  mood: OrionMood;
-  memory: OrionMemoryEngine;
-  llm?: LlmDialogueProvider;
-}): Promise<{ message: string | null; category: string; priority: OrionCompanionResult['priority'] }> {
-  const { event, ctx, mood, memory, llm } = args;
-  const category = EVENT_CATEGORY[event] ?? 'trip';
-  const priority = EVENT_DEFAULT_PRIORITY[event] ?? 'normal';
-
+export async function generateCompanionMessage(args: GenerateMessageArgs): Promise<{
+  message: string | null;
+  category: string;
+  priority: OrionCompanionResult['priority'];
+}> {
+  const { llm } = args;
   if (llm?.generate) {
     try {
-      const llmLine = await llm.generate(event, ctx);
+      const llmLine = await llm.generate(args.event, args.ctx);
       if (llmLine?.trim()) {
-        const knobs = getPersonalityKnobs(mood);
+        const knobs = getPersonalityKnobs(args.mood);
         return {
           message: truncateToMaxWords(llmLine.trim(), knobs.maxWords),
-          category,
-          priority,
+          category: EVENT_CATEGORY[args.event] ?? 'trip',
+          priority: EVENT_DEFAULT_PRIORITY[args.event] ?? 'normal',
         };
       }
     } catch {
-      /* fall through to templates */
+      /* fall through */
     }
   }
 
-  return generateCompanionMessageSync({ event, ctx, mood, memory });
+  return generateCompanionMessageSync(args);
 }

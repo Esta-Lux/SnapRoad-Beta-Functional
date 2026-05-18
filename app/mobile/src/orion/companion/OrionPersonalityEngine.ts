@@ -3,6 +3,7 @@ import type {
   OrionDriveContext,
   OrionMood,
   OrionStressLevel,
+  OrionTripPhase,
   PersonalityKnobs,
 } from './types';
 
@@ -62,9 +63,16 @@ export function selectMood(
   ctx: OrionDriveContext,
   eventType: OrionCompanionEventType,
   stressLevel: OrionStressLevel,
+  phase: OrionTripPhase = 'cruising',
 ): OrionMood {
-  if (eventType === 'safety_caution' || stressLevel === 'high') {
+  if (phase === 'stressed' || eventType === 'safety_caution' || stressLevel === 'high') {
     return eventType === 'reroute' ? 'focused' : 'calm';
+  }
+  if (phase === 'closing' || eventType === 'arrival') {
+    return ctx.timeOfDay === 'night' ? 'quiet' : 'calm';
+  }
+  if (phase === 'opening' || eventType === 'drive_started') {
+    return hashPick(`${ctx.tripId}:open`, ['focused', 'calm']);
   }
   if (eventType === 'reroute') return 'focused';
   if (eventType === 'arrival') {
