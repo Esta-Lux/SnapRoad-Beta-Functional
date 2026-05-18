@@ -400,7 +400,11 @@ class ApiService {
               : JSON.stringify(detailRaw)
             : 'Request failed';
         let normalized = detail;
-        if (response.status === 401) normalized = 'Session expired. Please sign in again.';
+        if (response.status === 401) {
+          normalized = token
+            ? 'Session expired. Please sign in again.'
+            : 'Sign in to use this feature.';
+        }
         else if (response.status === 403) {
           normalized =
             typeof detail === 'string' && detail.trim()

@@ -19,6 +19,34 @@ import { api } from '../../api/client';
 interface Props {
   visible: boolean;
   onClose: () => void;
+  /** When fuel APIs return 401, offer a path to sign in instead of a dead-end error. */
+  onRequireSignIn?: () => void;
+}
+
+function isFuelAuthError(message: string | undefined): boolean {
+  if (!message) return false;
+  const m = message.toLowerCase();
+  return (
+    m.includes('sign in') ||
+    m.includes('session expired') ||
+    m.includes('authentication required') ||
+    m.includes('invalid or expired token')
+  );
+}
+
+function promptFuelSignIn(onRequireSignIn: (() => void) | undefined, message?: string) {
+  if (!onRequireSignIn) {
+    Alert.alert('Sign in required', message ?? 'Sign in to log and view fill-ups.');
+    return;
+  }
+  Alert.alert(
+    'Sign in to log fill-ups',
+    message ?? 'Fuel tracking is saved to your SnapRoad account.',
+    [
+      { text: 'Not now', style: 'cancel' },
+      { text: 'Sign in', onPress: onRequireSignIn },
+    ],
+  );
 }
 
 interface FillUp {
@@ -88,7 +116,7 @@ function unwrapFuelItems(res: { success: boolean; data?: unknown; error?: string
   return items.map((x) => normalizeFillUp(x as Record<string, unknown>));
 }
 
-export default function FuelTracker({ visible, onClose }: Props) {
+export default function FuelTracker({ visible, onClose, onRequireSignIn }: Props) {
   const { colors, spacing, radius, typography } = useTheme();
   const [tab, setTab] = useState<'history' | 'log'>('history');
   const [gallons, setGallons] = useState('');
@@ -119,12 +147,19 @@ export default function FuelTracker({ visible, onClose }: Props) {
         if (res.success) {
           setHistory(unwrapFuelItems(res));
         } else {
-          setError(res.error || 'Failed to load history');
+          const errMsg = res.error || 'Failed to load history';
+          if (isFuelAuthError(errMsg)) {
+            setError(null);
+            promptFuelSignIn(onRequireSignIn, errMsg);
+            onClose();
+            return;
+          }
+          setError(errMsg);
         }
       })
       .catch(() => setError('Network error'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [onClose, onRequireSignIn]);
 
   useEffect(() => {
     if (visible) {
@@ -141,6 +176,11 @@ export default function FuelTracker({ visible, onClose }: Props) {
     if (!enteredLog) return;
     void (async () => {
       const statsRes = await api.get<unknown>('/api/fuel/stats');
+      if (!statsRes.success && isFuelAuthError(statsRes.error)) {
+        promptFuelSignIn(onRequireSignIn, statsRes.error);
+        onClose();
+        return;
+      }
       const sug = parseStatsBody(statsRes);
       setSuggestion(sug);
       const h = historyRef.current;
@@ -153,7 +193,7 @@ export default function FuelTracker({ visible, onClose }: Props) {
       }
       setOdometer(next);
     })();
-  }, [visible, tab]);
+  }, [visible, tab, onClose, onRequireSignIn]);
 
   const lastLoggedOdometer = history.length > 0 ? history[0].odometer : null;
 
@@ -178,7 +218,13 @@ export default function FuelTracker({ visible, onClose }: Props) {
       }
       const res = await api.post<Record<string, unknown>>('/api/fuel/logs', body);
       if (!res.success) {
-        Alert.alert('Error', res.error || 'Failed to log fill-up');
+        const errMsg = res.error || 'Failed to log fill-up';
+        if (isFuelAuthError(errMsg)) {
+          promptFuelSignIn(onRequireSignIn, errMsg);
+          onClose();
+          return;
+        }
+        Alert.alert('Error', errMsg);
         return;
       }
       const top = res.data as Record<string, unknown> | undefined;

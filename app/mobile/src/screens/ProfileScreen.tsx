@@ -1009,7 +1009,27 @@ export default function ProfileScreen() {
           setShowInsightsDashboard(false);
           openPlanOptions();
         }}
+        fuelLogRequiresSignIn={isGuest}
         onOpenFuelTracker={() => {
+          if (isGuest) {
+            setShowInsightsDashboard(false);
+            Alert.alert(
+              'Sign in to log fill-ups',
+              'Fuel logs are saved to your SnapRoad account and sync across your devices.',
+              [
+                { text: 'Not now', style: 'cancel' },
+                {
+                  text: 'Sign in',
+                  onPress: () => navigation.navigate('Auth', { mode: 'signin' }),
+                },
+                {
+                  text: 'Create account',
+                  onPress: () => navigation.navigate('Auth', { mode: 'signup' }),
+                },
+              ],
+            );
+            return;
+          }
           setShowInsightsDashboard(false);
           setShowFuelTracker(true);
         }}
@@ -1093,7 +1113,14 @@ export default function ProfileScreen() {
         editRoute={editingCommute}
         onCreated={() => void loadData('silent')}
       />
-      <FuelTracker visible={showFuelTracker} onClose={() => setShowFuelTracker(false)} />
+      <FuelTracker
+        visible={showFuelTracker}
+        onClose={() => setShowFuelTracker(false)}
+        onRequireSignIn={() => {
+          setShowFuelTracker(false);
+          navigation.navigate('Auth', { mode: 'signin' });
+        }}
+      />
       <HelpSupport visible={showHelp} onClose={() => setShowHelp(false)} />
       <SubmitConcern visible={showConcern} onClose={() => setShowConcern(false)} />
     </SafeAreaView>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { isNavigationGuidanceSuppressed } from '../../navigation/navigationGuidanceMemory';
 import type { DrivingMode } from '../../types';
 import { LONG_DRIVE_MIN_MINUTES, SMOOTH_DRIVE_MIN_MINUTES } from './constants';
 import { buildOrionNavVoiceSnapshot } from './orionNavVoiceSnapshot';

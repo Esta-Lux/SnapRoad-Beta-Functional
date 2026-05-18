@@ -107,6 +107,8 @@ type Props = {
   isPremium: boolean;
   onUpgrade: () => void;
   onOpenFuelTracker: () => void;
+  /** When true, fuel logging needs a signed-in account (guest mode). */
+  fuelLogRequiresSignIn?: boolean;
 };
 
 export default function ProfileInsightsDashboard({
@@ -120,6 +122,7 @@ export default function ProfileInsightsDashboard({
   isPremium,
   onUpgrade,
   onOpenFuelTracker,
+  fuelLogRequiresSignIn = false,
 }: Props) {
   const { colors, spacing, typography, radius } = useTheme();
   const winH = Dimensions.get('window').height;
@@ -783,12 +786,25 @@ export default function ProfileInsightsDashboard({
               $/mi: {fuelSummary.costPerMile != null ? fuelSummary.costPerMile.toFixed(2) : '—'}
             </Text>
           </View>
+          {fuelLogRequiresSignIn ? (
+            <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 8, lineHeight: 17 }}>
+              Sign in to save fill-ups to your account.
+            </Text>
+          ) : null}
           <TouchableOpacity
             onPress={onOpenFuelTracker}
             style={[styles.ctaBtn, { backgroundColor: '#2563EB', marginTop: 12 }]}
+            accessibilityLabel={fuelLogRequiresSignIn ? 'Sign in to log fill-up' : 'Log fill-up'}
           >
-            <Ionicons name="water-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={styles.ctaBtnText}>Log fill-up</Text>
+            <Ionicons
+              name={fuelLogRequiresSignIn ? 'log-in-outline' : 'water-outline'}
+              size={18}
+              color="#fff"
+              style={{ marginRight: 8 }}
+            />
+            <Text style={styles.ctaBtnText}>
+              {fuelLogRequiresSignIn ? 'Sign in to log fill-up' : 'Log fill-up'}
+            </Text>
           </TouchableOpacity>
         </View>
 
