@@ -195,6 +195,7 @@ import {
 import { parseLiveLocationUpdate } from '../api/dto/realtime';
 import OrionChat, { type OrionPlaceSuggestion } from '../components/orion/OrionChat';
 import OrionQuickMic from '../components/orion/OrionQuickMic';
+import { useOrionCompanion } from '../orion/companion/useOrionCompanion';
 import TripSummaryModal from '../components/common/Modal';
 import { useNavigationMode } from '../contexts/NavigatingContext';
 import { useCameraController } from '../hooks/useCameraController';
@@ -1003,6 +1004,8 @@ export default function MapScreen() {
 
   const sdkRouteHandoffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sdkRouteHandoffUi, setSdkRouteHandoffUi] = useState(false);
+  const orionCompanionRerouteRef = useRef<() => void>(() => {});
+
   const handleSdkRouteChanged = useCallback(
     (event: { nativeEvent: { routes?: SdkRoutesNative } }) => {
       if (sdkRouteHandoffTimerRef.current) {
@@ -1011,6 +1014,7 @@ export default function MapScreen() {
       }
       setSdkRouteHandoffUi(true);
       ingestSdkRouteChangedEvent();
+      orionCompanionRerouteRef.current();
       const routes = event.nativeEvent.routes;
       if (!routes?.mainRoute) {
         sdkRouteHandoffTimerRef.current = setTimeout(() => {
@@ -2134,6 +2138,9 @@ export default function MapScreen() {
   const confirmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reportCardTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigationTripIdRef = useRef<string>('');
+  const navTripStartMsRef = useRef(0);
+  const prevNavigatingForOrionRef = useRef(false);
+  const prevSevereCongestionRef = useRef(false);
   const lastLivePublishRef = useRef(0);
   const mapLivePublishCoordsRef = useRef({ lat: 0, lng: 0, heading: 0, speed: 0 });
   const mapLiveNavRef = useRef({ isNavigating: false, destinationName: undefined as string | undefined });
@@ -4207,6 +4214,101 @@ export default function MapScreen() {
     mapWeather.summary,
     orionPendingSuggestions,
   ]);
+
+  const navCongestionSevere = useMemo(
+    () =>
+      Boolean(
+        nav.navigationData?.congestion &&
+          hasSevereCongestionAhead(
+            nav.navigationData.congestion,
+            nav.navigationProgress?.snapped?.segmentIndex ?? 0,
+          ),
+      ),
+    [nav.navigationData?.congestion, nav.navigationProgress?.snapped?.segmentIndex],
+  );
+
+  const orionCompanion = useOrionCompanion({
+    getSnapshot: () => {
+      const tripMs =
+        navTripStartMsRef.current > 0 ? Date.now() - navTripStartMsRef.current : 0;
+      return {
+        isNavigating: nav.isNavigating,
+        speedMph: speed,
+        etaMinutes: orionCurrentRoute?.remainingMinutes ?? null,
+        distanceMiles: orionCurrentRoute?.distanceMiles ?? null,
+        trafficLevel: navCongestionSevere ? 'severe' : 'light',
+        congestionNearManeuver: navCongestionSevere,
+        currentRoad: orionCurrentRoute?.currentStep ?? null,
+        nextManeuver: orionCurrentRoute?.nextStep ?? null,
+        nextStepDistanceMeters: nav.navigationProgress?.nextStepDistanceMeters ?? null,
+        rerouteDetected: nav.isRerouting,
+        incidentNearby: false,
+        driveDurationMinutes: tripMs / 60_000,
+        gemsEarned: user?.gems,
+        gemsEarnedThisTrip: gemOverlayAmount,
+        destination: nav.navigationData?.destination?.name ?? orionCurrentRoute?.destination ?? null,
+        userName: user?.name || user?.email || null,
+        tripId: navigationTripIdRef.current || null,
+        weather: mapWeather.summary ?? null,
+        voiceMuted: navVoiceMuted,
+        drivingMode,
+      };
+    },
+    onCompanionLine: setOrionQuickReply,
+  });
+
+  useEffect(() => {
+    orionCompanionRerouteRef.current = () => {
+      orionCompanion.onReroute();
+    };
+  }, [orionCompanion.onReroute]);
+
+  useEffect(() => {
+    if (nav.isNavigating && !prevNavigatingForOrionRef.current) {
+      navTripStartMsRef.current = Date.now();
+      if (!navigationTripIdRef.current) {
+        navigationTripIdRef.current = `trip-${Date.now()}`;
+      }
+      orionCompanion.onNavigationStarted(navigationTripIdRef.current);
+    }
+    if (!nav.isNavigating) {
+      navTripStartMsRef.current = 0;
+      orionCompanion.resetTripSession();
+    }
+    prevNavigatingForOrionRef.current = nav.isNavigating;
+  }, [nav.isNavigating, orionCompanion]);
+
+  const prevReroutingRef = useRef(false);
+  useEffect(() => {
+    if (nav.isRerouting && !prevReroutingRef.current) {
+      orionCompanion.onReroute();
+    }
+    prevReroutingRef.current = nav.isRerouting;
+  }, [nav.isRerouting, orionCompanion]);
+
+  useEffect(() => {
+    if (nav.isNavigating && navCongestionSevere && !prevSevereCongestionRef.current) {
+      orionCompanion.onHeavyTraffic();
+    }
+    prevSevereCongestionRef.current = navCongestionSevere;
+    if (!nav.isNavigating) prevSevereCongestionRef.current = false;
+  }, [nav.isNavigating, navCongestionSevere, orionCompanion]);
+
+  const prevTripSummaryForOrionRef = useRef<typeof activeTripSummary>(null);
+  useEffect(() => {
+    if (activeTripSummary && activeTripSummary !== prevTripSummaryForOrionRef.current) {
+      if (activeTripSummary.arrivedAtDestination !== false) {
+        orionCompanion.onArrival();
+      }
+    }
+    prevTripSummaryForOrionRef.current = activeTripSummary;
+  }, [activeTripSummary, orionCompanion]);
+
+  useEffect(() => {
+    if (showGemOverlay && gemOverlayAmount > 0) {
+      orionCompanion.onRewardEarned(gemOverlayAmount);
+    }
+  }, [showGemOverlay, gemOverlayAmount, orionCompanion]);
 
   const handleStartDirections = useCallback(
     async (

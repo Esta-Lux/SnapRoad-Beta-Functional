@@ -35,6 +35,10 @@ import type {
   ProfileTripHistoryItem,
   ProfileWeeklyRecap,
 } from './types';
+import {
+  createInMemoryOrionMemory,
+  evaluateOrionCompanionSync,
+} from '../../orion/companion';
 
 export type { TimeRangePreset };
 
@@ -135,6 +139,29 @@ export default function ProfileInsightsDashboard({
   const [drivingMetrics, setDrivingMetrics] = useState<DrivingMetric[]>([]);
   const [orionTips, setOrionTips] = useState<OrionTip[]>([]);
   const [drivingError, setDrivingError] = useState<string | null>(null);
+
+  const orionCompanionPreview = useMemo(() => {
+    if (!visible) return null;
+    const memory = createInMemoryOrionMemory();
+    return evaluateOrionCompanionSync(
+      'idle_checkin',
+      {
+        isNavigating: false,
+        gemsEarned: weeklyRecap.gemsEarnedWeek,
+        driveDurationMinutes: 0,
+      },
+      {
+        memory,
+        speakRoll: 0,
+        navVoice: {
+          guidanceSuppressed: false,
+          msSinceLastSdkVoice: 60_000,
+          advisorySdkHoldoffMs: 3000,
+          imminentManeuver: false,
+        },
+      },
+    );
+  }, [visible, weeklyRecap.gemsEarnedWeek]);
 
   const range = useMemo(
     () => getPresetRange(preset, customStart, customEnd),
@@ -582,6 +609,43 @@ export default function ProfileInsightsDashboard({
               </Text>
             </View>
           </View>
+
+          {orionCompanionPreview ? (
+            <View
+              style={[
+                styles.tipRow,
+                {
+                  backgroundColor: colors.surfaceSecondary,
+                  borderColor: colors.border,
+                  marginBottom: spacing.sm,
+                  flexDirection: 'column',
+                  alignItems: 'flex-start',
+                },
+              ]}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                <Ionicons name="planet-outline" size={16} color={colors.primary} />
+                <Text style={{ color: colors.text, fontWeight: '800', fontSize: 12 }}>Orion companion (preview)</Text>
+                {orionCompanionPreview.shouldSpeak ? (
+                  <Text
+                    style={{
+                      color: colors.primary,
+                      fontSize: 10,
+                      fontWeight: '700',
+                      textTransform: 'capitalize',
+                    }}
+                  >
+                    {orionCompanionPreview.mood}
+                  </Text>
+                ) : null}
+              </View>
+              <Text style={{ color: colors.textSecondary, fontSize: 13, lineHeight: 18 }}>
+                {orionCompanionPreview.shouldSpeak && orionCompanionPreview.message
+                  ? orionCompanionPreview.message
+                  : "Orion's riding quiet right now — check back after your next drive."}
+              </Text>
+            </View>
+          ) : null}
 
           {weeklyRecap.highlights && weeklyRecap.highlights.length > 0 ? (
             <View

@@ -1,0 +1,103 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { buildOrionDriveContext } from './OrionContextEngine';
+import { createInMemoryOrionMemory } from './OrionMemoryEngine';
+import { shouldSpeakNow } from './OrionCadenceEngine';
+
+const baseCtx = () =>
+  buildOrionDriveContext({
+    isNavigating: true,
+    nowMs: 1_700_000_000_000,
+    tripId: 'trip-a',
+    nextStepDistanceMeters: 500,
+  });
+
+test('cadence blocks imminent maneuver', () => {
+  const ctx = buildOrionDriveContext({
+    isNavigating: true,
+    nowMs: Date.now(),
+    nextStepDistanceMeters: 40,
+  });
+  const decision = shouldSpeakNow({
+    event: 'smooth_drive',
+    ctx,
+    mood: 'witty',
+    priority: 'low',
+    memory: createInMemoryOrionMemory(),
+    navVoice: {
+      guidanceSuppressed: false,
+      msSinceLastSdkVoice: 10_000,
+      advisorySdkHoldoffMs: 3000,
+      imminentManeuver: false,
+    },
+    category: 'traffic_humor',
+    candidateMessage: 'Easy miles.',
+    speakRoll: 0,
+  });
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.reason, 'imminent_maneuver');
+});
+
+test('cadence blocks when guidance suppressed', () => {
+  const decision = shouldSpeakNow({
+    event: 'drive_started',
+    ctx: baseCtx(),
+    mood: 'focused',
+    priority: 'normal',
+    memory: createInMemoryOrionMemory(),
+    navVoice: {
+      guidanceSuppressed: true,
+      msSinceLastSdkVoice: 10_000,
+      advisorySdkHoldoffMs: 3000,
+      imminentManeuver: false,
+    },
+    category: 'trip',
+    candidateMessage: 'Trip on.',
+    speakRoll: 0,
+  });
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.reason, 'guidance_suppressed');
+});
+
+test('cadence blocks sdk voice holdoff', () => {
+  const decision = shouldSpeakNow({
+    event: 'drive_started',
+    ctx: baseCtx(),
+    mood: 'focused',
+    priority: 'normal',
+    memory: createInMemoryOrionMemory(),
+    navVoice: {
+      guidanceSuppressed: false,
+      msSinceLastSdkVoice: 500,
+      advisorySdkHoldoffMs: 3000,
+      imminentManeuver: false,
+    },
+    category: 'trip',
+    candidateMessage: 'Trip on.',
+    speakRoll: 0,
+  });
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.reason, 'sdk_voice_holdoff');
+});
+
+test('urgent safety can pass cadence with speakRoll 0', () => {
+  const mem = createInMemoryOrionMemory();
+  const ctx = baseCtx();
+  const decision = shouldSpeakNow({
+    event: 'safety_caution',
+    ctx,
+    mood: 'calm',
+    priority: 'urgent',
+    memory: mem,
+    navVoice: {
+      guidanceSuppressed: false,
+      msSinceLastSdkVoice: 10_000,
+      advisorySdkHoldoffMs: 3000,
+      imminentManeuver: false,
+    },
+    category: 'safety',
+    candidateMessage: 'Heads up — hazard reported ahead.',
+    speakRoll: 0,
+  });
+  assert.equal(decision.allowed, true);
+});
