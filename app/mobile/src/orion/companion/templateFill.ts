@@ -8,6 +8,8 @@ export function firstName(userName: string | null): string {
 export function fillDialogueTemplate(template: string, ctx: OrionDriveContext): string {
   const dest = ctx.destination?.trim() || 'your destination';
   const road = ctx.currentRoad?.trim() || 'the road';
+  const traffic = ctx.trafficLevel === 'unknown' ? 'traffic' : ctx.trafficLevel;
+  const mode = ctx.drivingMode?.trim() || 'adaptive';
   const eta =
     ctx.etaMinutes != null && Number.isFinite(ctx.etaMinutes)
       ? String(Math.max(1, Math.round(ctx.etaMinutes)))
@@ -21,15 +23,18 @@ export function fillDialogueTemplate(template: string, ctx: OrionDriveContext): 
   const name = firstName(ctx.userName);
 
   let out = template
-    .replace(/\{\{destination\}\}/g, dest)
-    .replace(/\{\{currentRoad\}\}/g, road)
-    .replace(/\{\{etaMinutes\}\}/g, eta)
-    .replace(/\{\{distanceMiles\}\}/g, dist)
-    .replace(/\{\{gemsEarnedThisTrip\}\}/g, gems)
-    .replace(/\{\{gemsEarned\}\}/g, gems)
-    .replace(/\{\{driveDurationMinutes\}\}/g, mins)
-    .replace(/\{\{userName\}\}/g, name || 'there')
-    .replace(/\{\{weather\}\}/g, ctx.weather?.trim() || 'clear skies');
+    .replaceAll('{{destination}}', dest)
+    .replaceAll('{{currentRoad}}', road)
+    .replaceAll('{{etaMinutes}}', eta)
+    .replaceAll('{{distanceMiles}}', dist)
+    .replaceAll('{{gemsEarnedThisTrip}}', gems)
+    .replaceAll('{{gemsEarned}}', gems)
+    .replaceAll('{{driveDurationMinutes}}', mins)
+    .replaceAll('{{userName}}', name || 'there')
+    .replaceAll('{{weather}}', ctx.weather?.trim() || 'clear skies')
+    .replaceAll('{{trafficLevel}}', traffic)
+    .replaceAll('{{timeOfDay}}', ctx.timeOfDay)
+    .replaceAll('{{drivingMode}}', mode);
 
   out = out.replace(/\s+/g, ' ').trim();
   return out;

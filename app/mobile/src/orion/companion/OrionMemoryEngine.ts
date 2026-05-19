@@ -28,7 +28,10 @@ export class OrionMemoryEngine {
       if (!raw) return;
       const parsed = JSON.parse(raw) as { entries?: OrionMemoryEntry[] };
       if (Array.isArray(parsed.entries)) {
-        this.entries = parsed.entries.slice(-ORION_COMPANION_MEMORY_MAX);
+        this.entries = parsed.entries.slice(-ORION_COMPANION_MEMORY_MAX).map((entry) => ({
+          ...entry,
+          normalizedText: entry.normalizedText ?? normalizeMessageKey(entry.message),
+        }));
       }
     } catch {
       this.entries = [];
@@ -48,7 +51,10 @@ export class OrionMemoryEngine {
   }
 
   loadEntries(entries: OrionMemoryEntry[]): void {
-    this.entries = entries.slice(-ORION_COMPANION_MEMORY_MAX);
+    this.entries = entries.slice(-ORION_COMPANION_MEMORY_MAX).map((entry) => ({
+      ...entry,
+      normalizedText: entry.normalizedText ?? normalizeMessageKey(entry.message),
+    }));
   }
 
   clear(): void {
@@ -57,21 +63,43 @@ export class OrionMemoryEngine {
   }
 
   lastSpokenAtMs(): number {
-    const last = this.entries[this.entries.length - 1];
+    const last = this.entries.at(-1);
     return last?.timestampMs ?? 0;
   }
 
   isDuplicateMessage(text: string): boolean {
     const key = normalizeMessageKey(text);
     if (!key) return true;
-    return this.entries.some((e) => normalizeMessageKey(e.message) === key);
+    return this.entries.some((e) => (e.normalizedText ?? normalizeMessageKey(e.message)) === key);
   }
 
-  canUseCategory(
-    category: OrionMessageCategory | string,
-    nowMs: number,
-    urgency?: boolean,
+  hasVariantInTrip(variantId: string | null | undefined, tripId: string | null | undefined): boolean {
+    if (!variantId || !tripId) return false;
+    return this.entries.some((e) => e.variantId === variantId && e.tripId === tripId);
+  }
+
+  lastUsedVariantAt(variantId: string): number {
+    for (let i = this.entries.length - 1; i >= 0; i -= 1) {
+      const e = this.entries[i];
+      if (e.variantId === variantId) return e.timestampMs;
+    }
+    return 0;
+  }
+
+  recentlyUsedPattern(
+    eventType: OrionCompanionResult['eventType'],
+    mood: OrionCompanionResult['mood'],
+    patternKey: string | null | undefined,
+    limit = 3,
   ): boolean {
+    if (!patternKey) return false;
+    const recent = this.entries.slice(-limit);
+    return recent.some(
+      (e) => e.eventType === eventType && e.mood === mood && e.patternKey === patternKey,
+    );
+  }
+
+  canUseCategory(category: string, nowMs: number, urgency?: boolean): boolean {
     if (urgency) return true;
     const cooldown = CATEGORY_COOLDOWN_MS[category as OrionMessageCategory];
     if (!cooldown) return true;
@@ -88,6 +116,10 @@ export class OrionMemoryEngine {
     if (!result.message?.trim()) return;
     const entry: OrionMemoryEntry = {
       message: result.message.trim(),
+      normalizedText: normalizeMessageKey(result.message),
+      variantId: result.variantId ?? null,
+      patternKey: result.patternKey ?? null,
+      tripId: result.tripId ?? null,
       category: result.category,
       mood: result.mood,
       timestampMs: nowMs,

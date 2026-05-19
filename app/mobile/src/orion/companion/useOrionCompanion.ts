@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { isNavigationGuidanceSuppressed } from '../../navigation/navigationGuidanceMemory';
 import type { DrivingMode } from '../../types';
-import { LONG_DRIVE_MIN_MINUTES, SMOOTH_DRIVE_MIN_MINUTES } from './constants';
+import {
+  LONG_DRIVE_MIN_MINUTES,
+  SMOOTH_DRIVE_MIN_MINUTES,
+  SMOOTH_DRIVE_REPEAT_MINUTES,
+} from './constants';
 import { buildOrionNavVoiceSnapshot } from './orionNavVoiceSnapshot';
 import { evaluateOrionCompanion } from './OrionCompanionEngine';
 import {
@@ -16,6 +20,7 @@ import type { OrionCompanionEventType, OrionDriveContextInput, OrionHudLineMeta 
 
 const DRIVE_STARTED_DELAY_MS = 4000;
 const GUIDANCE_WAIT_MAX_MS = 12_000;
+const SMOOTH_DRIVE_MAX_CHECKINS = 3;
 
 export type OrionCompanionSnapshot = OrionDriveContextInput & {
   voiceMuted?: boolean;
@@ -39,7 +44,8 @@ export function useOrionCompanion({
   const driveStartedEmittedRef = useRef(false);
   const rerouteEmittedRef = useRef(false);
   const arrivalEmittedRef = useRef(false);
-  const smoothEmittedRef = useRef(false);
+  const smoothCheckinsRef = useRef(0);
+  const smoothLastCheckinAtMsRef = useRef(0);
   const longDriveEmittedRef = useRef(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const guidanceWaitIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -80,10 +86,10 @@ export function useOrionCompanion({
 
   const emitOrionEvent = useCallback(
     async (event: OrionCompanionEventType, overrides?: Partial<OrionDriveContextInput>) => {
-      if (!enabled) return;
+      if (!enabled) return false;
       try {
         const snap = getSnapshotRef.current();
-        if (snap.voiceMuted) return;
+        if (snap.voiceMuted) return false;
 
         const raw: OrionDriveContextInput = {
           ...snap,
@@ -100,10 +106,10 @@ export function useOrionCompanion({
           navVoice: buildNavVoice(raw),
         });
 
-        if (!result.shouldSpeak || !result.message) return;
+        if (!result.shouldSpeak || !result.message) return false;
 
         const mode = snap.drivingMode ?? 'adaptive';
-        deliverCompanionSpeech({
+        const speech = deliverCompanionSpeech({
           result,
           drivingMode: mode,
           voiceMuted: snap.voiceMuted,
@@ -112,11 +118,13 @@ export function useOrionCompanion({
           rawContext: raw,
           onUiLine: (meta) => onLineRef.current?.(meta),
         });
+        return speech.spoken;
       } catch (err) {
         if (typeof __DEV__ !== 'undefined' && __DEV__) {
           // eslint-disable-next-line no-console
           console.warn('[OrionCompanion] emitOrionEvent failed', event, err);
         }
+        return false;
       }
     },
     [enabled, buildNavVoice],
@@ -127,7 +135,8 @@ export function useOrionCompanion({
     driveStartedEmittedRef.current = false;
     rerouteEmittedRef.current = false;
     arrivalEmittedRef.current = false;
-    smoothEmittedRef.current = false;
+    smoothCheckinsRef.current = 0;
+    smoothLastCheckinAtMsRef.current = 0;
     longDriveEmittedRef.current = false;
     clearGuidanceWait();
     clearDriveStartedTimeout();
@@ -215,11 +224,20 @@ export function useOrionCompanion({
       if (!snap.isNavigating || snap.voiceMuted) return;
 
       const mins = snap.driveDurationMinutes ?? 0;
-      if (!smoothEmittedRef.current && mins >= SMOOTH_DRIVE_MIN_MINUTES && !snap.rerouteDetected) {
+      const nowMs = Date.now();
+      const smoothReady =
+        mins >= SMOOTH_DRIVE_MIN_MINUTES &&
+        smoothCheckinsRef.current < SMOOTH_DRIVE_MAX_CHECKINS &&
+        (smoothLastCheckinAtMsRef.current === 0 ||
+          nowMs - smoothLastCheckinAtMsRef.current >= SMOOTH_DRIVE_REPEAT_MINUTES * 60_000);
+      if (smoothReady && !snap.rerouteDetected) {
         const traffic = snap.trafficLevel ?? 'unknown';
         if (traffic === 'light' || traffic === 'moderate' || traffic === 'unknown') {
-          smoothEmittedRef.current = true;
-          void emitOrionEvent('smooth_drive');
+          void emitOrionEvent('smooth_drive').then((spoken) => {
+            if (!spoken) return;
+            smoothCheckinsRef.current += 1;
+            smoothLastCheckinAtMsRef.current = nowMs;
+          });
         }
       }
 

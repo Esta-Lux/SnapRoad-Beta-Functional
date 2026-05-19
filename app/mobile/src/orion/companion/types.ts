@@ -1,4 +1,4 @@
-export type OrionMood = 'calm' | 'witty' | 'focused' | 'hype' | 'quiet';
+export type OrionMood = 'calm' | 'witty' | 'sassy' | 'focused' | 'hype' | 'quiet';
 
 export type OrionStressLevel = 'low' | 'medium' | 'high';
 
@@ -23,6 +23,7 @@ export type OrionCompanionPriority = 'low' | 'normal' | 'urgent';
 
 export type OrionMessageCategory =
   | 'trip'
+  | 'cruise'
   | 'traffic_humor'
   | 'reroute'
   | 'reward'
@@ -31,15 +32,12 @@ export type OrionMessageCategory =
   | 'offer'
   | 'police';
 
-/** Categories used by MapScreen advisories and the companion engine. */
-export type OrionAdvisoryCategory = OrionMessageCategory;
-
 export type OrionDriveContextInput = {
   isNavigating?: boolean;
   speedMph?: number;
   etaMinutes?: number;
   distanceMiles?: number;
-  trafficLevel?: OrionTrafficLevel | string;
+  trafficLevel?: string;
   congestionNearManeuver?: boolean;
   currentRoad?: string | null;
   nextManeuver?: string | null;
@@ -54,6 +52,7 @@ export type OrionDriveContextInput = {
   destination?: string | null;
   userName?: string | null;
   tripId?: string | null;
+  drivingMode?: string | null;
   nowMs?: number;
 };
 
@@ -76,6 +75,7 @@ export type OrionDriveContext = {
   destination: string | null;
   userName: string | null;
   tripId: string | null;
+  drivingMode: string | null;
   nowMs: number;
 };
 
@@ -89,7 +89,11 @@ export type PersonalityKnobs = {
 
 export type OrionMemoryEntry = {
   message: string;
-  category: OrionMessageCategory | string;
+  normalizedText?: string;
+  variantId?: string | null;
+  patternKey?: string | null;
+  tripId?: string | null;
+  category: string;
   mood: OrionMood;
   timestampMs: number;
   eventType: OrionCompanionEventType;
@@ -98,10 +102,13 @@ export type OrionMemoryEntry = {
 export type OrionCompanionResult = {
   shouldSpeak: boolean;
   message: string | null;
-  category: OrionMessageCategory | string;
+  category: string;
   mood: OrionMood;
   priority: OrionCompanionPriority;
   eventType: OrionCompanionEventType;
+  variantId?: string | null;
+  patternKey?: string | null;
+  tripId?: string | null;
 };
 
 export type NavVoiceState = {
@@ -114,6 +121,10 @@ export type NavVoiceState = {
 export type DialogueVariant = {
   id: string;
   template: string;
+  /** Helps avoid repeating the same sentence shape even when exact words differ. */
+  patternKey?: string;
+  /** Higher values are more likely after safety/memory filters. Defaults to 1. */
+  weight?: number;
   moods?: OrionMood[];
   phases?: OrionTripPhase[];
   maxStress?: OrionStressLevel;

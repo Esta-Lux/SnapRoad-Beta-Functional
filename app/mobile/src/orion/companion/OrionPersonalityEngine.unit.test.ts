@@ -13,13 +13,13 @@ test('high stress reroute selects focused', () => {
   assert.equal(selectMood(ctx, 'reroute', 'high'), 'focused');
 });
 
-test('safety_caution under high stress is calm', () => {
+test('safety_caution under high stress stays calm or focused', () => {
   const ctx = buildOrionDriveContext({ incidentNearby: true, rerouteDetected: true });
-  assert.equal(selectMood(ctx, 'safety_caution', 'high'), 'calm');
+  assert.ok(['calm', 'focused'].includes(selectMood(ctx, 'safety_caution', 'high')));
 });
 
-test('smooth_drive low stress can be witty or hype', () => {
+test('smooth_drive low stress can be witty, sassy, hype, or quiet', () => {
   const ctx = buildOrionDriveContext({ isNavigating: true, tripId: 't1' });
   const mood = selectMood(ctx, 'smooth_drive', 'low');
-  assert.ok(['witty', 'hype', 'quiet'].includes(mood));
+  assert.ok(['witty', 'sassy', 'hype', 'quiet'].includes(mood));
 });

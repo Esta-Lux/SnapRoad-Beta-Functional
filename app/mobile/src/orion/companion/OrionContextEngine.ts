@@ -23,46 +23,45 @@ function normalizeTrafficLevel(raw?: string): OrionTrafficLevel {
   return 'unknown';
 }
 
+function finiteNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function optionalFiniteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function tripGems(raw: OrionDriveContextInput): number {
+  const tripGemsEarned = optionalFiniteNumber(raw.gemsEarnedThisTrip);
+  if (tripGemsEarned != null) return tripGemsEarned;
+  return finiteNumber(raw.gemsEarned, 0);
+}
+
 export function buildOrionDriveContext(raw: OrionDriveContextInput = {}): OrionDriveContext {
   const nowMs = raw.nowMs ?? Date.now();
   const hour = new Date(nowMs).getHours();
   return {
     isNavigating: Boolean(raw.isNavigating),
-    speedMph: typeof raw.speedMph === 'number' && Number.isFinite(raw.speedMph) ? raw.speedMph : 0,
-    etaMinutes:
-      typeof raw.etaMinutes === 'number' && Number.isFinite(raw.etaMinutes) ? raw.etaMinutes : null,
-    distanceMiles:
-      typeof raw.distanceMiles === 'number' && Number.isFinite(raw.distanceMiles)
-        ? raw.distanceMiles
-        : null,
+    speedMph: finiteNumber(raw.speedMph, 0),
+    etaMinutes: optionalFiniteNumber(raw.etaMinutes),
+    distanceMiles: optionalFiniteNumber(raw.distanceMiles),
     trafficLevel: raw.congestionNearManeuver
       ? 'heavy'
       : normalizeTrafficLevel(raw.trafficLevel),
     currentRoad: raw.currentRoad?.trim() || null,
     nextManeuver: raw.nextManeuver?.trim() || null,
-    nextStepDistanceMeters:
-      typeof raw.nextStepDistanceMeters === 'number' && Number.isFinite(raw.nextStepDistanceMeters)
-        ? raw.nextStepDistanceMeters
-        : null,
+    nextStepDistanceMeters: optionalFiniteNumber(raw.nextStepDistanceMeters),
     rerouteDetected: Boolean(raw.rerouteDetected),
     incidentNearby: Boolean(raw.incidentNearby),
-    driveDurationMinutes:
-      typeof raw.driveDurationMinutes === 'number' && Number.isFinite(raw.driveDurationMinutes)
-        ? Math.max(0, raw.driveDurationMinutes)
-        : 0,
-    gemsEarned:
-      typeof raw.gemsEarned === 'number' && Number.isFinite(raw.gemsEarned) ? raw.gemsEarned : 0,
-    gemsEarnedThisTrip:
-      typeof raw.gemsEarnedThisTrip === 'number' && Number.isFinite(raw.gemsEarnedThisTrip)
-        ? raw.gemsEarnedThisTrip
-        : typeof raw.gemsEarned === 'number' && Number.isFinite(raw.gemsEarned)
-          ? raw.gemsEarned
-          : 0,
+    driveDurationMinutes: Math.max(0, finiteNumber(raw.driveDurationMinutes, 0)),
+    gemsEarned: finiteNumber(raw.gemsEarned, 0),
+    gemsEarnedThisTrip: tripGems(raw),
     timeOfDay: raw.timeOfDay ?? deriveTimeOfDay(hour),
     weather: raw.weather?.trim() || null,
     destination: raw.destination?.trim() || null,
     userName: raw.userName?.trim() || null,
     tripId: raw.tripId?.trim() || null,
+    drivingMode: raw.drivingMode?.trim() || null,
     nowMs,
   };
 }

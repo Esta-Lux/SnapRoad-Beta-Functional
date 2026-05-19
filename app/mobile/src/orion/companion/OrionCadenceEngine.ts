@@ -34,6 +34,32 @@ function minGapForMood(mood: OrionMood): number {
   return Math.round(COMPANION_MIN_GAP_MS * scale);
 }
 
+function isComplexRoadState(ctx: OrionDriveContext): boolean {
+  return (
+    ctx.rerouteDetected ||
+    ctx.incidentNearby ||
+    ctx.trafficLevel === 'heavy' ||
+    ctx.trafficLevel === 'severe'
+  );
+}
+
+function isWithinNavVoiceHoldoff(ctx: OrionDriveContext, navVoice: NavVoiceState): boolean {
+  const holdoffMs = navVoice.advisorySdkHoldoffMs ?? ADVISORY_SDK_HOLDOFF_MS;
+  return ctx.isNavigating && navVoice.msSinceLastSdkVoice < holdoffMs;
+}
+
+function violatesMinGap(
+  memory: OrionMemoryEngine,
+  nowMs: number,
+  mood: OrionMood,
+  complexRoadState: boolean,
+): boolean {
+  const lastAt = memory.lastSpokenAtMs();
+  const stressScale = complexRoadState ? 1.6 : 1;
+  const gap = Math.round(minGapForMood(mood) * stressScale);
+  return lastAt > 0 && nowMs - lastAt < gap;
+}
+
 export function shouldSpeakNow(input: CadenceInput): CadenceDecision {
   const {
     event,
@@ -60,22 +86,20 @@ export function shouldSpeakNow(input: CadenceInput): CadenceDecision {
     return { allowed: false, reason: 'guidance_suppressed' };
   }
 
-  if (
-    ctx.isNavigating &&
-    navVoice.msSinceLastSdkVoice < (navVoice.advisorySdkHoldoffMs ?? ADVISORY_SDK_HOLDOFF_MS)
-  ) {
+  if (isWithinNavVoiceHoldoff(ctx, navVoice)) {
     return { allowed: false, reason: 'sdk_voice_holdoff' };
   }
 
   const nowMs = ctx.nowMs;
   const urgent = priority === 'urgent';
+  const complexRoadState = isComplexRoadState(ctx);
 
-  if (!urgent) {
-    const lastAt = memory.lastSpokenAtMs();
-    const gap = minGapForMood(mood);
-    if (lastAt > 0 && nowMs - lastAt < gap) {
-      return { allowed: false, reason: 'min_gap' };
-    }
+  if (!urgent && complexRoadState && (event === 'smooth_drive' || mood === 'sassy')) {
+    return { allowed: false, reason: 'complex_road_state' };
+  }
+
+  if (!urgent && violatesMinGap(memory, nowMs, mood, complexRoadState)) {
+    return { allowed: false, reason: 'min_gap' };
   }
 
   if (!memory.canUseCategory(category, nowMs, urgent)) {

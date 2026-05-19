@@ -91,9 +91,9 @@ function evaluateInternal(
     llm: options.llm,
   };
 
-  const { message, category, priority } = sync
+  const { message, category, priority, variantId, patternKey, tripId } = sync
     ? generateCompanionMessageSync(genArgs)
-    : { message: null, category: 'trip', priority: 'normal' as const };
+    : { message: null, category: 'trip', priority: 'normal' as const, variantId: null, patternKey: null, tripId: ctx.tripId };
 
   const cadence = shouldSpeakNow({
     event,
@@ -127,6 +127,9 @@ function evaluateInternal(
     mood,
     priority,
     eventType: event,
+    variantId,
+    patternKey,
+    tripId,
   };
 }
 
@@ -145,7 +148,7 @@ export async function evaluateOrionCompanion(
   const mood = selectMood(ctx, event, stress, phase);
   const navVoice: NavVoiceState = { ...DEFAULT_NAV_VOICE, ...options.navVoice };
 
-  const { message, category, priority } = await generateCompanionMessage({
+  const { message, category, priority, variantId, patternKey, tripId } = await generateCompanionMessage({
     event,
     ctx,
     mood,
@@ -188,6 +191,9 @@ export async function evaluateOrionCompanion(
     mood,
     priority,
     eventType: event,
+    variantId,
+    patternKey,
+    tripId,
   };
 }
 

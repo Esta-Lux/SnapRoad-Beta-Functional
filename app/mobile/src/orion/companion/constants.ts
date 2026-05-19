@@ -1,7 +1,7 @@
 import type { OrionMessageCategory } from './types';
 
 export const ORION_COMPANION_MEMORY_KEY = 'orion_companion_memory_v1';
-export const ORION_COMPANION_MEMORY_MAX = 20;
+export const ORION_COMPANION_MEMORY_MAX = 50;
 
 export const NAV_VOICE_IMMINENT_MAX_M = 88;
 export const ADVISORY_SDK_HOLDOFF_MS = 3000;
@@ -10,6 +10,7 @@ export const ADVISORY_SDK_HOLDOFF_MS = 3000;
 export const COMPANION_MIN_GAP_MS = 50_000;
 
 export const CATEGORY_COOLDOWN_MS: Record<OrionMessageCategory, number> = {
+  cruise: 10 * 60 * 1000,
   traffic_humor: 20 * 60 * 1000,
   reroute: 10 * 60 * 1000,
   reward: 5 * 60 * 1000,
@@ -26,7 +27,7 @@ export const BUDDY_TAIL_SUPPRESS_AFTER_COMPANION_MS = 2 * 60 * 1000;
 /** Per-event probability to speak when cadence otherwise allows (bias toward silence). */
 export const EVENT_SPEAK_PROBABILITY: Record<string, number> = {
   drive_started: 0.85,
-  smooth_drive: 0.35,
+  smooth_drive: 0.55,
   heavy_traffic: 0.55,
   reroute: 0.7,
   long_drive: 0.75,
@@ -38,7 +39,7 @@ export const EVENT_SPEAK_PROBABILITY: Record<string, number> = {
 
 export const EVENT_CATEGORY: Record<string, OrionMessageCategory> = {
   drive_started: 'trip',
-  smooth_drive: 'traffic_humor',
+  smooth_drive: 'cruise',
   heavy_traffic: 'traffic_humor',
   reroute: 'reroute',
   long_drive: 'trip',
@@ -61,4 +62,5 @@ export const EVENT_DEFAULT_PRIORITY: Record<string, 'low' | 'normal' | 'urgent'>
 };
 
 export const SMOOTH_DRIVE_MIN_MINUTES = 5;
+export const SMOOTH_DRIVE_REPEAT_MINUTES = 10;
 export const LONG_DRIVE_MIN_MINUTES = 45;

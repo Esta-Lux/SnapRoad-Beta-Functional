@@ -6,17 +6,17 @@ import type { OrionMemoryEngine } from './OrionMemoryEngine';
 import { orionCompanionV1Enabled } from './orionCompanionFlags';
 import type {
   NavVoiceState,
-  OrionAdvisoryCategory,
   OrionCompanionPriority,
   OrionCompanionResult,
   OrionDriveContextInput,
   OrionHudLineMeta,
+  OrionMessageCategory,
   OrionMood,
 } from './types';
 
 export type AdvisorySpeechInput = {
   message: string;
-  category: OrionAdvisoryCategory;
+  category: OrionMessageCategory;
   priority: OrionCompanionPriority;
   drivingMode: DrivingMode;
   voiceMuted?: boolean;
@@ -128,7 +128,7 @@ export function deliverCompanionSpeech(input: {
 
   return requestOrionAdvisorySpeech({
     message: result.message,
-    category: result.category as OrionAdvisoryCategory,
+    category: result.category as OrionMessageCategory,
     priority: result.priority,
     drivingMode,
     voiceMuted,

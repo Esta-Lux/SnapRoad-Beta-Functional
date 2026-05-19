@@ -4,10 +4,10 @@ import { CATEGORY_COOLDOWN_MS } from './constants';
 import { createInMemoryOrionMemory } from './OrionMemoryEngine';
 import type { OrionCompanionResult } from './types';
 
-test('memory caps at 20 entries', () => {
+test('memory caps at 50 entries', () => {
   const mem = createInMemoryOrionMemory();
   const now = Date.now();
-  for (let i = 0; i < 25; i += 1) {
+  for (let i = 0; i < 55; i += 1) {
     mem.recordSpoken(
       {
         shouldSpeak: true,
@@ -20,7 +20,7 @@ test('memory caps at 20 entries', () => {
       now + i,
     );
   }
-  assert.equal(mem.getEntries().length, 20);
+  assert.equal(mem.getEntries().length, 50);
   assert.equal(mem.getEntries()[0]?.message, 'line 5');
 });
 
@@ -63,6 +63,32 @@ test('category cooldown blocks traffic_humor within 20 minutes', () => {
     mem.canUseCategory('traffic_humor', t0 + CATEGORY_COOLDOWN_MS.traffic_humor + 1),
     true,
   );
+});
+
+test('memory tracks variant, normalized text, trip, and recent patterns', () => {
+  const mem = createInMemoryOrionMemory();
+  const t0 = 1_700_000_000_000;
+  mem.recordSpoken(
+    {
+      shouldSpeak: true,
+      message: '  Smooth ride so far.  ',
+      category: 'cruise',
+      mood: 'sassy',
+      priority: 'low',
+      eventType: 'smooth_drive',
+      variantId: 'sd1',
+      patternKey: 'suspicious-road',
+      tripId: 'trip-a',
+    },
+    t0,
+  );
+
+  const entry = mem.getEntries()[0];
+  assert.equal(entry?.normalizedText, 'smooth ride so far.');
+  assert.equal(mem.hasVariantInTrip('sd1', 'trip-a'), true);
+  assert.equal(mem.hasVariantInTrip('sd1', 'trip-b'), false);
+  assert.equal(mem.lastUsedVariantAt('sd1'), t0);
+  assert.equal(mem.recentlyUsedPattern('smooth_drive', 'sassy', 'suspicious-road'), true);
 });
 
 test('urgent bypasses category cooldown', () => {

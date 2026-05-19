@@ -101,3 +101,115 @@ test('urgent safety can pass cadence with speakRoll 0', () => {
   });
   assert.equal(decision.allowed, true);
 });
+
+test('traffic humor cooldown keeps traffic jokes from repeating too often', () => {
+  const mem = createInMemoryOrionMemory();
+  const t0 = 1_700_000_000_000;
+  mem.recordSpoken(
+    {
+      shouldSpeak: true,
+      message: 'Ah yes, the brake-light parade.',
+      category: 'traffic_humor',
+      mood: 'focused',
+      priority: 'normal',
+      eventType: 'heavy_traffic',
+    },
+    t0,
+  );
+
+  const decision = shouldSpeakNow({
+    event: 'heavy_traffic',
+    ctx: buildOrionDriveContext({
+      isNavigating: true,
+      nowMs: t0 + 5 * 60 * 1000,
+      trafficLevel: 'heavy',
+      nextStepDistanceMeters: 500,
+    }),
+    mood: 'focused',
+    priority: 'normal',
+    memory: mem,
+    navVoice: {
+      guidanceSuppressed: false,
+      msSinceLastSdkVoice: 10_000,
+      advisorySdkHoldoffMs: 3000,
+      imminentManeuver: false,
+    },
+    category: 'traffic_humor',
+    candidateMessage: 'Traffic chose group project energy.',
+    speakRoll: 0,
+  });
+
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.reason, 'category_cooldown');
+});
+
+test('smooth cruise can pass after cruise cooldown with a fresh line', () => {
+  const mem = createInMemoryOrionMemory();
+  const t0 = 1_700_000_000_000;
+  mem.recordSpoken(
+    {
+      shouldSpeak: true,
+      message: 'Smooth ride so far.',
+      category: 'cruise',
+      mood: 'sassy',
+      priority: 'low',
+      eventType: 'smooth_drive',
+      variantId: 'sd1',
+      patternKey: 'suspicious-road',
+      tripId: 'trip-cruise',
+    },
+    t0,
+  );
+
+  const decision = shouldSpeakNow({
+    event: 'smooth_drive',
+    ctx: buildOrionDriveContext({
+      isNavigating: true,
+      nowMs: t0 + 11 * 60 * 1000,
+      trafficLevel: 'light',
+      nextStepDistanceMeters: 500,
+      tripId: 'trip-cruise',
+    }),
+    mood: 'sassy',
+    priority: 'low',
+    memory: mem,
+    navVoice: {
+      guidanceSuppressed: false,
+      msSinceLastSdkVoice: 10_000,
+      advisorySdkHoldoffMs: 3000,
+      imminentManeuver: false,
+    },
+    category: 'cruise',
+    candidateMessage: 'Different smooth-drive line.',
+    speakRoll: 0,
+  });
+
+  assert.equal(decision.allowed, true);
+});
+
+test('sassy smooth-drive stays quiet during complex road state', () => {
+  const decision = shouldSpeakNow({
+    event: 'smooth_drive',
+    ctx: buildOrionDriveContext({
+      isNavigating: true,
+      nowMs: 1_700_000_000_000,
+      trafficLevel: 'heavy',
+      nextStepDistanceMeters: 500,
+    }),
+    mood: 'sassy',
+    priority: 'low',
+    memory: createInMemoryOrionMemory(),
+    navVoice: {
+      guidanceSuppressed: false,
+      msSinceLastSdkVoice: 10_000,
+      advisorySdkHoldoffMs: 3000,
+      imminentManeuver: false,
+    },
+    category: 'cruise',
+    candidateMessage: 'Smooth ride.',
+    speakRoll: 0,
+  });
+
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.reason, 'complex_road_state');
+});

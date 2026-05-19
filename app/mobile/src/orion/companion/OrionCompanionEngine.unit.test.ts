@@ -71,3 +71,45 @@ test('smooth_drive frequently silent via probability gate', () => {
   );
   assert.equal(result.shouldSpeak, false);
 });
+
+test('smooth_drive can reappear on long trips without repeating the same variant', () => {
+  const memory = createInMemoryOrionMemory();
+  const navVoice = {
+    guidanceSuppressed: false,
+    msSinceLastSdkVoice: 50_000,
+    advisorySdkHoldoffMs: 3000,
+    imminentManeuver: false,
+  };
+  const first = evaluateOrionCompanionSync(
+    'smooth_drive',
+    {
+      isNavigating: true,
+      tripId: 'trip-long-cruise',
+      destination: 'Home',
+      trafficLevel: 'light',
+      driveDurationMinutes: 6,
+      nextStepDistanceMeters: 500,
+      nowMs: 1_700_000_000_000,
+    },
+    { memory, speakRoll: 0, navVoice },
+  );
+  assert.equal(first.shouldSpeak, true);
+  memory.recordSpoken(first, 1_700_000_000_000);
+
+  const second = evaluateOrionCompanionSync(
+    'smooth_drive',
+    {
+      isNavigating: true,
+      tripId: 'trip-long-cruise',
+      destination: 'Home',
+      trafficLevel: 'light',
+      driveDurationMinutes: 17,
+      nextStepDistanceMeters: 500,
+      nowMs: 1_700_000_000_000 + 11 * 60 * 1000,
+    },
+    { memory, speakRoll: 0, navVoice },
+  );
+
+  assert.equal(second.shouldSpeak, true);
+  assert.notEqual(second.variantId, first.variantId);
+});
