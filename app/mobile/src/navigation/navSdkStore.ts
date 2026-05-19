@@ -308,9 +308,13 @@ export function msSinceLastSdkVoice(): number {
   return t > 0 ? Date.now() - t : Number.POSITIVE_INFINITY;
 }
 
-/** expo-speech navigation line (turn prompts, trip messages) — not SDK TTS. */
+/** expo-speech navigation line (turn prompts, companion during nav) — not SDK TTS. */
 export function markNavVoiceFromJs() {
-  state = { ...state, lastNavVoiceSource: 'js' };
+  state = {
+    ...state,
+    lastNavVoiceSource: 'js',
+    lastVoiceInstructionAtMs: Date.now(),
+  };
   scheduleStoreEmit();
 }
 

@@ -224,9 +224,8 @@ export function speak(
     }
     return;
   }
-  // Advisory line (offer, incident) during an active native trip — hold off briefly after a
-  // native voice cue, otherwise the user hears two overlapping prompts on the car speakers.
-  if (rateSource === 'advisory' && sdkOwns && !forceAllow) {
+  // Advisory during navigation — hold off after turn-by-turn (JS or native) so companion does not stack on cues.
+  if (rateSource === 'advisory' && !forceAllow) {
     if (msSinceLastSdkVoice() < ADVISORY_SDK_HOLDOFF_MS) {
       advisorySuppressedCount++;
       if (typeof __DEV__ !== 'undefined' && __DEV__) {

@@ -1,5 +1,6 @@
 import type { NavStep } from './navModel';
 import type { DrivingMode } from '../types';
+import { orionCompanionV1Enabled } from '../orion/companion/orionCompanionFlags';
 import { shouldSkipOrionBuddyTail } from '../orion/companion/buddyTailPolicy';
 
 export type GuidanceBucket = 'preparatory' | 'advance' | 'imminent';
@@ -13,6 +14,7 @@ type OrionGuidanceContext = {
 };
 
 function enabled(): boolean {
+  if (orionCompanionV1Enabled()) return false;
   const raw = String(process.env.EXPO_PUBLIC_ORION_NAV_BUDDY ?? '1').trim().toLowerCase();
   return raw !== '0' && raw !== 'false' && raw !== 'off';
 }

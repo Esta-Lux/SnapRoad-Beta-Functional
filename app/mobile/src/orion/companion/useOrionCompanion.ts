@@ -14,6 +14,9 @@ import { deliverCompanionSpeech } from './OrionSpeechCoordinator';
 import { orionCompanionV1Enabled } from './orionCompanionFlags';
 import type { OrionCompanionEventType, OrionDriveContextInput, OrionHudLineMeta } from './types';
 
+const DRIVE_STARTED_DELAY_MS = 4000;
+const GUIDANCE_WAIT_MAX_MS = 12_000;
+
 export type OrionCompanionSnapshot = OrionDriveContextInput & {
   voiceMuted?: boolean;
   drivingMode?: DrivingMode;
@@ -39,6 +42,28 @@ export function useOrionCompanion({
   const smoothEmittedRef = useRef(false);
   const longDriveEmittedRef = useRef(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const guidanceWaitIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const guidanceWaitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const driveStartedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rerouteCooldownTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearGuidanceWait = useCallback(() => {
+    if (guidanceWaitIntervalRef.current != null) {
+      clearInterval(guidanceWaitIntervalRef.current);
+      guidanceWaitIntervalRef.current = null;
+    }
+    if (guidanceWaitTimeoutRef.current != null) {
+      clearTimeout(guidanceWaitTimeoutRef.current);
+      guidanceWaitTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearDriveStartedTimeout = useCallback(() => {
+    if (driveStartedTimeoutRef.current != null) {
+      clearTimeout(driveStartedTimeoutRef.current);
+      driveStartedTimeoutRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     getSnapshotRef.current = getSnapshot;
@@ -56,36 +81,43 @@ export function useOrionCompanion({
   const emitOrionEvent = useCallback(
     async (event: OrionCompanionEventType, overrides?: Partial<OrionDriveContextInput>) => {
       if (!enabled) return;
-      const snap = getSnapshotRef.current();
-      if (snap.voiceMuted) return;
+      try {
+        const snap = getSnapshotRef.current();
+        if (snap.voiceMuted) return;
 
-      const raw: OrionDriveContextInput = {
-        ...snap,
-        ...overrides,
-        nowMs: overrides?.nowMs ?? Date.now(),
-      };
+        const raw: OrionDriveContextInput = {
+          ...snap,
+          ...overrides,
+          nowMs: overrides?.nowMs ?? Date.now(),
+        };
 
-      const memory = getOrionCompanionMemory();
-      const session = getOrionTripSession();
+        const memory = getOrionCompanionMemory();
+        const session = getOrionTripSession();
 
-      const result = await evaluateOrionCompanion(event, raw, {
-        memory,
-        session,
-        navVoice: buildNavVoice(raw),
-      });
+        const result = await evaluateOrionCompanion(event, raw, {
+          memory,
+          session,
+          navVoice: buildNavVoice(raw),
+        });
 
-      if (!result.shouldSpeak || !result.message) return;
+        if (!result.shouldSpeak || !result.message) return;
 
-      const mode = snap.drivingMode ?? 'adaptive';
-      deliverCompanionSpeech({
-        result,
-        drivingMode: mode,
-        voiceMuted: snap.voiceMuted,
-        navVoice: buildNavVoice(raw),
-        memory,
-        rawContext: raw,
-        onUiLine: (meta) => onLineRef.current?.(meta),
-      });
+        const mode = snap.drivingMode ?? 'adaptive';
+        deliverCompanionSpeech({
+          result,
+          drivingMode: mode,
+          voiceMuted: snap.voiceMuted,
+          navVoice: buildNavVoice(raw),
+          memory,
+          rawContext: raw,
+          onUiLine: (meta) => onLineRef.current?.(meta),
+        });
+      } catch (err) {
+        if (typeof __DEV__ !== 'undefined' && __DEV__) {
+          // eslint-disable-next-line no-console
+          console.warn('[OrionCompanion] emitOrionEvent failed', event, err);
+        }
+      }
     },
     [enabled, buildNavVoice],
   );
@@ -97,8 +129,14 @@ export function useOrionCompanion({
     arrivalEmittedRef.current = false;
     smoothEmittedRef.current = false;
     longDriveEmittedRef.current = false;
+    clearGuidanceWait();
+    clearDriveStartedTimeout();
+    if (rerouteCooldownTimeoutRef.current != null) {
+      clearTimeout(rerouteCooldownTimeoutRef.current);
+      rerouteCooldownTimeoutRef.current = null;
+    }
     resetOrionTripSession();
-  }, []);
+  }, [clearGuidanceWait, clearDriveStartedTimeout]);
 
   const onNavigationStarted = useCallback(
     (tripId: string) => {
@@ -111,27 +149,35 @@ export function useOrionCompanion({
         driveStartedEmittedRef.current = true;
         void emitOrionEvent('drive_started', { tripId, isNavigating: true });
       };
+      clearGuidanceWait();
+      clearDriveStartedTimeout();
       if (isNavigationGuidanceSuppressed()) {
-        const wait = setInterval(() => {
+        guidanceWaitIntervalRef.current = setInterval(() => {
           if (!isNavigationGuidanceSuppressed()) {
-            clearInterval(wait);
+            clearGuidanceWait();
             fire();
           }
         }, 500);
-        setTimeout(() => clearInterval(wait), 12_000);
+        guidanceWaitTimeoutRef.current = setTimeout(() => {
+          clearGuidanceWait();
+        }, GUIDANCE_WAIT_MAX_MS);
       } else {
-        setTimeout(fire, 9000);
+        driveStartedTimeoutRef.current = setTimeout(fire, DRIVE_STARTED_DELAY_MS);
       }
     },
-    [enabled, emitOrionEvent, resetTripSession],
+    [enabled, emitOrionEvent, resetTripSession, clearGuidanceWait, clearDriveStartedTimeout],
   );
 
   const onReroute = useCallback(() => {
     if (!enabled || !tripStartedRef.current || rerouteEmittedRef.current) return;
     rerouteEmittedRef.current = true;
     void emitOrionEvent('reroute', { rerouteDetected: true });
-    setTimeout(() => {
+    if (rerouteCooldownTimeoutRef.current != null) {
+      clearTimeout(rerouteCooldownTimeoutRef.current);
+    }
+    rerouteCooldownTimeoutRef.current = setTimeout(() => {
       rerouteEmittedRef.current = false;
+      rerouteCooldownTimeoutRef.current = null;
     }, 60_000);
   }, [enabled, emitOrionEvent]);
 
@@ -188,6 +234,14 @@ export function useOrionCompanion({
       pollRef.current = null;
     };
   }, [enabled, emitOrionEvent]);
+
+  useEffect(
+    () => () => {
+      resetTripSession();
+      if (pollRef.current) clearInterval(pollRef.current);
+    },
+    [resetTripSession],
+  );
 
   return {
     emitOrionEvent,

@@ -808,6 +808,21 @@ export default function MapScreen() {
     return () => sub.remove();
   }, [nav.isNavigating, navLogicEffective]);
 
+  useEffect(() => {
+    if (!nav.isNavigating) return;
+    const appRef = { prev: AppState.currentState };
+    const sub = AppState.addEventListener('change', (next) => {
+      if (appRef.prev.match(/inactive|background/) && next === 'active') {
+        navCameraDeferUntilMsRef.current = Date.now() + 150;
+        if (navLogicEffective && navLogicRuntimeDisabled && (nav.sdkRoutePolyline?.length ?? 0) >= 2) {
+          setNavLogicRuntimeDisabled(false);
+        }
+      }
+      appRef.prev = next;
+    });
+    return () => sub.remove();
+  }, [nav.isNavigating, navLogicEffective, navLogicRuntimeDisabled, nav.sdkRoutePolyline?.length]);
+
   /**
    * `navLogicCoords` is the `coordinates` prop on the hidden
    * `MapboxNavigationView`. A new `coordinates` value is an instruction to
@@ -2012,6 +2027,8 @@ export default function MapScreen() {
     pitch: number;
     at: number;
   } | null>(null);
+  /** Skip one camera tick after foreground resume — Mapbox RN can assert if setCamera runs too early. */
+  const navCameraDeferUntilMsRef = useRef(0);
   /**
    * While navigating, `followUserLocation` uses Mapbox's internal GPS — not
    * `CustomLocationProvider` — which fights the snapped puck (camera feels offset).
@@ -2022,6 +2039,7 @@ export default function MapScreen() {
     if (!nav.isNavigating || !cameraLocked || navFollowZoomLevel == null || navFollowPitch == null) return;
     /** Mapbox RN can assert if we drive the camera while inactive/background (resume crashes). */
     if (AppState.currentState !== 'active') return;
+    if (Date.now() < navCameraDeferUntilMsRef.current) return;
     const cam = cameraRef.current;
     if (!cam?.setCamera) return;
     const anchor = { lat: navCameraAnchorLat, lng: navCameraAnchorLng };

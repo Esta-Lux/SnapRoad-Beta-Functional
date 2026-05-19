@@ -72,6 +72,9 @@ export function selectMood(
     return ctx.timeOfDay === 'night' ? 'quiet' : 'calm';
   }
   if (phase === 'opening' || eventType === 'drive_started') {
+    if (stressLevel === 'low') {
+      return hashPick(`${ctx.tripId}:open`, ['witty', 'focused', 'calm', 'hype']);
+    }
     return hashPick(`${ctx.tripId}:open`, ['focused', 'calm']);
   }
   if (eventType === 'reroute') return 'focused';
@@ -84,7 +87,10 @@ export function selectMood(
   if (eventType === 'heavy_traffic') return 'focused';
   if (eventType === 'smooth_drive') {
     if (ctx.timeOfDay === 'night') return 'quiet';
-    return hashPick(`${ctx.tripId}:${eventType}`, ['witty', 'hype', 'quiet']);
+    if (phase === 'cruising' && stressLevel === 'low') {
+      return hashPick(`${ctx.tripId}:${eventType}`, ['witty', 'hype', 'quiet']);
+    }
+    return hashPick(`${ctx.tripId}:${eventType}`, ['witty', 'calm', 'quiet']);
   }
   if (eventType === 'drive_started') {
     return hashPick(`${ctx.tripId}:start`, ['focused', 'calm', 'witty']);

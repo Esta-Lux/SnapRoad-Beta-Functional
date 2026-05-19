@@ -7,7 +7,7 @@ import type { OrionMemoryEngine } from './OrionMemoryEngine';
 import { getPersonalityKnobs } from './OrionPersonalityEngine';
 import type { OrionTripSession } from './OrionTripSession';
 import type { LlmDialogueProvider } from './llmDialogueProvider';
-import { fillDialogueTemplate, normalizeMessageKey, truncateToMaxWords } from './templateFill';
+import { fillDialogueTemplate, firstName, normalizeMessageKey, truncateToMaxWords } from './templateFill';
 import type {
   DialogueVariant,
   OrionCompanionEventType,
@@ -76,7 +76,12 @@ function pickVariant(
     return !recent.has(normalizeMessageKey(filled));
   });
 
-  const list = candidates.length > 0 ? candidates : base;
+  let list = candidates.length > 0 ? candidates : base;
+
+  if (event === 'drive_started' && firstName(ctx.userName)) {
+    const named = list.filter((v) => v.template.includes('{{userName}}'));
+    if (named.length > 0) list = named;
+  }
 
   let hash = 0;
   for (let i = 0; i < seed.length; i += 1) {

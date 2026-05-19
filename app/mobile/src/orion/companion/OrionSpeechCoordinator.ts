@@ -1,4 +1,5 @@
 import type { DrivingMode } from '../../types';
+import { markNavVoiceFromJs } from '../../navigation/navSdkStore';
 import { passesAdvisorySpeechGates } from './advisorySpeechGates';
 import { buildOrionDriveContext } from './OrionContextEngine';
 import type { OrionMemoryEngine } from './OrionMemoryEngine';
@@ -84,6 +85,10 @@ export function requestOrionAdvisorySpeech(input: AdvisorySpeechInput): Advisory
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { speak } = require('../../utils/voice') as typeof import('../../utils/voice');
   speak(message, priorityToSpeak(priority), drivingMode, { rateSource: 'advisory' });
+
+  if (ctx.isNavigating) {
+    markNavVoiceFromJs();
+  }
 
   if (recordMemory) {
     const pseudo: OrionCompanionResult = {

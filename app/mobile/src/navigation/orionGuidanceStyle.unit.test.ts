@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { NavStep } from './navModel';
-import { getOrionCompanionMemory, resetOrionTripSession } from '../orion/companion/orionCompanionShared';
 import { orionizeNavigationUtterance } from './orionGuidanceStyle';
 
 const step: NavStep = {
@@ -31,69 +30,62 @@ const step: NavStep = {
   nextManeuverDistanceMeters: null,
 };
 
-test('keeps imminent guidance directional with short Orion character', () => {
-  const phrase = 'Take the exit on the right.';
-  const out = orionizeNavigationUtterance(phrase, { bucket: 'imminent', step, distanceMeters: 45 });
-  assert.match(out, /^Take the exit on the right\. /);
-  assert.ok(out.length < 120);
-});
+function withCompanionFlag<T>(companionOn: boolean, fn: () => T): T {
+  const prevCompanion = process.env.EXPO_PUBLIC_ORION_COMPANION_V1;
+  const prevBuddy = process.env.EXPO_PUBLIC_ORION_NAV_BUDDY;
+  if (companionOn) {
+    process.env.EXPO_PUBLIC_ORION_COMPANION_V1 = '1';
+  } else {
+    process.env.EXPO_PUBLIC_ORION_COMPANION_V1 = '0';
+    process.env.EXPO_PUBLIC_ORION_NAV_BUDDY = '1';
+  }
+  try {
+    return fn();
+  } finally {
+    if (prevCompanion === undefined) delete process.env.EXPO_PUBLIC_ORION_COMPANION_V1;
+    else process.env.EXPO_PUBLIC_ORION_COMPANION_V1 = prevCompanion;
+    if (prevBuddy === undefined) delete process.env.EXPO_PUBLIC_ORION_NAV_BUDDY;
+    else process.env.EXPO_PUBLIC_ORION_NAV_BUDDY = prevBuddy;
+  }
+}
 
-test('adds a short Orion buddy tail to preparatory ramp guidance', () => {
-  const phrase = 'In half a mile, take the exit on the right.';
-  const out = orionizeNavigationUtterance(phrase, { bucket: 'preparatory', step, distanceMeters: 900 });
-  assert.match(out, /^In half a mile, take the exit on the right\. /);
-  assert.ok(out.length < 120);
-});
+test('with companion on, turn cues stay instruction-only (no buddy tail)', () => {
+  withCompanionFlag(true, () => {
+    const phrase = 'In half a mile, take the exit on the right.';
+    const out = orionizeNavigationUtterance(phrase, { bucket: 'preparatory', step, distanceMeters: 900 });
+    assert.equal(out, phrase);
 
-test('adds clean personalized flavor to advance turn cues only', () => {
-  const turnStep: NavStep = { ...step, kind: 'turn_right', rawType: 'turn', displayInstruction: 'Turn right', instruction: 'Turn right' };
-  const out = orionizeNavigationUtterance('In 500 feet, turn right.', {
-    bucket: 'advance',
-    step: turnStep,
-    distanceMeters: 150,
-    drivingMode: 'sport',
-    userName: 'Ryan Ahmed',
+    const imminent = 'Take the exit on the right.';
+    assert.equal(orionizeNavigationUtterance(imminent, { bucket: 'imminent', step, distanceMeters: 45 }), imminent);
   });
-
-  assert.match(out, /^In 500 feet, turn right\. /);
-  assert.ok(out.length < 150);
-  assert.doesNotMatch(out, /crash|police|idiot|stupid|damn|hell/i);
 });
 
-test('skips buddy tail when companion spoke recently', () => {
-  const prev = process.env.EXPO_PUBLIC_ORION_COMPANION_V1;
-  process.env.EXPO_PUBLIC_ORION_COMPANION_V1 = '1';
-  resetOrionTripSession();
-  const memory = getOrionCompanionMemory();
-  memory.clear();
-  memory.recordSpoken(
-    {
-      shouldSpeak: true,
-      message: 'Trip on. About 12 min if traffic behaves.',
-      category: 'trip',
-      mood: 'focused',
-      priority: 'normal',
-      eventType: 'drive_started',
-    },
-    Date.now(),
-  );
-
-  const turnStep: NavStep = {
-    ...step,
-    kind: 'turn_right',
-    rawType: 'turn',
-    displayInstruction: 'Turn right',
-    instruction: 'Turn right',
-  };
-  const phrase = 'In 500 feet, turn right.';
-  const out = orionizeNavigationUtterance(phrase, {
-    bucket: 'advance',
-    step: turnStep,
-    distanceMeters: 150,
-    drivingMode: 'adaptive',
+test('with companion off, adds buddy tail to preparatory guidance', () => {
+  withCompanionFlag(false, () => {
+    const phrase = 'In half a mile, take the exit on the right.';
+    const out = orionizeNavigationUtterance(phrase, { bucket: 'preparatory', step, distanceMeters: 900 });
+    assert.match(out, /^In half a mile, take the exit on the right\. /);
+    assert.ok(out.length > phrase.length);
   });
+});
 
-  assert.equal(out, phrase);
-  if (prev === undefined) delete process.env.EXPO_PUBLIC_ORION_COMPANION_V1;
-  else process.env.EXPO_PUBLIC_ORION_COMPANION_V1 = prev;
+test('with companion off, advance turn cues can include personality', () => {
+  withCompanionFlag(false, () => {
+    const turnStep: NavStep = {
+      ...step,
+      kind: 'turn_right',
+      rawType: 'turn',
+      displayInstruction: 'Turn right',
+      instruction: 'Turn right',
+    };
+    const out = orionizeNavigationUtterance('In 500 feet, turn right.', {
+      bucket: 'advance',
+      step: turnStep,
+      distanceMeters: 150,
+      drivingMode: 'sport',
+      userName: 'Ryan Ahmed',
+    });
+    assert.match(out, /^In 500 feet, turn right\. /);
+    assert.doesNotMatch(out, /crash|police|idiot|stupid|damn|hell/i);
+  });
 });

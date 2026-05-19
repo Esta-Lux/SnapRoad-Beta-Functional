@@ -6,8 +6,8 @@ export const ORION_COMPANION_MEMORY_MAX = 20;
 export const NAV_VOICE_IMMINENT_MAX_M = 88;
 export const ADVISORY_SDK_HOLDOFF_MS = 3000;
 
-/** Base min gap between non-urgent companion lines (ms). */
-export const COMPANION_MIN_GAP_MS = 100_000;
+/** Base min gap between non-urgent companion lines (ms). Scaled down per mood via talkFrequency. */
+export const COMPANION_MIN_GAP_MS = 50_000;
 
 export const CATEGORY_COOLDOWN_MS: Record<OrionMessageCategory, number> = {
   traffic_humor: 20 * 60 * 1000,
@@ -60,5 +60,5 @@ export const EVENT_DEFAULT_PRIORITY: Record<string, 'low' | 'normal' | 'urgent'>
   idle_checkin: 'low',
 };
 
-export const SMOOTH_DRIVE_MIN_MINUTES = 8;
+export const SMOOTH_DRIVE_MIN_MINUTES = 5;
 export const LONG_DRIVE_MIN_MINUTES = 45;

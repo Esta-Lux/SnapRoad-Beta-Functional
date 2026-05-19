@@ -13,6 +13,24 @@ export const DIALOGUE_VARIANTS: Record<OrionCompanionEventType, DialogueVariant[
       maxStress: 'low',
     },
     { id: 'ds5', template: 'Heading to {{destination}}. Smooth line today would be nice.', phases: ['opening'] },
+    {
+      id: 'ds6',
+      template: "{{userName}}, {{destination}} in about {{etaMinutes}} min — I'll keep the banter between turns.",
+      phases: ['opening'],
+      maxStress: 'low',
+    },
+    {
+      id: 'ds7',
+      template: 'Hey {{userName}} — wheels up. Smooth miles beat heroic lane changes.',
+      moods: ['witty', 'hype'],
+      phases: ['opening'],
+      maxStress: 'low',
+    },
+    {
+      id: 'ds8',
+      template: '{{userName}}, we are pointed at {{destination}}. I will watch traffic so you watch the road.',
+      phases: ['opening'],
+    },
   ],
   smooth_drive: [
     {
@@ -47,6 +65,24 @@ export const DIALOGUE_VARIANTS: Record<OrionCompanionEventType, DialogueVariant[
       requiresOpenedWithLine: true,
     },
     { id: 'sd6', template: 'All calm out here. Holler if you want coffee logic.', phases: ['cruising'] },
+    {
+      id: 'sd7',
+      template: '{{userName}}, this stretch is suspiciously drama-free. Enjoy it.',
+      moods: ['witty', 'hype'],
+      phases: ['cruising'],
+      maxStress: 'low',
+    },
+    {
+      id: 'sd8',
+      template: 'Still about {{etaMinutes}} min to {{destination}}. Cruise looks good, {{userName}}.',
+      phases: ['cruising'],
+      maxStress: 'medium',
+    },
+    {
+      id: 'sd9',
+      template: 'Mid-trip check — {{distanceMiles}} mi left. You are doing the calm-driver thing well.',
+      phases: ['cruising'],
+    },
   ],
   heavy_traffic: [
     { id: 'ht1', template: 'Traffic thickened up — still about {{etaMinutes}} min to {{destination}}.', phases: ['stressed', 'cruising'] },
