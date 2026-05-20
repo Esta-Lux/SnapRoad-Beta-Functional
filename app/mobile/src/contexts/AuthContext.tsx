@@ -6,6 +6,11 @@ import { applySnapRoadFromProfilePayload } from '../utils/profileScore';
 import { friendlySupabaseAuthErrorMessage } from '../utils/deepLinks';
 import { getOrCreateGuestId } from '../utils/guestIdentity';
 import { consumePendingReferralCode } from '../utils/referralStorage';
+import {
+  clearProfileSnapshot,
+  loadProfileSnapshot,
+  persistProfileSnapshot,
+} from '../utils/profileSnapshotCache';
 
 interface AuthContextType {
   user: User | null;
@@ -167,8 +172,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const restoreSession = async () => {
     /** Ensures `user` is never left null after bootstrap (tabs assume a hydrated identity). */
     let hydrated = false;
+    let hadToken = false;
     const settleGuest = async () => {
       setUser(guestUserFromId(await getOrCreateGuestId()));
+      hydrated = true;
+    };
+
+    const hydrateFromApiUser = (apiUser: Record<string, unknown>) => {
+      setUser(mapApiUserToContext(apiUser));
+      void persistProfileSnapshot(apiUser);
       hydrated = true;
     };
 
@@ -178,6 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await settleGuest();
         return;
       }
+      hadToken = true;
       try {
         const res = await api.getProfileBootstrap();
         const payload = (res.data as { data?: Record<string, unknown> })?.data ?? res.data;
@@ -186,10 +199,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const role = apiUser.role as string | undefined;
           if (isStaffRole(role) && !allowStaffInDriverApp()) {
             await api.setToken(null);
+            await clearProfileSnapshot();
             await settleGuest();
           } else {
-            setUser(mapApiUserToContext(apiUser));
-            hydrated = true;
+            hydrateFromApiUser(apiUser);
           }
         } else {
           const errMsg = (res as { error?: string }).error ?? '';
@@ -200,14 +213,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             errMsg.toLowerCase().includes('token expired');
           if (isAuthReject) {
             await api.setToken(null);
+            await clearProfileSnapshot();
             await settleGuest();
           }
-          // Network errors / 5xx: keep token — guest fallback in `finally` still unlocks the UI.
+          // Network errors / 5xx: keep token — offline profile snapshot in `finally`.
         }
       } catch {
         // Network failure, timeout — keep token for retry on next launch.
       }
     } finally {
+      if (!hydrated && hadToken) {
+        const snapshot = await loadProfileSnapshot();
+        if (snapshot) {
+          const role = snapshot.role as string | undefined;
+          if (!isStaffRole(role) || allowStaffInDriverApp()) {
+            setUser(mapApiUserToContext(snapshot));
+            hydrated = true;
+          }
+        }
+      }
       if (!hydrated) {
         await settleGuest();
       }
@@ -239,6 +263,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return false;
       }
       setUser(mapApiUserToContext(apiUser));
+      void persistProfileSnapshot(apiUser as Record<string, unknown>);
       return true;
     } finally {
       setIsAuthSubmitting(false);
@@ -272,6 +297,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return false;
       }
       setUser(mapApiUserToContext(apiUser));
+      void persistProfileSnapshot(apiUser as Record<string, unknown>);
       return true;
     } finally {
       setIsAuthSubmitting(false);
@@ -347,6 +373,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setUser(mapApiUserToContext(apiUser));
+      void persistProfileSnapshot(apiUser as Record<string, unknown>);
       return { ok: true };
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Could not finish Google sign-in.';
@@ -364,6 +391,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { supabase } = await import('../lib/supabase');
       await supabase.auth.signOut();
     } catch { /* Supabase may not be configured */ }
+    await clearProfileSnapshot();
     setUser(guestUserFromId(await getOrCreateGuestId()));
     setAuthError(null);
     setStatsVersion(0);
@@ -388,6 +416,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const record = { ...apiUser, name: apiUser.name ?? apiUser.full_name } as Record<string, unknown>;
     setUser(mapApiUserToContext(record));
+    void persistProfileSnapshot(record);
   }, []);
 
   const refreshUserFromServer = useCallback(async (): Promise<boolean> => {

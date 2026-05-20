@@ -43,7 +43,9 @@ export async function fetchPublicLegalDocument(
           ? row.name.trim()
           : slug === 'privacy-policy'
             ? 'Privacy Policy'
-            : 'Terms of Service';
+            : slug === 'community-guidelines'
+              ? 'Community Guidelines'
+              : 'Terms of Service';
       return { title, body, row };
     }
     lastError = LEGAL_BODY_FALLBACK;

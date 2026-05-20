@@ -47,6 +47,7 @@ import {
 } from './src/config/mapbox';
 import { preloadTtsVoicePreference } from './src/utils/ttsVoicePreference';
 import { prefetchOnlineOffersCatalog } from './src/lib/offersCatalogCache';
+import { warmLocationOnAppLaunch } from './src/location/warmLocation';
 import {
   SpotlightTourProvider,
   SpotlightTarget,
@@ -768,6 +769,7 @@ export default function App() {
     }
     preloadTtsVoicePreference();
     void prefetchOnlineOffersCatalog();
+    void warmLocationOnAppLaunch();
   }, []);
 
   React.useEffect(() => {

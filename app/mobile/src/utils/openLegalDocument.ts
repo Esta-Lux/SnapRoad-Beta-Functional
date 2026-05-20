@@ -1,4 +1,4 @@
-import { Alert, Linking, Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import Constants from 'expo-constants';
 
@@ -39,30 +39,25 @@ export function buildLegalDocumentUrl(slug: LegalDocSlug): string {
  * Imperatively open the legal doc in an in-app browser. Returns a Promise
  * that resolves once the user dismisses the browser.
  */
-export async function openLegalDocumentExternally(slug: LegalDocSlug): Promise<void> {
+export async function openLegalDocumentExternally(slug: LegalDocSlug): Promise<boolean> {
   const url = buildLegalDocumentUrl(slug);
   try {
     if (Platform.OS === 'web') {
       await Linking.openURL(url);
-      return;
+      return true;
     }
     await WebBrowser.openBrowserAsync(url, {
-      // Match the brand chrome where supported (no-op on Android web custom tabs
-      // when the system theme overrides this).
       controlsColor: '#0A84FF',
       dismissButtonStyle: 'close',
     });
+    return true;
   } catch (e) {
     try {
       await Linking.openURL(url);
+      return true;
     } catch {
-      const titles: Record<LegalDocSlug, string> = {
-        'terms-of-service': 'Terms of Service',
-        'privacy-policy': 'Privacy Policy',
-        'community-guidelines': 'Community Guidelines',
-      };
-      Alert.alert(titles[slug], `Could not open ${url}. Please try again later.`);
       console.warn('[Legal] open failed', e);
+      return false;
     }
   }
 }

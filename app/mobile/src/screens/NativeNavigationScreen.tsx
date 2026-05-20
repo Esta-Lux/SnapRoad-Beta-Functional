@@ -33,6 +33,11 @@ import {
   haversineMeters,
   mergeNativeNavMapPois,
 } from '../lib/nativeNavHelpers';
+import {
+  getCachedTrafficCamerasNear,
+  parseTrafficCamerasFromApiPayload,
+  setCachedTrafficCameras,
+} from '../lib/trafficCamerasCache';
 import { isTrafficSafetyLayerEnabled, trafficSafetyRegionQuery } from '../config/restrictedRegions';
 
 /**
@@ -324,8 +329,22 @@ export default function NativeNavigationScreen() {
         ]);
         if (!isMountedRef.current) return;
 
-        const cameras =
+        let cameras =
           camRes.success && camRes.data != null ? extractCameraList(camRes.data) : [];
+        if (camRes.success && camRes.data != null) {
+          const parsed = parseTrafficCamerasFromApiPayload(camRes.data);
+          if (parsed.length > 0) {
+            setCachedTrafficCameras(lat, lng, parsed);
+          }
+        } else if (cameras.length === 0) {
+          const cached = getCachedTrafficCamerasNear(lat, lng);
+          cameras = cached.map((c) => ({
+            id: c.id,
+            title: c.name,
+            lat: c.lat,
+            lng: c.lng,
+          }));
+        }
 
         let photoReports: { id: string; lat: number; lng: number; description?: string }[] = [];
         if (photoRes.success && photoRes.data != null) {

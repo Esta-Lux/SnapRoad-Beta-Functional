@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   Platform,
   ScrollView,
@@ -12,17 +13,36 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { api } from '../../api/client';
-import { selectLegalBody, type LegalDocDetailRow } from '../../api/dto/legal';
+import { fetchPublicLegalDocument } from '../../api/legalDocuments';
 import { storage } from '../../utils/storage';
+import { openLegalDocumentExternally } from '../../utils/openLegalDocument';
+import type { LegalDocSlug } from '../../utils/legalUrls';
 
 const STORAGE_KEY = 'snaproad_legal_accept_v1';
 
-type DocSummary = { id: string; name: string; type?: string; description?: string };
+/** Same policies linked from IAP paywalls and Profile → Settings → About. */
+const CONSENT_POLICIES: { slug: LegalDocSlug; label: string; description: string }[] = [
+  {
+    slug: 'terms-of-service',
+    label: 'Terms of Service',
+    description: 'Rules for using SnapRoad, subscriptions, and driver features.',
+  },
+  {
+    slug: 'privacy-policy',
+    label: 'Privacy Policy',
+    description: 'How we collect, use, and protect your data.',
+  },
+  {
+    slug: 'community-guidelines',
+    label: 'Community Guidelines',
+    description: 'Safe driving, reports, and respectful community behavior.',
+  },
+];
 
 /**
- * First-launch (per install) consent after sign-in when admin marks docs `is_required`,
- * or when any published legal docs exist (fallback so new users always acknowledge policies).
+ * First-launch (per install) consent after sign-in. Policy links open the same
+ * public documents as the rest of the app (in-app browser), with an API-backed
+ * in-app reader fallback when offline or the browser cannot open.
  */
 export default function LegalConsentGate() {
   const { isAuthenticated } = useAuth();
@@ -30,29 +50,18 @@ export default function LegalConsentGate() {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
   const [visible, setVisible] = useState(false);
-  const [docs, setDocs] = useState<DocSummary[]>([]);
   const [docModal, setDocModal] = useState<{ title: string; body: string } | null>(null);
+  const [openingSlug, setOpeningSlug] = useState<LegalDocSlug | null>(null);
   const [agreed, setAgreed] = useState(false);
 
-  const loadDocs = useCallback(async () => {
+  const loadGate = useCallback(async () => {
+    if (storage.getString(STORAGE_KEY)) {
+      setVisible(false);
+      return;
+    }
     setLoading(true);
     try {
-      let list: DocSummary[] = [];
-      const required = await api.get('/api/legal/documents?required_only=true');
-      const rdata = (required.data as { data?: DocSummary[] })?.data;
-      if (required.success && Array.isArray(rdata)) list = rdata;
-      if (list.length === 0) {
-        const all = await api.get('/api/legal/documents');
-        const adata = (all.data as { data?: DocSummary[] })?.data;
-        if (all.success && Array.isArray(adata)) list = adata;
-      }
-      setDocs(list);
-      if (list.length === 0) {
-        storage.set(STORAGE_KEY, new Date().toISOString());
-        setVisible(false);
-      } else if (!storage.getString(STORAGE_KEY)) {
-        setVisible(true);
-      }
+      setVisible(true);
     } finally {
       setLoading(false);
     }
@@ -61,13 +70,24 @@ export default function LegalConsentGate() {
   useEffect(() => {
     if (!isAuthenticated) return;
     if (storage.getString(STORAGE_KEY)) return;
-    loadDocs();
-  }, [isAuthenticated, loadDocs]);
+    void loadGate();
+  }, [isAuthenticated, loadGate]);
 
-  const openDoc = async (d: DocSummary) => {
-    const res = await api.get(`/api/legal/documents/${d.id}`);
-    const row = (res.data as { data?: LegalDocDetailRow })?.data;
-    setDocModal({ title: d.name, body: selectLegalBody(row) });
+  const openPolicy = async (slug: LegalDocSlug, label: string) => {
+    setOpeningSlug(slug);
+    try {
+      const openedExternally = await openLegalDocumentExternally(slug);
+      if (openedExternally) return;
+      const doc = await fetchPublicLegalDocument(slug);
+      setDocModal({ title: doc.title || label, body: doc.body });
+    } catch {
+      Alert.alert(
+        label,
+        'Could not open this policy right now. Check your connection and try again.',
+      );
+    } finally {
+      setOpeningSlug(null);
+    }
   };
 
   const onAccept = () => {
@@ -85,21 +105,27 @@ export default function LegalConsentGate() {
           <View style={[styles.card, { backgroundColor: colors.surface }]}>
             <Text style={[styles.title, { color: colors.text }]}>Before you drive</Text>
             <Text style={[styles.sub, { color: colors.textSecondary }]}>
-              Review SnapRoad policies. Required documents from your admin portal are listed below. Tap a title to read the full text, then confirm you agree to continue.
+              Review SnapRoad policies before your first trip. Tap a policy to read the full document, then confirm you agree to continue.
             </Text>
             {loading ? (
               <ActivityIndicator style={{ marginVertical: 20 }} color={colors.primary} />
             ) : (
               <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-                {docs.map((d) => (
+                {CONSENT_POLICIES.map((policy) => (
                   <TouchableOpacity
-                    key={d.id}
+                    key={policy.slug}
                     style={[styles.docRow, { borderColor: colors.border }]}
-                    onPress={() => openDoc(d)}
+                    onPress={() => { void openPolicy(policy.slug, policy.label); }}
                     activeOpacity={0.75}
+                    disabled={openingSlug === policy.slug}
                   >
-                    <Text style={[styles.docName, { color: colors.primary }]}>{d.name}</Text>
-                    {d.description ? <Text style={[styles.docDesc, { color: colors.textSecondary }]} numberOfLines={2}>{d.description}</Text> : null}
+                    <Text style={[styles.docName, { color: colors.primary }]}>{policy.label}</Text>
+                    <Text style={[styles.docDesc, { color: colors.textSecondary }]} numberOfLines={2}>
+                      {policy.description}
+                    </Text>
+                    {openingSlug === policy.slug ? (
+                      <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: 6 }} />
+                    ) : null}
                   </TouchableOpacity>
                 ))}
               </ScrollView>
@@ -107,7 +133,7 @@ export default function LegalConsentGate() {
             <TouchableOpacity style={styles.checkRow} onPress={() => setAgreed(!agreed)} activeOpacity={0.8}>
               <View style={[styles.checkbox, { borderColor: colors.border }, agreed && { backgroundColor: colors.primary, borderColor: colors.primary }]} />
               <Text style={[styles.checkLabel, { color: colors.text, marginLeft: 10 }]}>
-                I have read and agree to the applicable policies.
+                I have read and agree to the Terms of Service, Privacy Policy, and Community Guidelines.
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -149,7 +175,7 @@ const styles = StyleSheet.create({
   card: { borderRadius: 20, padding: 20, maxHeight: Platform.OS === 'web' ? '80%' as any : '85%' },
   title: { fontSize: 22, fontWeight: '800', marginBottom: 8 },
   sub: { fontSize: 14, lineHeight: 20, marginBottom: 12 },
-  list: { maxHeight: 220, marginBottom: 12 },
+  list: { maxHeight: 260, marginBottom: 12 },
   docRow: { borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 8 },
   docName: { fontSize: 15, fontWeight: '700' },
   docDesc: { fontSize: 12, marginTop: 4 },

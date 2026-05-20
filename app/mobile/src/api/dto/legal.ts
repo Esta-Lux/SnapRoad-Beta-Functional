@@ -17,7 +17,7 @@ export type LegalDocSummary = {
   description?: string;
 };
 
-export type PublicLegalSlug = 'privacy-policy' | 'terms-of-service';
+export type PublicLegalSlug = 'privacy-policy' | 'terms-of-service' | 'community-guidelines';
 
 export function normalizeLegalSlug(value: unknown): string {
   return typeof value === 'string'
@@ -36,6 +36,15 @@ export function publicLegalSlugForDoc(row: Pick<LegalDocSummary, 'slug' | 'name'
   if (slug === 'privacy-policy' || name === 'privacy-policy' || type === 'privacy') return 'privacy-policy';
   if (slug === 'terms-of-service' || slug === 'terms' || name === 'terms-of-service' || name === 'terms' || type === 'terms') {
     return 'terms-of-service';
+  }
+  if (
+    slug === 'community-guidelines' ||
+    slug === 'community' ||
+    name.includes('community-guidelines') ||
+    name.includes('community') ||
+    type === 'community'
+  ) {
+    return 'community-guidelines';
   }
   return null;
 }

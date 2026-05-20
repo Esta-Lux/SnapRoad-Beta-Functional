@@ -216,7 +216,7 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
       lastGpsFixAtRef.current = Date.now();
       setState((prev) => (
         prev.location.lat === UNKNOWN_LOCATION.lat && prev.location.lng === UNKNOWN_LOCATION.lng
-          ? { ...prev, location: cached }
+          ? { ...prev, location: cached, isLocating: false }
           : prev
       ));
     }).catch(() => {});
@@ -226,6 +226,32 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
   }, []);
 
   const startWatching = useCallback(async () => {
+    const existingPerm = await Location.getForegroundPermissionsAsync();
+    if (existingPerm.granted) {
+      try {
+        const last = await Location.getLastKnownPositionAsync({ maxAge: 90_000, requiredAccuracy: 100 });
+        if (last) {
+          const lat = last.coords.latitude;
+          const lng = last.coords.longitude;
+          if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            persistCachedLocation(lat, lng);
+            const initCoord = { lat, lng };
+            positionBlendRef.current = initCoord;
+            prevRawFixRef.current = initCoord;
+            lastGpsFixAtRef.current = Date.now();
+            setState((prev) => ({
+              ...prev,
+              location: initCoord,
+              accuracy: last.coords.accuracy ?? null,
+              isLocating: false,
+            }));
+          }
+        }
+      } catch {
+        /* optional seed */
+      }
+    }
+
     // Pre-prompt (Guideline 5.1.1(iv) compliant) → native iOS/Android location sheet.
     const { status } = await requestForegroundLocationWithRationale();
     if (status !== 'granted') {

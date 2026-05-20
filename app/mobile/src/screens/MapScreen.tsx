@@ -78,6 +78,11 @@ import {
 import RouteOverlay from '../components/map/RouteOverlay';
 import { syncFriendLiveShareBackgroundFromPolicy } from '../location/friendLiveShareBackgroundTask';
 import {
+  getCachedTrafficCamerasNear,
+  parseTrafficCamerasFromApiPayload,
+  setCachedTrafficCameras,
+} from '../lib/trafficCamerasCache';
+import {
   FRIEND_LIVE_LAST_NAV_KEY,
   FRIEND_LIVE_SHARE_MODE_KEY,
   FRIEND_LIVE_SHARE_PUBLISH_INTERVAL_MS,
@@ -91,7 +96,7 @@ import ReportMarkers from '../components/map/ReportMarkers';
 // FriendMarkers import intentionally removed — friend pins are hidden on the map.
 import CameraMarkers from '../components/map/CameraMarkers';
 import GasPriceMarkers from '../components/map/GasPriceMarkers';
-import type { CameraLocation, CameraViewFeed } from '../components/map/CameraMarkers';
+import type { CameraLocation } from '../components/map/CameraMarkers';
 import type { GasPriceMapPoint } from '../components/map/GasPriceMarkers';
 import {
   cheapestLocalRegularChip,
@@ -520,24 +525,6 @@ function firstPolylineUsableForOverview(
     if (out.length >= 2) return out;
   }
   return null;
-}
-
-function parseCameraViewsFromTraffic(raw: unknown): CameraViewFeed[] | undefined {
-  if (!Array.isArray(raw) || raw.length === 0) return undefined;
-  const list: CameraViewFeed[] = raw
-    .map((v: any) => ({
-      id: String(v?.id ?? ''),
-      small_url: String(v?.small_url ?? v?.smallUrl ?? '').trim(),
-      large_url: String(v?.large_url ?? v?.largeUrl ?? '').trim(),
-      direction: String(v?.direction ?? '').trim(),
-    }))
-    .map((v) => ({
-      ...v,
-      small_url: v.small_url || v.large_url,
-      large_url: v.large_url || v.small_url,
-    }))
-    .filter((v) => v.large_url.length > 0);
-  return list.length ? list : undefined;
 }
 
 type CategoryExploreState = {
@@ -2771,6 +2758,12 @@ export default function MapScreen() {
     const rLat = Math.round(poiSearchCoord.lat * 100);
     const rLng = Math.round(poiSearchCoord.lng * 100);
     if (rLat === 0 && rLng === 0) return;
+
+    const cached = getCachedTrafficCamerasNear(poiSearchCoord.lat, poiSearchCoord.lng);
+    if (cached.length > 0) {
+      setCameraLocations(cached);
+    }
+
     api
       .get<any>(`/api/map/cameras?lat=${poiSearchCoord.lat}&lng=${poiSearchCoord.lng}&radius=80`)
       .then((r) => {
@@ -2778,20 +2771,10 @@ export default function MapScreen() {
           if (!r.success) logMapDataIssue('GET /api/map/cameras', r.error);
           return;
         }
-        const raw = r.data;
-        const items = (raw as any)?.data ?? raw;
-        if (Array.isArray(items)) {
-          const cams = items
-            .map((rpt: any) => ({
-              id: String(rpt.id ?? Math.random()),
-              name: typeof rpt.title === 'string' ? rpt.title : 'Camera',
-              description: typeof rpt.description === 'string' ? rpt.description : undefined,
-              lat: Number(rpt.lat),
-              lng: Number(rpt.lng),
-              camera_views: parseCameraViewsFromTraffic(rpt.camera_views),
-            }))
-            .filter((c: CameraLocation) => isFinite(c.lat) && isFinite(c.lng));
+        const cams = parseTrafficCamerasFromApiPayload(r.data);
+        if (cams.length > 0) {
           setCameraLocations(cams);
+          setCachedTrafficCameras(poiSearchCoord.lat, poiSearchCoord.lng, cams);
         }
       })
       .catch((e) => logMapDataIssue('GET /api/map/cameras', e));
