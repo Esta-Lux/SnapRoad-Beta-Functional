@@ -1053,6 +1053,8 @@ def complete_trip(request: Request, body: TripCompleteBody, user: CurrentUserOrG
         "duration_seconds": _int_for_pg(body.duration_seconds),
         "origin": body.origin or "Start",
         "destination": body.destination or "End",
+        "started_at": trip_row.get("started_at"),
+        "ended_at": trip_row.get("ended_at"),
         "avg_speed_mph": trip_row.get("avg_speed_mph"),
         "max_speed_mph": trip_row.get("max_speed_mph"),
         "fuel_used_gallons": trip_row.get("fuel_used_gallons"),

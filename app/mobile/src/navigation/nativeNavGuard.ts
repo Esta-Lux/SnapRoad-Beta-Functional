@@ -8,6 +8,9 @@ export interface NativeNavRouteParams {
   voiceMuted?: boolean;
   drivingMode?: string;
   mapStyleUrl?: string;
+  /** Planned route from MapScreen preview — used for Insights savings baselines. */
+  plannedDistanceMiles?: number;
+  plannedDurationSeconds?: number;
 }
 
 export interface NormalizedNativeNavParams {
@@ -16,6 +19,8 @@ export interface NormalizedNativeNavParams {
   voiceMuted: boolean;
   drivingMode: DrivingMode;
   mapStyleUrl?: string;
+  plannedDistanceMiles?: number;
+  plannedDurationSeconds?: number;
 }
 
 const VALID_MODES: ReadonlySet<DrivingMode> = new Set(['calm', 'adaptive', 'sport']);
@@ -70,6 +75,10 @@ export function normalizeNativeNavParams(value: unknown): NormalizedNativeNavPar
     voiceMuted: Boolean(raw.voiceMuted),
     drivingMode: normalizeDrivingMode(raw.drivingMode),
     mapStyleUrl: normalizeMapStyleUrl(raw.mapStyleUrl),
+    plannedDistanceMiles: isFiniteNumber(raw.plannedDistanceMiles) ? raw.plannedDistanceMiles : undefined,
+    plannedDurationSeconds: isFiniteNumber(raw.plannedDurationSeconds)
+      ? Math.round(raw.plannedDurationSeconds)
+      : undefined,
   };
 }
 

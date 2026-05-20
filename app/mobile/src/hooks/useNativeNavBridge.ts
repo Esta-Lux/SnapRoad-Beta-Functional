@@ -102,8 +102,10 @@ export function useNativeNavBridge(params: {
   destination: NativeNavDestination;
   originName?: string;
   isPremium?: boolean;
+  plannedDistanceMiles?: number;
+  plannedDurationSeconds?: number;
 }) {
-  const { destination, originName, isPremium } = params;
+  const { destination, originName, isPremium, plannedDistanceMiles, plannedDurationSeconds } = params;
   const { updateUser, refreshUserFromServer, bumpStatsVersion } = useAuth();
   const startTimeRef = useRef(Date.now());
   const lastProgressRef = useRef<NativeNavProgressEvent | null>(null);
@@ -268,6 +270,8 @@ export function useNativeNavBridge(params: {
           hard_acceleration_events: base.hard_acceleration_events ?? 0,
           speeding_events: base.speeding_events ?? 0,
           incidents_reported: 0,
+          ...(plannedDistanceMiles != null ? { planned_distance_miles: plannedDistanceMiles } : {}),
+          ...(plannedDurationSeconds != null ? { planned_duration_seconds: plannedDurationSeconds } : {}),
         });
         // Race the network call against a timeout so the trip-end UI never blocks on a slow
         // backend. If the timeout wins, the POST keeps running; we just surface the local
@@ -289,7 +293,7 @@ export function useNativeNavBridge(params: {
         return base;
       }
     },
-    [buildTripSummary, getTripMetrics, updateUser, refreshUserFromServer, bumpStatsVersion],
+    [buildTripSummary, getTripMetrics, updateUser, refreshUserFromServer, bumpStatsVersion, plannedDistanceMiles, plannedDurationSeconds],
   );
 
   const handleArrival = useCallback(() => {

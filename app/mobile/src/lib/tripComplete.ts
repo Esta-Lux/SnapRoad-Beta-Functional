@@ -38,6 +38,8 @@ export interface TripCompleteApiData {
   incidents_reported?: number;
   origin?: string;
   destination?: string;
+  started_at?: string;
+  ended_at?: string;
   profile?: {
     total_miles?: number;
     total_trips?: number;
@@ -109,6 +111,9 @@ export function mergeTripCompleteResponse(base: TripSummary, body: unknown): Tri
     distance: safeDistance,
     origin: typeof d.origin === 'string' && d.origin.trim() ? d.origin : base.origin,
     destination: typeof d.destination === 'string' && d.destination.trim() ? d.destination : base.destination,
+    started_at:
+      typeof d.started_at === 'string' && d.started_at.trim() ? d.started_at : base.started_at,
+    ended_at: typeof d.ended_at === 'string' && d.ended_at.trim() ? d.ended_at : base.ended_at,
     duration_seconds: durationSeconds,
     avg_speed_mph: safeAvgSpeed || base.avg_speed_mph,
     max_speed_mph: mergedMaxSpeed,

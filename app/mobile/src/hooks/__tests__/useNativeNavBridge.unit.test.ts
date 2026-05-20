@@ -95,6 +95,19 @@ test('mergeTripCompleteResponse: merges tracking metrics used by trip summary', 
   assert.equal(merged.destination, 'Airport dropoff');
 });
 
+test('mergeTripCompleteResponse: preserves trip window timestamps for Insights range filters', () => {
+  const merged = mergeTripCompleteResponse(baseSummary({ started_at: '2026-05-03T06:37:00Z' }), {
+    data: {
+      trip_id: 'trip-window',
+      counted: true,
+      started_at: '2026-05-03T06:37:00Z',
+      ended_at: '2026-05-03T06:39:03Z',
+    },
+  });
+  assert.equal(merged.started_at, '2026-05-03T06:37:00Z');
+  assert.equal(merged.ended_at, '2026-05-03T06:39:03Z');
+});
+
 test('mergeTripCompleteResponse: sanitizes impossible speed spikes before summary display', () => {
   const merged = mergeTripCompleteResponse(baseSummary(), {
     data: {

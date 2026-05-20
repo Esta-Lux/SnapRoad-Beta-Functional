@@ -29,6 +29,7 @@ import {
   type TimeRangePreset,
 } from './insightsAggregations';
 import { formatUsd } from '../../utils/driveMetrics';
+import { formatTripTimeRange } from '../../utils/format';
 import type {
   ProfileBadgeItem,
   ProfileGemTxItem,
@@ -990,7 +991,9 @@ export default function ProfileInsightsDashboard({
           <View style={[styles.tripDetailCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[typography.h2, { color: colors.text, marginBottom: 8 }]}>Trip detail</Text>
             <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 12 }}>
-              {tripDetail.date} · {tripDetail.time}
+              {tripDetail.startedAtIso && tripDetail.tripEndedAtIso
+                ? formatTripTimeRange(tripDetail.startedAtIso, tripDetail.tripEndedAtIso)
+                : `${tripDetail.date} · ${tripDetail.time}`}
             </Text>
             <View style={styles.tripDetailRow}>
               <Ionicons name="navigate-outline" size={18} color={colors.primary} />

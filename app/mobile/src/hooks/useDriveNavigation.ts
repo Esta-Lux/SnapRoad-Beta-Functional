@@ -1335,6 +1335,12 @@ export function useDriveNavigation(params: {
         ) * 100,
       ) / 100;
     const dynamicDest = navigationData?.dynamicDestination === true;
+    const plannedDistanceMiles =
+      totalRouteMi > 0 ? Math.round(totalRouteMi * 100) / 100 : undefined;
+    const plannedDurationSeconds =
+      navigationData?.duration != null && Number.isFinite(navigationData.duration)
+        ? Math.round(navigationData.duration)
+        : undefined;
 
     setNavigationData(null);
     setAvailableRoutes([]);
@@ -1400,6 +1406,9 @@ export function useDriveNavigation(params: {
       return;
     }
 
+    // Drop any prior recap before the server merge so back-to-back drives never flash two cards.
+    setTripSummary(null);
+
     const startedAt = tripStartMs
       ? new Date(tripStartMs).toISOString()
       : new Date(now - durationSec * 1000).toISOString();
@@ -1423,6 +1432,8 @@ export function useDriveNavigation(params: {
         speeding_events: speedingCt,
         incidents_reported: 0,
         region_state: fuelCtx?.stateLabel,
+        ...(plannedDistanceMiles != null ? { planned_distance_miles: plannedDistanceMiles } : {}),
+        ...(plannedDurationSeconds != null ? { planned_duration_seconds: plannedDurationSeconds } : {}),
       });
       const res = await raceWithTimeout(postPromise, JS_NAV_TRIP_POST_TIMEOUT_MS);
       if (!res?.success || !res.data) {

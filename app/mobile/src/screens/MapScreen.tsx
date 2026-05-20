@@ -181,7 +181,7 @@ import {
 } from '../utils/distance';
 import { distanceAheadEffectiveMeters, isIncidentAheadSnapshot } from '../utils/navIncidentAhead';
 import { useSmoothedNavFraction } from '../hooks/useSmoothedNavFraction';
-import { formatDuration } from '../utils/format';
+import { formatDuration, formatTripTimeRange } from '../utils/format';
 import { formatUsd } from '../utils/driveMetrics';
 import { elevenLabsVoiceIntentEnabled, speak, stopSpeaking } from '../utils/voice';
 import { maybeRequestStoreReviewAfterTrip } from '../utils/storeReview';
@@ -2371,20 +2371,30 @@ export default function MapScreen() {
       | { tripSummary: TripSummary; arrived: boolean }
       | undefined;
     if (!result?.tripSummary) return;
-    const nonce = JSON.stringify(result.tripSummary.date + result.tripSummary.distance);
+    const nonce = JSON.stringify({
+      started: result.tripSummary.started_at,
+      ended: result.tripSummary.ended_at,
+      distance: result.tripSummary.distance,
+      duration: result.tripSummary.duration_seconds ?? result.tripSummary.duration,
+    });
     if (lastNativeNavNonceRef.current === nonce) return;
     lastNativeNavNonceRef.current = nonce;
     rnNav.setParams({ nativeNavResult: undefined } as never);
+    // Native SDK bypasses `useDriveNavigation.stopNavigation` — ensure no stale JS recap wins.
+    nav.dismissTripSummary();
     setNativeNavTripSummary(result.tripSummary);
-    // Native SDK drives bypass `useDriveNavigation.endNavigation`, so nudge the rest of
-    // the app (dashboards, wallet badges, profile totals) the same way a JS drive would.
-    if (result.tripSummary.counted !== false) {
-      bumpStatsVersion();
-      void refreshUserFromServer();
-    }
-  }, [route.params?.nativeNavResult, rnNav, bumpStatsVersion, refreshUserFromServer]);
+  }, [route.params?.nativeNavResult, rnNav, nav]);
+
+  useEffect(() => {
+    if (!nav.tripSummary) return;
+    setNativeNavTripSummary(null);
+  }, [nav.tripSummary]);
 
   const activeTripSummary = nav.tripSummary ?? nativeNavTripSummary;
+  const activeTripTimeRange = useMemo(
+    () => formatTripTimeRange(activeTripSummary?.started_at, activeTripSummary?.ended_at),
+    [activeTripSummary?.started_at, activeTripSummary?.ended_at],
+  );
   const dismissActiveTripSummary = useCallback(() => {
     if (activeTripSummary) {
       void maybeRequestStoreReviewAfterTrip({
@@ -6508,6 +6518,14 @@ export default function MapScreen() {
               },
               voiceMuted: navVoiceMuted,
               drivingMode,
+              plannedDistanceMiles:
+                nav.navigationData.distance > 0
+                  ? Math.round((nav.navigationData.distance / 1609.34) * 100) / 100
+                  : undefined,
+              plannedDurationSeconds:
+                nav.navigationData.duration != null && Number.isFinite(nav.navigationData.duration)
+                  ? Math.round(nav.navigationData.duration)
+                  : undefined,
             });
             if (nativeParams) {
               rnNav.navigate('NativeNavigation', {
@@ -6533,6 +6551,19 @@ export default function MapScreen() {
               {activeTripSummary.arrivedAtDestination ? "You've arrived" : 'Trip Summary'}
             </Text>
             <Text style={[s.tripRoute, { color: colors.textTertiary }]}>{activeTripSummary.origin} → {activeTripSummary.destination}</Text>
+            {activeTripTimeRange ? (
+              <Text
+                style={{
+                  color: colors.textSecondary,
+                  fontSize: 13,
+                  fontWeight: '600',
+                  textAlign: 'center',
+                  marginBottom: 10,
+                }}
+              >
+                {activeTripTimeRange}
+              </Text>
+            ) : null}
             {activeTripSummary.arrivedAtDestination && activeTripSummary.counted !== false ? (
               <Text
                 style={{
@@ -6576,6 +6607,25 @@ export default function MapScreen() {
                 { l: 'Rewards', v: `+${activeTripSummary.gems_earned} gems`, c: colors.warning, i: 'diamond-outline' as const },
                 ...(activeTripSummary.xp_earned != null && activeTripSummary.xp_earned > 0
                   ? [{ l: 'XP', v: `+${activeTripSummary.xp_earned} xp`, c: colors.primary, i: 'trending-up-outline' as const }]
+                  : []),
+                ...((activeTripSummary.route_savings_dollars ?? activeTripSummary.route_savings_usd ?? 0) > 0
+                  ? [{
+                      l: 'Route savings',
+                      v: formatUsd(activeTripSummary.route_savings_dollars ?? activeTripSummary.route_savings_usd ?? 0),
+                      c: colors.success,
+                      i: 'leaf-outline' as const,
+                    }]
+                  : []),
+                ...((activeTripSummary.time_saved_seconds ?? 0) > 0
+                  ? [{
+                      l: 'Time saved',
+                      v:
+                        (activeTripSummary.time_saved_seconds ?? 0) < 60
+                          ? `${activeTripSummary.time_saved_seconds}s`
+                          : `${Math.round((activeTripSummary.time_saved_seconds ?? 0) / 60)} min`,
+                      c: colors.primary,
+                      i: 'timer-outline' as const,
+                    }]
                   : []),
               ]).map((stat) => (
                 <View key={stat.l} style={[s.tripStat, { backgroundColor: colors.surfaceSecondary }]}>
@@ -6664,7 +6714,7 @@ export default function MapScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={[s.tripServiceTitle, { color: colors.text }]}>Synced to Insights & Recap</Text>
                 <Text style={[s.tripServiceSub, { color: colors.textSecondary }]}>
-                  This trip powers your profile dashboard — distance, drive time, safety, speeds, fuel, gems, XP, and route names.
+                  This trip powers your profile dashboard — distance, drive time, trip window, safety, speeds, fuel, route savings, gems, XP, and route names.
                 </Text>
                 {activeTripSummary.profile_totals &&
                 (activeTripSummary.profile_totals.total_miles != null ||

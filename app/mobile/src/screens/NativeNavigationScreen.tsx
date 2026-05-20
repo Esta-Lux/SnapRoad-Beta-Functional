@@ -158,6 +158,8 @@ export default function NativeNavigationScreen() {
     destination: destination ?? { lat: 0, lng: 0 },
     originName: undefined,
     isPremium: user?.isPremium,
+    plannedDistanceMiles: normalizedParams?.plannedDistanceMiles,
+    plannedDurationSeconds: normalizedParams?.plannedDurationSeconds,
   });
 
   const coordinates = useMemo(() => {
