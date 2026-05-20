@@ -23,7 +23,9 @@ logger = logging.getLogger(__name__)
 FMTC_API_BASE_URL = (os.environ.get("FMTC_API_BASE_URL") or "https://s3.fmtc.co/api/v3").strip().rstrip("/")
 FMTC_API_TOKEN = (os.environ.get("FMTC_API_TOKEN") or os.environ.get("ONLINE_OFFERS_API_KEY") or "").strip()
 FMTC_CACHE_SECONDS = max(60, int(os.environ.get("FMTC_OFFERS_CACHE_SECONDS") or "900"))
-PAGE_SIZE = 10
+PAGE_SIZE = 100
+DEFAULT_ONLINE_LIMIT = 100
+MAX_ONLINE_LIMIT = 100
 FMTC_SCRAPE_TIMEOUT_S = max(2.0, float(os.environ.get("FMTC_SCRAPE_TIMEOUT_S") or "5"))
 FMTC_SCRAPE_PAGE_BUDGET_S = max(2.0, float(os.environ.get("FMTC_SCRAPE_PAGE_BUDGET_S") or "6"))
 FMTC_SCRAPE_TTL_S = max(3600, int(os.environ.get("FMTC_SCRAPE_TTL_S") or "86400"))
@@ -552,7 +554,12 @@ def _deal_to_local_offers(deal: dict[str, Any], merchant: Optional[dict[str, Any
     return out
 
 
-def fetch_fmtc_online_catalog(*, category_slug: Optional[str] = None, cursor: Optional[str] = None) -> dict[str, Any]:
+def fetch_fmtc_online_catalog(
+    *,
+    category_slug: Optional[str] = None,
+    cursor: Optional[str] = None,
+    limit: int = DEFAULT_ONLINE_LIMIT,
+) -> dict[str, Any]:
     deals, merchants = _load_feed()
     active = [d for d in deals if _is_active_deal(d)]
     items = [_deal_to_online_item(d, _merchant_for_deal(d, merchants)) for d in active]
@@ -560,8 +567,11 @@ def fetch_fmtc_online_catalog(*, category_slug: Optional[str] = None, cursor: Op
     if category_slug:
         items = [it for it in items if str(it.get("category_slug") or "") == category_slug]
     offset = _decode_cursor(cursor)
-    page = items[offset : offset + PAGE_SIZE]
-    _augment_items_with_scraped_images(page)
+    page_limit = max(1, min(int(limit), MAX_ONLINE_LIMIT))
+    page = items[offset : offset + page_limit]
+    # Bulk pages skip slow per-deal og:image scraping — tiles use merchant art or gradients.
+    if page_limit <= 20:
+        _augment_items_with_scraped_images(page)
     next_offset = offset + len(page)
     categories = _category_summary(items)
     return {

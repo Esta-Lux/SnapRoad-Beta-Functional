@@ -1018,12 +1018,17 @@ def get_online_offers_feed(
     request: Request,
     category_slug: Annotated[Optional[str], Query()] = None,
     cursor: Annotated[Optional[str], Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
 ):
     """E-commerce / affiliate-style offers for the Offers tab Online pane."""
     _ = request
     from services.online_offers_provider import fetch_online_catalog
 
-    catalog = fetch_online_catalog(category_slug=category_slug or None, cursor=cursor or None)
+    catalog = fetch_online_catalog(
+        category_slug=category_slug or None,
+        cursor=cursor or None,
+        limit=limit,
+    )
     return {"success": True, "data": catalog}
 
 

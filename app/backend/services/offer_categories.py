@@ -5,15 +5,16 @@ from __future__ import annotations
 from typing import Any, Optional
 
 # Canonical values persisted as `business_type` (and shown as category).
+# Order: automotive/car first, travel, then lifestyle/retail.
 _CATEGORY_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("automotive", "Automotive & service"),
     ("gas", "Gas & fuel"),
+    ("pharmacy", "Pharmacy"),
+    ("grocery", "Grocery"),
+    ("hotel", "Hotel & travel"),
     ("restaurant", "Restaurant"),
     ("coffee", "Coffee & cafe"),
-    ("grocery", "Grocery"),
     ("retail", "Retail & shopping"),
-    ("automotive", "Automotive & service"),
-    ("pharmacy", "Pharmacy"),
-    ("hotel", "Hotel & travel"),
     ("entertainment", "Entertainment"),
     ("services", "Services"),
     ("other", "Other"),

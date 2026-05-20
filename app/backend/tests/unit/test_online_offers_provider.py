@@ -305,19 +305,19 @@ def test_fmtc_online_scrapes_og_image_when_feed_has_none(monkeypatch):
 
     monkeypatch.setattr(mod, "_scrape_og_image", fake_scrape)
 
-    cat = mod.fetch_fmtc_online_catalog(category_slug=None, cursor=None)
+    cat = mod.fetch_fmtc_online_catalog(category_slug=None, cursor=None, limit=10)
     assert cat["items"][0]["image_url"] == "https://cdn.scraped.example/og-image.jpg"
     assert cat["items"][0]["image_urls"][0] == "https://cdn.scraped.example/og-image.jpg"
     assert "https://scrapemart.example.com/p/123" in scrape_calls
 
 
-def test_fmtc_online_page_size_caps_at_ten(monkeypatch):
+def test_fmtc_online_page_size_caps_at_hundred(monkeypatch):
     monkeypatch.setenv("FMTC_API_TOKEN", "test-token")
     monkeypatch.setenv("FMTC_SCRAPE_OG_IMAGES", "0")
     sys.modules.pop("services.fmtc_offers_provider", None)
     mod = importlib.reload(importlib.import_module("services.fmtc_offers_provider"))
     deals = []
-    for i in range(15):
+    for i in range(150):
         deals.append(
             {
                 "id": 800 + i,
@@ -338,11 +338,11 @@ def test_fmtc_online_page_size_caps_at_ten(monkeypatch):
     monkeypatch.setattr(mod, "_load_feed", lambda: (deals, {}))
 
     first = mod.fetch_fmtc_online_catalog(category_slug=None, cursor=None)
-    assert len(first["items"]) == 10
+    assert len(first["items"]) == 100
     assert first["next_cursor"] is not None
 
     second = mod.fetch_fmtc_online_catalog(category_slug=None, cursor=first["next_cursor"])
-    assert len(second["items"]) == 5
+    assert len(second["items"]) == 50
     assert second["next_cursor"] is None
 
 

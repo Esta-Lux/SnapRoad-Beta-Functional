@@ -23,7 +23,9 @@ ONLINE_OFFERS_API_KEY = (os.environ.get("ONLINE_OFFERS_API_KEY") or "").strip()
 ONLINE_OFFERS_API_BASE_URL = (os.environ.get("ONLINE_OFFERS_API_BASE_URL") or "").strip().rstrip("/")
 FMTC_API_TOKEN = (os.environ.get("FMTC_API_TOKEN") or "").strip()
 
-PAGE_SIZE = 12
+PAGE_SIZE = 100
+DEFAULT_ONLINE_LIMIT = 100
+MAX_ONLINE_LIMIT = 100
 
 
 def _decode_cursor(cursor: Optional[str]) -> int:
@@ -101,7 +103,12 @@ def _http_json_catalog(*, category_slug: Optional[str], cursor: Optional[str]) -
     return _empty_catalog(provider="http_json_invalid")
 
 
-def _db_catalog(*, category_slug: Optional[str], cursor: Optional[str]) -> Optional[dict[str, Any]]:
+def _db_catalog(
+    *,
+    category_slug: Optional[str],
+    cursor: Optional[str],
+    limit: int = DEFAULT_ONLINE_LIMIT,
+) -> Optional[dict[str, Any]]:
     """
     Read admin-published offers from `online_offers`. Returns None if there are
     no rows so an explicitly configured partner feed can still serve content.
@@ -120,10 +127,11 @@ def _db_catalog(*, category_slug: Optional[str], cursor: Optional[str]) -> Optio
         return None
 
     offset = _decode_cursor(cursor)
-    rows = list_online_offers(status="active", category_slug=category_slug, limit=PAGE_SIZE, offset=offset)
+    page_limit = max(1, min(int(limit), MAX_ONLINE_LIMIT))
+    rows = list_online_offers(status="active", category_slug=category_slug, limit=page_limit, offset=offset)
     if not rows and offset > 0:
         offset = 0
-        rows = list_online_offers(status="active", category_slug=category_slug, limit=PAGE_SIZE, offset=offset)
+        rows = list_online_offers(status="active", category_slug=category_slug, limit=page_limit, offset=offset)
     items = [_row_to_item(r) for r in rows]
     end = offset + len(items)
     next_cursor = _encode_cursor(end) if end < total else None
@@ -142,7 +150,12 @@ def _db_catalog(*, category_slug: Optional[str], cursor: Optional[str]) -> Optio
     }
 
 
-def fetch_online_catalog(*, category_slug: Optional[str] = None, cursor: Optional[str] = None) -> dict[str, Any]:
+def fetch_online_catalog(
+    *,
+    category_slug: Optional[str] = None,
+    cursor: Optional[str] = None,
+    limit: int = DEFAULT_ONLINE_LIMIT,
+) -> dict[str, Any]:
     """
     Returns a dict:
       items: list[offer-like dict]
@@ -157,7 +170,7 @@ def fetch_online_catalog(*, category_slug: Optional[str] = None, cursor: Optiona
       3. `ONLINE_OFFERS_PROVIDER=http_json` partner JSON proxy.
       4. Empty catalog.
     """
-    db = _db_catalog(category_slug=category_slug, cursor=cursor)
+    db = _db_catalog(category_slug=category_slug, cursor=cursor, limit=limit)
     if db is not None:
         return db
 
@@ -167,7 +180,7 @@ def fetch_online_catalog(*, category_slug: Optional[str] = None, cursor: Optiona
         try:
             from services.fmtc_offers_provider import fetch_fmtc_online_catalog
 
-            return fetch_fmtc_online_catalog(category_slug=category_slug, cursor=cursor)
+            return fetch_fmtc_online_catalog(category_slug=category_slug, cursor=cursor, limit=limit)
         except Exception as exc:
             logger.warning("FMTC online offers provider failed: %s", exc, exc_info=True)
             return _empty_catalog(provider="fmtc_error")

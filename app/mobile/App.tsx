@@ -47,6 +47,7 @@ import {
   logMapboxStartupSourceOnce,
 } from './src/config/mapbox';
 import { preloadTtsVoicePreference } from './src/utils/ttsVoicePreference';
+import { prefetchOnlineOffersCatalog } from './src/lib/offersCatalogCache';
 import {
   SpotlightTourProvider,
   SpotlightTarget,
@@ -792,6 +793,7 @@ export default function App() {
       /* @rnmapbox optional in Expo Go */
     }
     preloadTtsVoicePreference();
+    void prefetchOnlineOffersCatalog();
   }, []);
 
   React.useEffect(() => {
