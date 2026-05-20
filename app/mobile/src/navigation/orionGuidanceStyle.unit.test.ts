@@ -64,12 +64,19 @@ test('with companion off, adds buddy tail to preparatory guidance', () => {
   withCompanionFlag(false, () => {
     const phrase = 'In half a mile, take the exit on the right.';
     const out = orionizeNavigationUtterance(phrase, { bucket: 'preparatory', step, distanceMeters: 900 });
-    assert.match(out, /^In half a mile, take the exit on the right\. /);
     assert.ok(out.length > phrase.length);
+    assert.match(out, /take the exit on the right\.$/i);
   });
 });
 
-test('with companion off, advance turn cues can include personality', () => {
+test('with companion off, imminent turn cues stay instruction-only', () => {
+  withCompanionFlag(false, () => {
+    const imminent = 'Take the exit on the right.';
+    assert.equal(orionizeNavigationUtterance(imminent, { bucket: 'imminent', step, distanceMeters: 45 }), imminent);
+  });
+});
+
+test('with companion off, advance turn cues include personality once', () => {
   withCompanionFlag(false, () => {
     const turnStep: NavStep = {
       ...step,
@@ -85,7 +92,8 @@ test('with companion off, advance turn cues can include personality', () => {
       drivingMode: 'sport',
       userName: 'Ryan Ahmed',
     });
-    assert.match(out, /^In 500 feet, turn right\. /);
+    assert.ok(out.length > 'In 500 feet, turn right.'.length);
+    assert.match(out, /In 500 feet, turn right\.$/);
     assert.doesNotMatch(out, /crash|police|idiot|stupid|damn|hell/i);
   });
 });

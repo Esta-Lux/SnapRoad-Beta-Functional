@@ -873,8 +873,8 @@ export default function MapScreen() {
 
   /**
    * SDK turn cues: ingest for HUD / repeat-last.
-   * When ElevenLabs is enabled we mute native Mapbox speech and replay the same instruction via the backend
-   * so Orion/ElevenLabs owns the voice instead of Mapbox + Expo device TTS fighting each other.
+   * Native Mapbox TTS is always muted on the hybrid path; Orion (ElevenLabs + device fallback)
+   * is the sole turn-by-turn voice so two engines never stack on the same maneuver.
    */
   const sdkVoiceCueKeysRef = useRef<Set<string>>(new Set());
   useEffect(() => {
@@ -886,39 +886,38 @@ export default function MapScreen() {
       const t = (text ?? '').trim();
       if (!t) return;
       ingestSdkVoiceSubtitle(t);
-      const substituteElevenLabs =
-        elevenLabsVoiceIntentEnabled() &&
+      const useOrionTurnVoice =
         navLogicEffective &&
         !suppressHeadlessNavForNativeFullscreen &&
         !navVoiceMutedRef.current;
-      if (substituteElevenLabs) {
-        const p = nav.sdkNavProgress;
-        const distanceMeters =
-          p?.distanceToNextManeuverMeters ?? nav.navigationProgress?.nextStepDistanceMeters ?? null;
-        const bucket = navigationVoiceCueBucket(distanceMeters);
-        if (!bucket) return;
+      if (!useOrionTurnVoice) return;
 
-        const key = navigationVoiceCueKey({
-          legIndex: p?.legIndex ?? nav.navigationProgress?.nativeStepIdentity?.legIndex,
-          stepIndex:
-            p?.stepIndex ??
-            nav.navigationProgress?.nativeStepIdentity?.stepIndex ??
-            nav.navigationProgress?.nextStep?.index,
-          bucket,
-        });
-        if (sdkVoiceCueKeysRef.current.has(key)) return;
-        sdkVoiceCueKeysRef.current.add(key);
+      const p = nav.sdkNavProgress;
+      const distanceMeters =
+        p?.distanceToNextManeuverMeters ?? nav.navigationProgress?.nextStepDistanceMeters ?? null;
+      const bucket = navigationVoiceCueBucket(distanceMeters);
+      if (!bucket) return;
 
-        const phrase = formatSdkNavigationVoiceCue({
-          text: t,
-          bucket,
-          kind: nav.navigationProgress?.nextStep?.kind,
-          seed: key,
-          userName: user?.name,
-        });
-        if (phrase) {
-          speak(phrase, 'high', drivingMode, { rateSource: 'navigation_fixed', forceAllowDuringSdk: true });
-        }
+      const key = navigationVoiceCueKey({
+        legIndex: p?.legIndex ?? nav.navigationProgress?.nativeStepIdentity?.legIndex,
+        stepIndex:
+          p?.stepIndex ??
+          nav.navigationProgress?.nativeStepIdentity?.stepIndex ??
+          nav.navigationProgress?.nextStep?.index,
+        bucket,
+      });
+      if (sdkVoiceCueKeysRef.current.has(key)) return;
+      sdkVoiceCueKeysRef.current.add(key);
+
+      const phrase = formatSdkNavigationVoiceCue({
+        text: t,
+        bucket,
+        kind: nav.navigationProgress?.nextStep?.kind,
+        seed: key,
+        userName: user?.name,
+      });
+      if (phrase) {
+        speak(phrase, 'high', drivingMode, { rateSource: 'navigation_fixed', forceAllowDuringSdk: true });
       }
     },
     [
@@ -5115,9 +5114,7 @@ export default function MapScreen() {
           coordinates={navLogicCoords}
           mute={
             navVoiceMuted ||
-            (navLogicEffective &&
-              !suppressHeadlessNavForNativeFullscreen &&
-              elevenLabsVoiceIntentEnabled())
+            (navLogicEffective && !suppressHeadlessNavForNativeFullscreen)
           }
           locale="en-US"
           routeProfile={routeProfileForPlatform()}

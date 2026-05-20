@@ -205,6 +205,26 @@ async function trySpeakWithElevenLabs(
   }
 }
 
+async function speakNavigationWithFallback(
+  phrase: string,
+  mode: DrivingMode,
+): Promise<void> {
+  const spokenByElevenLabs = await trySpeakWithElevenLabs(phrase, 'navigation');
+  if (spokenByElevenLabs) return;
+  const voiceId = await getPreferredTtsVoiceIdentifier();
+  const profile = getTtsSpeechProfile(mode);
+  Speech.speak(phrase, {
+    rate: profile.rate,
+    pitch: profile.pitch,
+    volume: profile.volume,
+    language: profile.language,
+    ...(voiceId ? { voice: voiceId } : {}),
+    onDone: onUtteranceFinished,
+    onStopped: onUtteranceFinished,
+    onError: onUtteranceFinished,
+  });
+}
+
 export function speak(
   phrase: string,
   priority: 'high' | 'normal' = 'normal',
@@ -259,12 +279,12 @@ export function speak(
   void (async () => {
     await configureAudioSessionForSpeechOutput();
     const channel = rateSource === 'navigation_fixed' ? 'navigation' : 'advisory';
-    const spokenByElevenLabs = await trySpeakWithElevenLabs(phrase, channel);
-    if (spokenByElevenLabs) return;
     if (rateSource === 'navigation_fixed') {
-      onUtteranceFinished();
+      await speakNavigationWithFallback(phrase, mode);
       return;
     }
+    const spokenByElevenLabs = await trySpeakWithElevenLabs(phrase, channel);
+    if (spokenByElevenLabs) return;
     const voiceId = await getPreferredTtsVoiceIdentifier();
     Speech.speak(phrase, {
       rate: profile.rate,
@@ -312,9 +332,7 @@ export function speakGuidance(
   void (async () => {
     Speech.stop();
     await configureAudioSessionForSpeechOutput();
-    const spokenByElevenLabs = await trySpeakWithElevenLabs(phrase, 'navigation');
-    if (spokenByElevenLabs) return;
-    onUtteranceFinished();
+    await speakNavigationWithFallback(phrase, mode);
   })();
 }
 

@@ -21,7 +21,7 @@ test('navigationVoiceCueKey dedupes per leg, step, and bucket', () => {
   assert.notEqual(a, c);
 });
 
-test('formatSdkNavigationVoiceCue keeps imminent cue short and directional', () => {
+test('formatSdkNavigationVoiceCue keeps imminent cue short without personality', () => {
   const out = formatSdkNavigationVoiceCue({
     text: 'In 200 feet, turn left onto Main Street.',
     bucket: 'imminent',
@@ -29,7 +29,18 @@ test('formatSdkNavigationVoiceCue keeps imminent cue short and directional', () 
     seed: '0|3',
     userName: 'Ryan Ahmed',
   });
-  assert.match(out, /^Turn left\. /);
-  assert.ok(out.length < 120);
-  assert.doesNotMatch(out, /onto Main Street/i);
+  assert.equal(out, 'Turn left.');
+  assert.doesNotMatch(out, /villain|drama|refunds|Main Street/i);
+});
+
+test('formatSdkNavigationVoiceCue prepends personality on advance only', () => {
+  const out = formatSdkNavigationVoiceCue({
+    text: 'In 800 feet, turn left onto Main Street.',
+    bucket: 'advance',
+    kind: 'turn_left',
+    seed: '0|3|advance',
+    userName: 'Ryan Ahmed',
+  });
+  assert.ok(out.length > 'In 800 feet, turn left onto Main Street.'.length);
+  assert.match(out, /In 800 feet, turn left onto Main Street\.$/);
 });
