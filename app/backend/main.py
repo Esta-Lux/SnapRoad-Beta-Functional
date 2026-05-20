@@ -373,13 +373,23 @@ def _non_negative_int_env(name: str, default: int = 0) -> int:
         return default
 
 
+def _commute_embedded_dispatch_enabled() -> bool:
+    """Run in-process commute ticks unless explicitly disabled."""
+    raw = (os.getenv("COMMUTE_EMBEDDED_DISPATCH") or "").strip().lower()
+    if raw in ("0", "false", "no"):
+        return False
+    if raw in ("1", "true", "yes"):
+        return True
+    return os.getenv("ENVIRONMENT", "development").strip().lower() == "production"
+
+
 @asynccontextmanager
 async def _commute_embedded_lifespan(app: FastAPI):
     tasks: list[asyncio.Task] = []
     try:
         scan_iv = _non_negative_int_env("COMMUTE_EMBEDDED_SCAN_INTERVAL_SEC", 0)
         traffic_iv = _non_negative_int_env("COMMUTE_EMBEDDED_TRAFFIC_INTERVAL_SEC", 0)
-        if _truthy_env("COMMUTE_EMBEDDED_DISPATCH"):
+        if _commute_embedded_dispatch_enabled():
             if scan_iv <= 0:
                 scan_iv = 180
             if traffic_iv <= 0:

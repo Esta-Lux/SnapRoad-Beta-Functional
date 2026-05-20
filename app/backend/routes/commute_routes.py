@@ -1,5 +1,6 @@
 """Production saved commute routes (A→B) with scheduled alert dispatch."""
 
+import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
@@ -26,6 +27,27 @@ FREE_LIMIT = 5
 PREMIUM_LIMIT = 20
 
 DAY_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+def _commute_push_enabled_for_profile(prof_row: dict) -> bool:
+    """Respect profiles.notification_settings.push_notifications.commute_alerts (default on)."""
+    ns = prof_row.get("notification_settings")
+    if isinstance(ns, str):
+        try:
+            ns = json.loads(ns)
+        except Exception:
+            ns = {}
+    if not isinstance(ns, dict):
+        return True
+    push = ns.get("push_notifications")
+    if not isinstance(push, dict):
+        return True
+    return push.get("commute_alerts", True) is not False
+
+
+def _profile_expo_push_token(prof_row: dict) -> Optional[str]:
+    token = (prof_row.get("expo_push_token") or "").strip()
+    return token or None
 
 
 def _is_premium(user: dict) -> bool:
@@ -405,7 +427,9 @@ def run_commute_scan_dispatch_tick() -> dict:
         if not _can_send_window_push(route, now_utc, day_key):
             continue
         prof_row = sb_get_profile(str(uid)) or {}
-        token = (prof_row.get("expo_push_token") or "").strip() or None
+        if not _commute_push_enabled_for_profile(prof_row):
+            continue
+        token = _profile_expo_push_token(prof_row)
         is_premium = profile_row_is_premium(prof_row)
         if not token:
             continue
@@ -430,7 +454,7 @@ def run_commute_scan_dispatch_tick() -> dict:
                 ["leave_early", "alternate_route"] if is_premium else ["leave_early", "eco_route"]
             ),
         }
-        if send_expo_push(token, title, body, data):
+        if send_expo_push(token, title, body, data, channel_id="commute-alerts"):
             try:
                 _mark_window_push_sent(sb, str(route["id"]), now_utc, day_key, route)
             except Exception:
@@ -465,6 +489,9 @@ def run_commute_traffic_dispatch_tick() -> dict:
                 skipped += 1
                 continue
             prof_row = sb_get_profile(str(uid)) or {}
+            if not _commute_push_enabled_for_profile(prof_row):
+                skipped += 1
+                continue
 
             tz_name = route.get("tz") or "UTC"
             now_local = _local_now(str(tz_name))
@@ -521,7 +548,7 @@ def run_commute_traffic_dispatch_tick() -> dict:
                 skipped += 1
                 continue
 
-            token = (prof_row.get("expo_push_token") or "").strip() or None
+            token = _profile_expo_push_token(prof_row)
             if not token:
                 skipped += 1
                 continue
@@ -553,7 +580,7 @@ def run_commute_traffic_dispatch_tick() -> dict:
                 "max_notifications_per_window": _safe_int(route.get("max_notifications_per_window"), 3, 1, 12),
                 "suggested_actions": ["leave_early", "alternate_route"],
             }
-            if send_expo_push(token, title, body, data):
+            if send_expo_push(token, title, body, data, channel_id="commute-alerts"):
                 try:
                     now_iso = datetime.now(timezone.utc).isoformat()
                     sb.table("commute_routes").update(

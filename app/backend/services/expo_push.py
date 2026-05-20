@@ -16,11 +16,13 @@ def send_expo_push(
     title: str,
     body: str,
     data: Optional[dict[str, Any]] = None,
+    *,
+    channel_id: Optional[str] = None,
 ) -> bool:
     if not expo_token or not expo_token.startswith("ExponentPushToken"):
         logger.debug("skip push: invalid or missing token")
         return False
-    payload = {
+    payload: dict[str, Any] = {
         "to": expo_token,
         "title": title,
         "body": body,
@@ -28,6 +30,8 @@ def send_expo_push(
         "priority": "high",
         "data": data or {},
     }
+    if channel_id:
+        payload["channelId"] = channel_id
     try:
         with httpx.Client(timeout=15.0) as client:
             r = client.post(EXPO_PUSH_URL, json=payload)

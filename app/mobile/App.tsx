@@ -8,8 +8,7 @@ import { ActivityIndicator, View, Text, ScrollView, Platform, StyleSheet, Linkin
 WebBrowser.maybeCompleteAuthSession();
 import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
-import Constants from 'expo-constants';
+import { registerCommutePushToken } from './src/utils/pushNotifications';
 import * as Updates from 'expo-updates';
 import { getApiMisconfigurationMessage } from './src/api/client';
 import { api } from './src/api/client';
@@ -255,25 +254,6 @@ function ProfileStackScreen() {
       />
     </ProfileStack.Navigator>
   );
-}
-
-async function registerForPushNotifications(): Promise<string | null> {
-  if (Platform.OS === 'web' || !Device.isDevice) return null;
-
-  const current = await Notifications.getPermissionsAsync();
-  let finalStatus = current.status;
-  if (finalStatus !== 'granted') {
-    const requested = await Notifications.requestPermissionsAsync();
-    finalStatus = requested.status;
-  }
-  if (finalStatus !== 'granted') return null;
-
-  const { ensureSnapRoadAndroidNotificationChannels } = await import('./src/utils/pushNotifications');
-  await ensureSnapRoadAndroidNotificationChannels();
-
-  const projectId = (Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined)?.eas?.projectId;
-  const token = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
-  return token.data ?? null;
 }
 
 function DriveTabBarButton(props: BottomTabBarButtonProps) {
@@ -583,15 +563,9 @@ function RootNavigator() {
     let cancelled = false;
     (async () => {
       try {
-        const token = await registerForPushNotifications();
-        if (!token || cancelled || lastPushTokenRef.current === token) return;
-        const result = await api.post('/api/user/push-token', {
-          token,
-          platform: Platform.OS,
-        });
-        if (result.success) {
-          lastPushTokenRef.current = token;
-        }
+        const result = await registerCommutePushToken();
+        if (!result.ok || cancelled || lastPushTokenRef.current === result.token) return;
+        lastPushTokenRef.current = result.token;
       } catch (err) {
         console.warn('[Push] Registration failed', err);
       }
