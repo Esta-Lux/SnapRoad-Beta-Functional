@@ -19,7 +19,7 @@ test('SDK arrival callback is ignored when ETA and distance still show minutes a
   );
 });
 
-test('SDK arrival callback is accepted only when physically near or route progress is terminal', () => {
+test('SDK arrival callback is ignored when physically near but route progress is not terminal', () => {
   const near = { lat: 39.96122, lng: -82.99882 };
   assert.ok(destinationCrowMeters(destination, near, null) < 5);
   assert.equal(
@@ -30,16 +30,18 @@ test('SDK arrival callback is accepted only when physically near or route progre
       remainingMeters: 300,
       remainingSeconds: 180,
     }),
-    true,
+    false,
   );
+});
 
-  const almostDone = { lat: 39.96175, lng: -82.9991 };
+test('SDK arrival callback is accepted only when route progress is terminal at the destination', () => {
+  const almostDone = { lat: 39.96135, lng: -82.9989 };
   assert.equal(
     shouldAcceptFinalDestinationArrival({
       destination,
       matched: almostDone,
       fallback: null,
-      remainingMeters: 28,
+      remainingMeters: 20,
       remainingSeconds: 18,
     }),
     true,

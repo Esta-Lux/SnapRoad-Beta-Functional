@@ -1,9 +1,9 @@
 import type { Coordinate } from '../types';
 import { haversineMeters } from '../utils/distance';
 
-export const ARRIVAL_CALLBACK_CROW_METERS = 45;
-export const ARRIVAL_CALLBACK_REMAINING_METERS = 45;
-export const ARRIVAL_CALLBACK_REMAINING_SECONDS = 30;
+export const ARRIVAL_CALLBACK_CROW_METERS = 25;
+export const ARRIVAL_CALLBACK_REMAINING_METERS = 25;
+export const ARRIVAL_CALLBACK_REMAINING_SECONDS = 20;
 
 type ArrivalGuardInput = {
   destination: Coordinate | null | undefined;
@@ -41,15 +41,20 @@ export function destinationCrowMeters(
  */
 export function shouldAcceptFinalDestinationArrival(input: ArrivalGuardInput): boolean {
   const crow = destinationCrowMeters(input.destination, input.matched, input.fallback);
-  if (crow <= ARRIVAL_CALLBACK_CROW_METERS) return true;
-
   const remainingMeters = finiteNumber(input.remainingMeters) ? input.remainingMeters : null;
   const remainingSeconds = finiteNumber(input.remainingSeconds) ? input.remainingSeconds : null;
-  return (
+  const routeIsTerminal =
     remainingMeters != null &&
     remainingSeconds != null &&
     remainingMeters <= ARRIVAL_CALLBACK_REMAINING_METERS &&
-    remainingSeconds <= ARRIVAL_CALLBACK_REMAINING_SECONDS &&
-    crow <= ARRIVAL_CALLBACK_CROW_METERS * 1.75
+    remainingSeconds <= ARRIVAL_CALLBACK_REMAINING_SECONDS;
+
+  if (crow <= ARRIVAL_CALLBACK_CROW_METERS) {
+    return routeIsTerminal || (remainingMeters == null && remainingSeconds == null);
+  }
+
+  return (
+    routeIsTerminal &&
+    crow <= ARRIVAL_CALLBACK_CROW_METERS * 1.4
   );
 }

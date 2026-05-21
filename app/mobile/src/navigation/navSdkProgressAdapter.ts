@@ -141,6 +141,32 @@ function routeNavStepMatchesSdk(
   return sdkInstr.includes(routeStreet) || normText(routeStep.displayInstruction) === sdkInstr;
 }
 
+function pickSdkAlignedRouteStep(args: {
+  navSteps: NavStep[];
+  sdkKind: NavStep['kind'];
+  sdkInstruction: string;
+  stepIndex: number;
+  cumulativeMeters: number;
+}): NavStep | null {
+  const { navSteps, sdkKind, sdkInstruction, stepIndex, cumulativeMeters } = args;
+  if (!navSteps.length) return null;
+
+  const currentOrUpcoming = navSteps
+    .filter((s) => s.index >= Math.max(0, stepIndex))
+    .filter((s) => s.distanceMetersFromStart + Math.max(0, s.distanceMeters) >= cumulativeMeters - 20);
+
+  const matching = currentOrUpcoming.find((s) => routeNavStepMatchesSdk(s, sdkKind, sdkInstruction));
+  if (matching) return matching;
+
+  const indexed = navSteps[stepIndex] ?? null;
+  if (indexed && routeNavStepMatchesSdk(indexed, sdkKind, sdkInstruction)) return indexed;
+
+  const nextIndexed = navSteps[stepIndex + 1] ?? null;
+  if (nextIndexed && routeNavStepMatchesSdk(nextIndexed, sdkKind, sdkInstruction)) return nextIndexed;
+
+  return null;
+}
+
 /**
  * Heading smoothing state (shortest-angle EWMA).
  *
@@ -433,13 +459,19 @@ export function buildNavigationProgressFromSdk(args: {
   const geometricUpcomingStep =
     navSteps.length > 0 ? pickNextNavStepAlongRoute(navSteps, cumulativeMeters) : null;
   const nextBaseStep = geometricUpcomingStep ?? sdkCurrentRouteStep;
-  const followingStep =
-    nextBaseStep != null && nextBaseStep.index + 1 < navSteps.length
-      ? navSteps[nextBaseStep.index + 1] ?? null
-      : null;
   const sdkPrimary = progress.primaryInstruction?.trim() || '';
   const sdkCurrent = progress.currentStepInstruction?.trim() || '';
   const sdkInstruction = sdkPrimary || sdkCurrent || '';
+  const sdkAlignedStep =
+    sdkInstruction && navSteps.length > 0
+      ? pickSdkAlignedRouteStep({
+          navSteps,
+          sdkKind: kind,
+          sdkInstruction,
+          stepIndex: idx,
+          cumulativeMeters,
+        })
+      : null;
   // REST rows are only for structural enrichment (signal / lanes / shields / street
   // name) when they describe the SAME maneuver the SDK is pointing at. Native is the
   // single authority for the primary display text, icon kind, and raw type/modifier
@@ -448,11 +480,16 @@ export function buildNavigationProgressFromSdk(args: {
   // "turn left" while REST was still on the depart step), which made the turn card
   // contradict native voice. Now we only fall back to REST when the SDK is completely
   // silent about this step (no primary text and no current-step instruction).
-  const preferRouteStepFields = nextBaseStep != null && !sdkInstruction;
+  const displayedBaseStep = sdkAlignedStep ?? nextBaseStep;
+  const followingStep =
+    displayedBaseStep != null && displayedBaseStep.index + 1 < navSteps.length
+      ? navSteps[displayedBaseStep.index + 1] ?? null
+      : null;
+  const preferRouteStepFields = displayedBaseStep != null && !sdkInstruction;
   const primaryText =
     sdkPrimary ||
     sdkCurrent ||
-    nextBaseStep?.displayInstruction ||
+    displayedBaseStep?.displayInstruction ||
     'Continue';
   const sdkSecondary = progress.secondaryInstruction?.trim() || '';
   const sdkThen = progress.thenInstruction?.trim() || '';
@@ -461,11 +498,11 @@ export function buildNavigationProgressFromSdk(args: {
     : '';
   const restThen = restThenBody ? `Then ${restThenBody}` : '';
   const secondaryText = sdkSecondary || sdkThen || restThen || undefined;
-  const ds = steps.length > 0 ? steps[nextBaseStep?.index ?? idx] ?? null : null;
+  const ds = steps.length > 0 ? steps[displayedBaseStep?.index ?? idx] ?? null : null;
   const matchingRouteNavStep =
-    nextBaseStep != null && routeNavStepMatchesSdk(nextBaseStep, kind, primaryText) ? nextBaseStep : null;
+    displayedBaseStep != null && routeNavStepMatchesSdk(displayedBaseStep, kind, primaryText) ? displayedBaseStep : null;
   const displayedDistanceMeters =
-    distanceToSdkDisplayedStep(nextBaseStep, idx, cumulativeMeters);
+    distanceToSdkDisplayedStep(displayedBaseStep, idx, cumulativeMeters);
   const distNext =
     typeof progress.distanceToNextManeuverMeters === 'number' && Number.isFinite(progress.distanceToNextManeuverMeters)
       ? Math.max(0, progress.distanceToNextManeuverMeters)
@@ -475,60 +512,60 @@ export function buildNavigationProgressFromSdk(args: {
         ? Math.max(0, matchingRouteNavStep.distanceMeters)
         : 0;
   const followingDistanceMeters =
-    followingStep != null && nextBaseStep != null
-      ? Math.max(0, followingStep.distanceMetersFromStart - nextBaseStep.distanceMetersFromStart)
-      : nextBaseStep != null
-        ? Math.max(0, nextBaseStep.distanceMeters)
+    followingStep != null && displayedBaseStep != null
+      ? Math.max(0, followingStep.distanceMetersFromStart - displayedBaseStep.distanceMetersFromStart)
+      : displayedBaseStep != null
+        ? Math.max(0, displayedBaseStep.distanceMeters)
         : null;
 
   const normalizedRawType = normalizeSdkManeuverType(progress.maneuverType);
   const normalizedRawModifier = normalizeSdkManeuverDirection(progress.maneuverDirection);
 
-  const sdkRoadSignalCandidate = roadSignalFromSdkPayload(progress, nextBaseStep?.signal);
+  const sdkRoadSignalCandidate = roadSignalFromSdkPayload(progress, displayedBaseStep?.signal);
   const signalForStep: RoadSignal = preferRouteStepFields
-    ? nextBaseStep?.signal ?? { kind: 'none', label: '' }
+    ? displayedBaseStep?.signal ?? { kind: 'none', label: '' }
     : sdkRoadSignalCandidate.kind !== 'none'
       ? sdkRoadSignalCandidate
-      : nextBaseStep?.signal ?? { kind: 'none', label: '' };
+      : displayedBaseStep?.signal ?? { kind: 'none', label: '' };
 
   const lanesForStep: LaneInfo[] = preferRouteStepFields
-    ? nextBaseStep?.lanes ?? []
+    ? displayedBaseStep?.lanes ?? []
     : progress.lanes?.length
       ? mapSdkLanesToLaneInfo(progress.lanes)
-      : nextBaseStep?.lanes ?? [];
+      : displayedBaseStep?.lanes ?? [];
 
   const shieldsForStep: RoadShield[] = preferRouteStepFields
-    ? nextBaseStep?.shields ?? []
+    ? displayedBaseStep?.shields ?? []
     : progress.shield
       ? [mapSdkShieldPayload(progress.shield)]
-      : nextBaseStep?.shields ?? [];
+      : displayedBaseStep?.shields ?? [];
 
   const nextStep: NavStep | null = {
-    index: nextBaseStep?.index ?? idx,
-    segmentIndex: nextBaseStep?.segmentIndex ?? Math.min(idx, Math.max(0, polyline.length - 2)),
-    kind: preferRouteStepFields ? (nextBaseStep?.kind ?? kind) : kind,
-    rawType: preferRouteStepFields ? (nextBaseStep?.rawType ?? normalizedRawType) : normalizedRawType,
+    index: displayedBaseStep?.index ?? idx,
+    segmentIndex: displayedBaseStep?.segmentIndex ?? Math.min(idx, Math.max(0, polyline.length - 2)),
+    kind: preferRouteStepFields ? (displayedBaseStep?.kind ?? kind) : kind,
+    rawType: preferRouteStepFields ? (displayedBaseStep?.rawType ?? normalizedRawType) : normalizedRawType,
     rawModifier:
-      preferRouteStepFields ? (nextBaseStep?.rawModifier ?? normalizedRawModifier) : normalizedRawModifier,
-    bearingAfter: nextBaseStep?.bearingAfter ?? matchingRouteNavStep?.bearingAfter ?? 0,
+      preferRouteStepFields ? (displayedBaseStep?.rawModifier ?? normalizedRawModifier) : normalizedRawModifier,
+    bearingAfter: displayedBaseStep?.bearingAfter ?? matchingRouteNavStep?.bearingAfter ?? 0,
     displayInstruction: primaryText,
     secondaryInstruction: secondaryText ?? null,
     subInstruction: null,
     instruction:
-      nextBaseStep?.instruction ??
+      displayedBaseStep?.instruction ??
       progress.currentStepInstruction?.trim() ??
       progress.primaryInstruction?.trim() ??
       '',
-    streetName: nextBaseStep?.streetName ?? ds?.name ?? null,
-    destinationRoad: nextBaseStep?.destinationRoad ?? null,
+    streetName: displayedBaseStep?.streetName ?? ds?.name ?? null,
+    destinationRoad: displayedBaseStep?.destinationRoad ?? null,
     shields: shieldsForStep,
     signal: signalForStep,
     lanes: lanesForStep,
-    roundaboutExitNumber: nextBaseStep?.roundaboutExitNumber ?? null,
-    distanceMetersFromStart: nextBaseStep?.distanceMetersFromStart ?? 0,
-    distanceMeters: nextBaseStep?.distanceMeters ?? ds?.distanceMeters ?? distNext,
+    roundaboutExitNumber: displayedBaseStep?.roundaboutExitNumber ?? null,
+    distanceMetersFromStart: displayedBaseStep?.distanceMetersFromStart ?? 0,
+    distanceMeters: displayedBaseStep?.distanceMeters ?? ds?.distanceMeters ?? distNext,
     distanceMetersToNext: distNext,
-    durationSeconds: nextBaseStep?.durationSeconds ?? ds?.durationSeconds ?? 0,
+    durationSeconds: displayedBaseStep?.durationSeconds ?? ds?.durationSeconds ?? 0,
     voiceAnnouncement: null,
     nextManeuverKind: followingStep?.kind ?? null,
     nextManeuverStreet: followingStep?.streetName ?? null,
@@ -548,20 +585,20 @@ export function buildNavigationProgressFromSdk(args: {
    * straight while voice says turn right" class of drift.
    */
   const bannerManeuverKind =
-    preferRouteStepFields && nextBaseStep?.kind ? nextBaseStep.kind : kind;
+    preferRouteStepFields && displayedBaseStep?.kind ? displayedBaseStep.kind : kind;
   const nativeFd = sdkManeuverDisplayDistanceFromProgress(progress);
   const banner: NavBannerModel = {
     primaryInstruction: primaryText,
     primaryDistanceMeters: distNext,
     primaryDistanceFormatted: nativeFd?.value ?? null,
     primaryDistanceFormattedUnit: nativeFd?.unit && nativeFd.unit.length > 0 ? nativeFd.unit : null,
-    primaryStreet: nextBaseStep?.streetName ?? ds?.name ?? null,
+    primaryStreet: displayedBaseStep?.streetName ?? ds?.name ?? null,
     secondaryInstruction: secondaryText ?? null,
     signal: signalForStep,
     lanes: lanesForStep,
     shields: shieldsForStep,
     maneuverKind: bannerManeuverKind,
-    roundaboutExitNumber: nextBaseStep?.roundaboutExitNumber ?? null,
+    roundaboutExitNumber: displayedBaseStep?.roundaboutExitNumber ?? null,
   };
 
   const durRem = Math.max(0, Math.round(progress.durationRemaining ?? 0));

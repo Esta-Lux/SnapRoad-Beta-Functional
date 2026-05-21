@@ -588,8 +588,8 @@ class TripCompleteBody(BaseModel):
     incidents_reported: int = 0
     region_state: Optional[str] = None
 
-# Keep in sync with mobile passive + navigation trip gates (~0.10 mi, 30s, real movement).
-_MIN_TRIP_MILES = 0.10
+# Keep in sync with mobile passive + navigation trip gates (~1 mi, 30s, real movement).
+_MIN_TRIP_MILES = 1.0
 _MIN_TRIP_SECONDS = 30
 
 

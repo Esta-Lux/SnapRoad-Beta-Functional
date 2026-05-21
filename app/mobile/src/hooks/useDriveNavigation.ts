@@ -122,12 +122,12 @@ import * as Haptics from 'expo-haptics';
  */
 
 /** Aligned voice + auto-end: "near destination" along remaining route (`navStepsFromDirections` maps `arrive`). */
-const ARRIVAL_NEAR_ROUTE_MI = 0.08;
-const ARRIVAL_MAX_REMAINING_SECONDS = 90;
+const ARRIVAL_NEAR_ROUTE_MI = 0.03;
+const ARRIVAL_MAX_REMAINING_SECONDS = 30;
 const ARRIVAL_TIGHT_CROW_METERS = 25;
-const ARRIVAL_TIGHT_ROUTE_MI = 0.03;
-const ARRIVAL_TERMINAL_ROUTE_METERS = 45;
-const ARRIVAL_TERMINAL_SECONDS = 30;
+const ARRIVAL_TIGHT_ROUTE_MI = 0.015;
+const ARRIVAL_TERMINAL_ROUTE_METERS = 25;
+const ARRIVAL_TERMINAL_SECONDS = 20;
 const JS_NAV_TRIP_POST_TIMEOUT_MS = 8000;
 function applyTripCompleteProfileToUser(updateUser: (u: Partial<User>) => void, profile: unknown) {
   if (!profile || typeof profile !== 'object') return;
@@ -1266,10 +1266,10 @@ export function useDriveNavigation(params: {
     stopSpeaking();
 
     /** Must match backend /api/trips/complete gates (distance + duration + real GPS movement). */
-    const MIN_QUALIFYING_MI = 0.10;
+    const MIN_QUALIFYING_MI = 1.0;
     const MIN_QUALIFYING_SEC = 30;
-    /** ~160 m of real movement (GPS + route projection) — stops instant-end inflation */
-    const MIN_GPS_METERS = 160;
+    /** About 1 mile of real movement (GPS + route projection) for trip rewards/history. */
+    const MIN_GPS_METERS = 1609;
 
     const now = Date.now();
     const durationSec = tripStartTimeRef.current
@@ -1652,19 +1652,16 @@ export function useDriveNavigation(params: {
       navigationProgress?.durationRemainingSeconds ??
       (liveEta?.etaMinutes != null ? liveEta.etaMinutes * 60 : null);
     const withinRoute = remainMi != null && remainMi <= ARRIVAL_NEAR_ROUTE_MI;
-    const withinCrow = crow <= 55;
+    const withinCrow = crow <= ARRIVAL_TIGHT_CROW_METERS;
     const timeNear =
       typeof remainingSec === 'number' &&
       Number.isFinite(remainingSec) &&
       remainingSec <= ARRIVAL_MAX_REMAINING_SECONDS;
     const physicallyAtDestination =
       crow <= ARRIVAL_TIGHT_CROW_METERS &&
-      (remainMi == null || remainMi <= ARRIVAL_TIGHT_ROUTE_MI);
+      (remainMi == null || remainMi <= ARRIVAL_TIGHT_ROUTE_MI) &&
+      (remainingSec == null || remainingSec <= ARRIVAL_TERMINAL_SECONDS);
     const finalStepVisible = navigationProgress?.nextStep?.kind === 'arrive';
-    const routeNearlyDone =
-      typeof remainMeters === 'number' &&
-      Number.isFinite(remainMeters) &&
-      remainMeters <= 95;
     const terminalProgress =
       typeof remainMeters === 'number' &&
       Number.isFinite(remainMeters) &&
@@ -1678,12 +1675,7 @@ export function useDriveNavigation(params: {
     }
     if (
       !physicallyAtDestination &&
-      !(
-        timeNear &&
-        (withinRoute || withinCrow || routeNearlyDone) &&
-        (finalStepVisible || withinCrow || routeNearlyDone)
-        || terminalProgress
-      )
+      !(terminalProgress && timeNear && (withinRoute || withinCrow) && (finalStepVisible || withinCrow))
     ) {
       arrivalNearStreakRef.current = 0;
       return;
@@ -1768,7 +1760,8 @@ export function useDriveNavigation(params: {
     const remainSec = navSdkSnapshot.progress?.durationRemaining;
     const physicallyAtDestination =
       crow <= ARRIVAL_TIGHT_CROW_METERS &&
-      (remainMi == null || remainMi <= ARRIVAL_TIGHT_ROUTE_MI);
+      (remainMi == null || remainMi <= ARRIVAL_TIGHT_ROUTE_MI) &&
+      (remainSec == null || remainSec <= ARRIVAL_TERMINAL_SECONDS);
     if (Number.isFinite(speedMps) && speedMps >= 3.6 && !physicallyAtDestination) {
       arrivalNearStreakRef.current = 0;
       return;

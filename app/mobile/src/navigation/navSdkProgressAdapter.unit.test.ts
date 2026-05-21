@@ -447,6 +447,57 @@ test('buildNavigationProgressFromSdk prefers upcoming actionable maneuver over c
   assert.equal(prog.nextStep.distanceMetersToNext, 65);
 });
 
+test('buildNavigationProgressFromSdk aligns route enrichment to SDK maneuver before geometric fallback', () => {
+  const steps: DirectionsStep[] = [
+    baseStep({
+      instruction: 'Turn right onto First St',
+      name: 'First St',
+      lat: 37.771,
+      lng: -122.419,
+      mapboxManeuver: { type: 'turn', modifier: 'right' },
+      distanceMeters: 100,
+    }),
+    baseStep({
+      instruction: 'Turn left onto Pine St',
+      name: 'Pine St',
+      lat: 37.772,
+      lng: -122.418,
+      mapboxManeuver: { type: 'turn', modifier: 'left' },
+      distanceMeters: 90,
+      intersections: [
+        {
+          traffic_signal: true,
+          lanes: [{ indications: ['left'], valid: true, valid_indication: 'left' }],
+        },
+      ],
+    }),
+  ];
+  const prog = buildNavigationProgressFromSdk({
+    progress: {
+      distanceRemaining: 900,
+      distanceTraveled: 10,
+      durationRemaining: 120,
+      fractionTraveled: 0.01,
+      stepIndex: 0,
+      primaryInstruction: 'Turn left onto Pine St',
+      maneuverType: 'turn',
+      maneuverDirection: 'left',
+      distanceToNextManeuverMeters: 55,
+    },
+    location: null,
+    polyline: [...poly, { lat: 37.773, lng: -122.417 }],
+    steps,
+  });
+
+  assert.ok(prog?.nextStep);
+  assert.equal(prog.nextStep.index, 1);
+  assert.equal(prog.nextStep.kind, 'turn_left');
+  assert.equal(prog.nextStep.displayInstruction, 'Turn left onto Pine St');
+  assert.equal(prog.nextStep.signal.kind, 'traffic_light');
+  assert.deepEqual(prog.nextStep.lanes[0]?.indications, ['left']);
+  assert.equal(prog.banner?.primaryStreet, 'Pine St');
+});
+
 test('buildSdkWaitingNavigationProgress uses preview poly when native store poly is still empty', () => {
   const preview = [
     { lat: 37.77, lng: -122.42 },
