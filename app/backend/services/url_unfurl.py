@@ -74,6 +74,7 @@ class UnfurlResult:
     title: Optional[str] = None
     description: Optional[str] = None
     image_url: Optional[str] = None
+    image_urls: list[str] = field(default_factory=list)
     merchant_name: Optional[str] = None
     merchant_domain: Optional[str] = None
     regular_price: Optional[float] = None
@@ -90,6 +91,7 @@ class UnfurlResult:
             "title": self.title,
             "description": self.description,
             "image_url": self.image_url,
+            "image_urls": self.image_urls,
             "merchant_name": self.merchant_name,
             "merchant_domain": self.merchant_domain,
             "regular_price": self.regular_price,
@@ -545,26 +547,44 @@ def unfurl_product_url(url: str, *, _fetcher=_fetch_html) -> UnfurlResult:
     is_amazon = _is_amazon_url(final_url) or _is_amazon_url(source)
     asin = extract_amazon_asin(final_url) or extract_amazon_asin(source)
 
+    # Enhanced pass: ranked product gallery + metadata from the same HTML fetch.
+    try:
+        from services.offer_product_scraper import extract_product_metadata_from_html
+
+        enhanced = extract_product_metadata_from_html(html_text, page_url=final_url)
+    except Exception:
+        enhanced = {}
+
     # 1. Amazon PA-API path (currently a stub returning None — falls through).
     if is_amazon and asin and amazon_paapi_configured():
         paapi = _amazon_paapi_lookup(asin)
         if paapi:
+            if enhanced.get("image_urls"):
+                paapi.setdefault("image_url", enhanced["image_urls"][0])
+                paapi["image_urls"] = enhanced["image_urls"]
             return _build_result(source, final_url, paapi, extractor="amazon_paapi", asin=asin)
 
     # 2. JSON-LD Product schema.
     jsonld = extract_jsonld_product(html_text)
     if jsonld and jsonld.get("title"):
-        return _build_result(source, final_url, jsonld, extractor="jsonld_product", asin=asin)
+        merged = {**jsonld, **{k: v for k, v in enhanced.items() if v is not None}}
+        return _build_result(source, final_url, merged, extractor="jsonld_product", asin=asin)
 
     # 3. Open Graph + product meta tags.
     og = extract_open_graph(html_text)
     if og and (og.get("title") or og.get("image_url")):
-        return _build_result(source, final_url, og, extractor="open_graph", asin=asin)
+        merged = {**og, **{k: v for k, v in enhanced.items() if v is not None}}
+        return _build_result(source, final_url, merged, extractor="open_graph", asin=asin)
 
     # 4. Plain HTML fallback.
     fallback = extract_html_title(html_text)
     if fallback:
-        return _build_result(source, final_url, fallback, extractor="html_fallback", asin=asin)
+        merged = {**fallback, **{k: v for k, v in enhanced.items() if v is not None}}
+        return _build_result(source, final_url, merged, extractor="html_fallback", asin=asin)
+
+    # 5. Gallery-only scrape (images found but no title).
+    if enhanced.get("image_urls") or enhanced.get("image_url"):
+        return _build_result(source, final_url, enhanced, extractor=str(enhanced.get("extractor") or "scrape"), asin=asin)
 
     # Nothing usable — still return an empty preview so the admin can fill it in manually.
     return _build_result(source, final_url, {}, extractor="none", asin=asin)
@@ -581,12 +601,25 @@ def _build_result(
     domain = _merchant_domain_from_url(final_url) or _merchant_domain_from_url(source)
     merchant_name = parsed.get("merchant_name") or _merchant_name_default(domain)
     currency = parsed.get("currency") or "USD"
+    gallery_raw = parsed.get("image_urls")
+    gallery: list[str] = []
+    if isinstance(gallery_raw, list):
+        for u in gallery_raw:
+            s = str(u or "").strip()
+            if s.startswith(("http://", "https://")) and s not in gallery:
+                gallery.append(s)
+    hero = (parsed.get("image_url") or None)
+    if hero and hero not in gallery:
+        gallery.insert(0, hero)
+    elif not hero and gallery:
+        hero = gallery[0]
     return UnfurlResult(
         source_url=source,
         final_url=final_url,
         title=(parsed.get("title") or None),
         description=(parsed.get("description") or None),
-        image_url=(parsed.get("image_url") or None),
+        image_url=hero,
+        image_urls=gallery[:12],
         merchant_name=merchant_name,
         merchant_domain=domain,
         regular_price=parsed.get("regular_price"),
@@ -597,6 +630,7 @@ def _build_result(
         raw_metadata={
             "extractor": extractor,
             "parsed": {k: v for k, v in parsed.items() if v is not None},
+            "image_urls": gallery[:12],
             "is_amazon": _is_amazon_url(final_url) or _is_amazon_url(source),
         },
     )

@@ -175,6 +175,16 @@ def _fake_fetcher_factory(html: str, final_url: str = "https://example.com/produ
     return _fake
 
 
+def test_unfurl_jsonld_includes_product_gallery() -> None:
+    result = unfurl_product_url(
+        "example.com/product",
+        _fetcher=_fake_fetcher_factory(_JSONLD_FIXTURE, "https://example.com/product/123"),
+    )
+    assert result.image_url == "https://example.com/img1.jpg"
+    assert len(result.image_urls) >= 2
+    assert "https://example.com/img2.jpg" in result.image_urls
+
+
 def test_unfurl_prefers_jsonld_when_both_present() -> None:
     result = unfurl_product_url(
         "example.com/product",

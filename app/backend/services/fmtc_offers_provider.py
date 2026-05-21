@@ -28,16 +28,12 @@ DEFAULT_ONLINE_LIMIT = 100
 MAX_ONLINE_LIMIT = 100
 FMTC_SCRAPE_TIMEOUT_S = max(2.0, float(os.environ.get("FMTC_SCRAPE_TIMEOUT_S") or "5"))
 FMTC_SCRAPE_PAGE_BUDGET_S = max(2.0, float(os.environ.get("FMTC_SCRAPE_PAGE_BUDGET_S") or "6"))
-FMTC_SCRAPE_TTL_S = max(3600, int(os.environ.get("FMTC_SCRAPE_TTL_S") or "86400"))
 
 
 def _scrape_og_images_enabled() -> bool:
     """Re-read env at call time so unit tests can flip the flag without reloading the module."""
     return (os.environ.get("FMTC_SCRAPE_OG_IMAGES") or "1").strip() not in {"0", "false", "no"}
 
-
-# In-process URL → og:image cache (None = previously failed; do not retry until TTL expires).
-_og_image_cache: dict[str, tuple[float, Optional[str]]] = {}
 
 _RESTRICTED_CATEGORY_PARTS = {
     "adult",
@@ -274,87 +270,48 @@ def _visual_for_deal(deal: dict[str, Any], merchant: Optional[dict[str, Any]]) -
 
 
 def _scrape_og_image(url: str, *, timeout: float = FMTC_SCRAPE_TIMEOUT_S) -> Optional[str]:
-    """Pull `og:image` (or twitter:image / JSON-LD) from the offer page when FMTC has no creative.
-
-    Cached in-process so a failure isn't retried within `FMTC_SCRAPE_TTL_S`. Imports are
-    deferred so test harnesses that mock `_load_feed` never accidentally trigger HTTP.
-    """
+    """Pull product imagery from the offer landing page when FMTC has no creative."""
     if not url or not url.startswith(("http://", "https://")):
         return None
-    now = time.time()
-    cached = _og_image_cache.get(url)
-    if cached and cached[0] > now:
-        return cached[1]
     try:
-        from services.url_unfurl import (
-            extract_html_title,
-            extract_jsonld_product,
-            extract_open_graph,
-        )
-        import httpx as _httpx
-    except Exception:
-        return None
-    try:
-        with _httpx.Client(
-            follow_redirects=True,
-            timeout=timeout,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) Chrome/126.0 Safari/537.36 SnapRoadOfferImage/1.0"
-                ),
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9",
-            },
-            http2=False,
-        ) as client:
-            r = client.get(url)
-            if r.status_code >= 400:
-                _og_image_cache[url] = (now + FMTC_SCRAPE_TTL_S, None)
-                return None
-            html_text = r.text or ""
+        from services.offer_product_scraper import scrape_product_page
+
+        scraped = scrape_product_page(url, timeout=timeout)
+        if scraped and scraped.get("image_url"):
+            return str(scraped["image_url"])
     except Exception as exc:
-        logger.debug("og:image scrape failed for %s: %s", url, exc)
-        _og_image_cache[url] = (now + min(900, FMTC_SCRAPE_TTL_S), None)
-        return None
-
-    image: Optional[str] = None
-    jsonld = extract_jsonld_product(html_text)
-    if jsonld and isinstance(jsonld.get("image_url"), str) and jsonld["image_url"].startswith(("http://", "https://")):
-        image = jsonld["image_url"]
-    if not image:
-        og = extract_open_graph(html_text)
-        if og and isinstance(og.get("image_url"), str) and og["image_url"].startswith(("http://", "https://")):
-            image = og["image_url"]
-    if not image:
-        fb = extract_html_title(html_text)
-        if fb and isinstance(fb.get("image_url"), str) and fb["image_url"].startswith(("http://", "https://")):
-            image = fb["image_url"]
-
-    _og_image_cache[url] = (now + FMTC_SCRAPE_TTL_S, image)
-    return image
+        logger.debug("product scrape failed for %s: %s", url, exc)
+    return None
 
 
 def _augment_items_with_scraped_images(items: list[dict[str, Any]]) -> None:
-    """Best-effort: scrape `og:image` for items missing creative art, bounded by a per-page time budget."""
+    """Best-effort: scrape product pages for weak/missing art, bounded by a per-page time budget."""
     if not _scrape_og_images_enabled() or not items:
+        return
+    try:
+        from services.offer_product_scraper import item_needs_image_rescrape, scrape_product_page
+    except Exception:
         return
     deadline = time.time() + FMTC_SCRAPE_PAGE_BUDGET_S
     for item in items:
         if time.time() > deadline:
             return
-        if item.get("image_url"):
+        if item.get("image_url") and not item_needs_image_rescrape(item):
             continue
         url = (item.get("source_url") or item.get("affiliate_url") or "").strip()
         if not url:
             continue
-        scraped = _scrape_og_image(url)
-        if scraped:
-            item["image_url"] = scraped
-            gallery = item.get("image_urls") if isinstance(item.get("image_urls"), list) else []
-            if scraped not in gallery:
-                gallery = [scraped, *gallery]
+        scraped = scrape_product_page(url, timeout=FMTC_SCRAPE_TIMEOUT_S)
+        if not scraped:
+            continue
+        hero = scraped.get("image_url")
+        gallery = scraped.get("image_urls") if isinstance(scraped.get("image_urls"), list) else []
+        if hero:
+            item["image_url"] = hero
+        if gallery:
             item["image_urls"] = gallery[:12]
+        elif hero:
+            item["image_urls"] = [hero]
 
 
 def _image_for_deal(deal: dict[str, Any], merchant: Optional[dict[str, Any]]) -> Optional[str]:

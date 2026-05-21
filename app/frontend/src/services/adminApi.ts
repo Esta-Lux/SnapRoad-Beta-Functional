@@ -38,6 +38,7 @@ export interface UnfurlPreview {
   title: string | null
   description: string | null
   image_url: string | null
+  image_urls?: string[]
   merchant_name: string | null
   merchant_domain: string | null
   regular_price: number | null
@@ -59,6 +60,7 @@ export interface OnlineOfferUpsertPayload {
   merchant_name?: string | null
   merchant_domain?: string | null
   image_url?: string | null
+  image_urls?: string[] | null
   regular_price?: number | null
   sale_price?: number | null
   currency?: string | null

@@ -298,12 +298,15 @@ def test_fmtc_online_scrapes_og_image_when_feed_has_none(monkeypatch):
 
     scrape_calls: list[str] = []
 
-    def fake_scrape(url: str, *, timeout: float = 0.0) -> str | None:
-        del timeout
+    def fake_scrape(url: str, **kwargs):
+        del kwargs
         scrape_calls.append(url)
-        return "https://cdn.scraped.example/og-image.jpg"
+        return {
+            "image_url": "https://cdn.scraped.example/og-image.jpg",
+            "image_urls": ["https://cdn.scraped.example/og-image.jpg"],
+        }
 
-    monkeypatch.setattr(mod, "_scrape_og_image", fake_scrape)
+    monkeypatch.setattr("services.offer_product_scraper.scrape_product_page", fake_scrape)
 
     cat = mod.fetch_fmtc_online_catalog(category_slug=None, cursor=None, limit=10)
     assert cat["items"][0]["image_url"] == "https://cdn.scraped.example/og-image.jpg"
@@ -382,3 +385,43 @@ def test_fmtc_local_requires_address_and_coordinates(monkeypatch):
     assert rows[0]["offer_source"] == "fmtc"
     assert rows[0]["offer_url"] == "https://parking.example.com/deal"
     assert rows[0]["affiliate_tracking_url"] == "https://example.com/parking"
+
+
+def test_db_catalog_scrapes_weak_images_for_admin_offers(monkeypatch):
+    mod = _reload_provider(monkeypatch)
+    row = {
+        "id": "uuid-1",
+        "source_url": "https://shop.example.com/item",
+        "affiliate_url": "https://shop.example.com/item",
+        "title": "Widget",
+        "status": "active",
+        "merchant_domain": "shop.example.com",
+        "image_url": "https://cdn.example.com/merchant-logo.png",
+        "image_urls": ["https://cdn.example.com/merchant-logo.png"],
+    }
+
+    def fake_list(**kwargs):
+        if kwargs.get("limit", 0) >= 500:
+            return [row]
+        if kwargs.get("offset", 0) == 0:
+            return [row]
+        return []
+
+    monkeypatch.setattr("services.online_offers_db.list_online_offers", fake_list)
+    monkeypatch.setattr("services.online_offers_db.count_online_offers", lambda **kwargs: 1)
+    monkeypatch.setattr(
+        "services.offer_product_scraper.scrape_product_page",
+        lambda url, **kwargs: {
+            "image_url": "https://cdn.example.com/products/widget-hero.jpg",
+            "image_urls": [
+                "https://cdn.example.com/products/widget-hero.jpg",
+                "https://cdn.example.com/products/widget-alt.jpg",
+            ],
+        },
+    )
+
+    cat = mod.fetch_online_catalog(category_slug=None, cursor=None)
+
+    assert cat["provider"] == "supabase_online_offers"
+    assert cat["items"][0]["image_url"] == "https://cdn.example.com/products/widget-hero.jpg"
+    assert len(cat["items"][0]["image_urls"]) == 2

@@ -38,6 +38,7 @@ from services.online_offers_db import (
     delete_online_offer,
     get_online_offer,
     list_online_offers,
+    resync_all_online_offer_images,
     update_online_offer,
 )
 from services.supabase_service import sb_create_audit_log, sb_create_offer
@@ -85,6 +86,8 @@ def admin_unfurl_offer_link(body: UnfurlRequest):
         notes.append("No title was found on the page — set one before publishing.")
     if not result.image_url:
         notes.append("No image was found on the page — paste an image URL or upload one.")
+    elif result.image_urls and len(result.image_urls) > 1:
+        notes.append(f"Found {len(result.image_urls)} product images for the gallery.")
 
     payload = result.to_dict()
     payload["notes"] = notes
@@ -246,6 +249,22 @@ def admin_update_online_offer(offer_id: str, patch: OnlineOfferPatch):
         raise HTTPException(status_code=404, detail="Online offer not found")
     sb_create_audit_log("ONLINE_OFFER_UPDATED", "admin", offer_id, f"Updated fields: {list(fields.keys())}")
     return {"success": True, "data": row}
+
+
+@admin_link_offers_router.post("/admin/online-offers/resync-images")
+def admin_resync_online_offer_images():
+    """
+    Re-scrape every active admin online offer and persist product imagery +
+    missing prices. Use after bulk-importing URLs or when tiles show logos.
+    """
+    stats = resync_all_online_offer_images()
+    sb_create_audit_log(
+        "ONLINE_OFFERS_IMAGES_RESYNC",
+        "admin",
+        "",
+        f"Resynced online offer images: {stats}",
+    )
+    return {"success": True, "data": stats}
 
 
 @admin_link_offers_router.delete("/admin/online-offers/{offer_id}")

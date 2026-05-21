@@ -375,6 +375,7 @@ class OnlineOfferUpsert(BaseModel):
     merchant_name: Optional[str] = Field(default=None, max_length=120)
     merchant_domain: Optional[str] = Field(default=None, max_length=180)
     image_url: Optional[str] = None
+    image_urls: Optional[list[str]] = None
     regular_price: Optional[float] = Field(default=None, ge=0)
     sale_price: Optional[float] = Field(default=None, ge=0)
     currency: Optional[str] = Field(default="USD", max_length=8)
@@ -396,6 +397,7 @@ class OnlineOfferPatch(BaseModel):
     merchant_name: Optional[str] = Field(default=None, max_length=120)
     merchant_domain: Optional[str] = Field(default=None, max_length=180)
     image_url: Optional[str] = None
+    image_urls: Optional[list[str]] = None
     regular_price: Optional[float] = Field(default=None, ge=0)
     sale_price: Optional[float] = Field(default=None, ge=0)
     currency: Optional[str] = Field(default=None, max_length=8)

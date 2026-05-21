@@ -171,6 +171,7 @@ export default function AdminOfferLinkPaster({ theme, open, onClose, onPublished
         merchant_name: form.merchant_name.trim() || null,
         merchant_domain: form.merchant_domain.trim() || null,
         image_url: form.image_url.trim() || null,
+        image_urls: preview?.image_urls?.length ? preview.image_urls : null,
         regular_price: regular,
         sale_price: sale,
         currency,

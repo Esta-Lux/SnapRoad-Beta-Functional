@@ -133,6 +133,12 @@ def _db_catalog(
         offset = 0
         rows = list_online_offers(status="active", category_slug=category_slug, limit=page_limit, offset=offset)
     items = [_row_to_item(r) for r in rows]
+    try:
+        from services.offer_product_scraper import augment_items_with_scraped_images
+
+        augment_items_with_scraped_images(items)
+    except Exception as exc:
+        logger.debug("online offers image scrape skipped: %s", exc)
     end = offset + len(items)
     next_cursor = _encode_cursor(end) if end < total else None
 
