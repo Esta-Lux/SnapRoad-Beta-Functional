@@ -46,7 +46,7 @@ test('blocks advisory during imminent maneuver', () => {
     },
   });
   assert.equal(gate.allowed, false);
-  assert.equal(gate.reason, 'imminent_maneuver');
+  assert.equal(gate.reason, 'turn_voice_window');
 });
 
 test('urgent police bypasses category cooldown in gates', () => {

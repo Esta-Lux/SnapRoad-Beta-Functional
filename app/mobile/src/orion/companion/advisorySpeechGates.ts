@@ -41,8 +41,9 @@ export function passesAdvisorySpeechGates(input: {
   if (voiceMuted) return { allowed: false, reason: 'voice_muted' };
   if (!message.trim()) return { allowed: false, reason: 'no_message' };
 
-  const imminent = isImminentManeuver(ctx) || navVoice.imminentManeuver;
-  if (imminent) return { allowed: false, reason: 'imminent_maneuver' };
+  const inTurnWindow =
+    navVoice.withinTurnVoiceWindow === true || navVoice.imminentManeuver || isImminentManeuver(ctx);
+  if (inTurnWindow) return { allowed: false, reason: 'turn_voice_window' };
 
   if (navVoice.guidanceSuppressed) {
     return { allowed: false, reason: 'guidance_suppressed' };

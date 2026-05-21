@@ -18,7 +18,7 @@ import { navLogicSdkEnabled } from '../navigation/navFeatureFlags';
 import { getVoiceNavTuning } from '../navigation/navModeProfile';
 import { getUpcomingManeuverStep } from '../navigation/routeGeometry';
 import { orionizeNavigationUtterance } from '../navigation/orionGuidanceStyle';
-import { NAV_VOICE_ADVANCE_MAX_M } from '../navigation/navVoiceCuePolicy';
+import { NAV_VOICE_ADVANCE_MAX_M, shouldSpeakTurnVoiceCue } from '../navigation/navVoiceCuePolicy';
 import { alongRouteDistanceMeters, haversineMeters } from '../utils/distance';
 import type { Coordinate } from '../types';
 
@@ -231,17 +231,17 @@ export function useNavigationSpeech({
     if (d <= imminentM) bucket = 'imminent';
     else if (d <= NAV_VOICE_ADVANCE_MAX_M && d > imminentM) bucket = 'advance';
 
-    if (!bucket) return;
+    if (!shouldSpeakTurnVoiceCue(bucket)) return;
 
     const now = Date.now();
     if (bucket === 'advance' && now < suppressFarVoiceUntilRef.current) {
       return;
     }
 
-    const key = `${speechStep.index}:${bucket}`;
+    const key = `${speechStep.index}:advance`;
     if (lastKey.current === key) return;
 
-    const phrase = buildUtterance(speechStep, d, bucket, metric, drivingMode, userName);
+    const phrase = buildUtterance(speechStep, d, 'advance', metric, drivingMode, userName);
     if (!phrase) return;
 
     setLastTurnByTurnPhrase(phrase);

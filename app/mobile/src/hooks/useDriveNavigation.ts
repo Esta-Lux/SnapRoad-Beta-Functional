@@ -32,7 +32,6 @@ import {
 } from '../utils/distance';
 import { speak, stopSpeaking, configureAudioSessionForSpeechOutput } from '../utils/voice';
 import { setNavigationGuidanceSuppressedUntil } from '../navigation/navigationGuidanceMemory';
-import { primaryInstructionText, primaryVoiceAnnouncement } from '../lib/navigationInstructions';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -1217,19 +1216,14 @@ export function useDriveNavigation(params: {
     setRouteModelRefreshKey((k) => k + 1);
     const dest = activeNavigationData.destination.name ?? 'your destination';
     const etaMin = Math.round(activeNavigationData.duration / 60);
-    const firstStep = activeNavigationData.steps?.[0];
-    const firstCue = firstStep
-      ? (primaryVoiceAnnouncement(firstStep) || primaryInstructionText(firstStep))
-      : '';
-    const firstInstr = firstCue ? ` ${firstCue.replace(/\s+$/, '')}${/[.!?]$/.test(firstCue) ? '' : '.'}` : '';
     if (!navSdkHeadless) {
       if (drivingMode === 'sport') {
-        navSpeak(`${dest}. ${etaMin} minutes.${firstInstr}`, 'high', drivingMode);
+        navSpeak(`${dest}. ${etaMin} minutes.`, 'high', drivingMode);
       } else if (drivingMode === 'calm') {
         const etaStr = etaMin < 60 ? `about ${etaMin} minutes` : `about ${Math.floor(etaMin / 60)} hours`;
-        navSpeak(`Navigating to ${dest}, ${etaStr} away.${firstInstr}`, 'high', drivingMode);
+        navSpeak(`Navigating to ${dest}, ${etaStr} away.`, 'high', drivingMode);
       } else {
-        navSpeak(`Starting navigation to ${dest}. ${etaMin} minutes.${firstInstr}`, 'high', drivingMode);
+        navSpeak(`Starting navigation to ${dest}. ${etaMin} minutes.`, 'high', drivingMode);
       }
     }
   }, [navigationData, drivingMode, navSpeak, navSdkHeadless]);
@@ -1406,8 +1400,9 @@ export function useDriveNavigation(params: {
       return;
     }
 
-    // Drop any prior recap before the server merge so back-to-back drives never flash two cards.
-    setTripSummary(null);
+    // Keep the local recap visible while the server merge runs — avoids a blank flash and
+    // ensures Insights can still read the last trip if the POST is slow.
+    setTripSummary(summaryPayload);
 
     const startedAt = tripStartMs
       ? new Date(tripStartMs).toISOString()

@@ -4,6 +4,7 @@ import {
   formatSdkNavigationVoiceCue,
   navigationVoiceCueBucket,
   navigationVoiceCueKey,
+  shouldSpeakTurnVoiceCue,
 } from './navVoiceCuePolicy';
 
 test('navigationVoiceCueBucket only allows 0.2 mile and close cues', () => {
@@ -31,6 +32,12 @@ test('formatSdkNavigationVoiceCue keeps imminent cue short without personality',
   });
   assert.equal(out, 'Turn left.');
   assert.doesNotMatch(out, /villain|drama|refunds|Main Street/i);
+});
+
+test('shouldSpeakTurnVoiceCue allows advance only (one Orion line per maneuver)', () => {
+  assert.equal(shouldSpeakTurnVoiceCue('advance'), true);
+  assert.equal(shouldSpeakTurnVoiceCue('imminent'), false);
+  assert.equal(shouldSpeakTurnVoiceCue(null), false);
 });
 
 test('formatSdkNavigationVoiceCue prepends personality on advance only', () => {

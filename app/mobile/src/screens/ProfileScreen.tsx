@@ -248,9 +248,10 @@ export default function ProfileScreen() {
       userPatch.name = displayName ?? 'Driver';
       if (planStr) {
         userPatch.plan = planStr;
+        const planNorm = planStr.trim().toLowerCase();
+        userPatch.isFamilyPlan = planNorm === 'family';
+        userPatch.isPremium = planNorm === 'premium' || planNorm === 'family';
       }
-      userPatch.isFamilyPlan = false;
-      userPatch.isPremium = false;
       if (pp.gem_multiplier != null) {
         userPatch.gem_multiplier = Number(pp.gem_multiplier);
       }

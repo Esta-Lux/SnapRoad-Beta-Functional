@@ -122,7 +122,7 @@ export function __resetLocationRationaleStateForTests(kind?: LocationRationaleKi
 type PendingResolve = (result: LocationRationaleResult) => void;
 
 const LOCATION_USE_COPY =
-  'SnapRoad uses your location for navigation, road awareness, driving insights, and location sharing when enabled.';
+  'SnapRoad uses your location for navigation, road awareness, and driving insights.';
 
 const FOREGROUND_COPY = {
   title: 'Location access',

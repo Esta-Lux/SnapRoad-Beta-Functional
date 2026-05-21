@@ -31,6 +31,13 @@ export function navigationVoiceCueKey(args: {
   ].join('|');
 }
 
+/** One Orion utterance per maneuver: speak at advance window only (personality + instruction). */
+export function shouldSpeakTurnVoiceCue(
+  bucket: NavigationVoiceCueBucket | null,
+): bucket is NavigationVoiceCueBucket {
+  return bucket === 'advance';
+}
+
 /** SDK native text → single Orion turn cue (personality once on advance; imminent is clean). */
 export function formatSdkNavigationVoiceCue(args: {
   text: string;

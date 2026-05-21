@@ -165,6 +165,7 @@ import {
   formatSdkNavigationVoiceCue,
   navigationVoiceCueBucket,
   navigationVoiceCueKey,
+  shouldSpeakTurnVoiceCue,
 } from '../navigation/navVoiceCuePolicy';
 import { destinationCrowMeters, shouldAcceptFinalDestinationArrival } from '../navigation/navArrivalGuard';
 import { useTurnConfirmationUntil } from '../hooks/useTurnConfirmationWindow';
@@ -760,6 +761,10 @@ export default function MapScreen() {
     setNavLogicCoords([]);
   }, []);
 
+  /**
+   * Tear down headless SDK only on true background — not `inactive` (iOS notification /
+   * control center). Stopping on `inactive` crashed/resumed badly and froze the turn card.
+   */
   useEffect(() => {
     if (!nav.isNavigating) {
       setNavLogicRuntimeDisabled(false);
@@ -767,7 +772,7 @@ export default function MapScreen() {
     }
     if (!navLogicEffective) return;
     const sub = AppState.addEventListener('change', (next) => {
-      if (next === 'active') return;
+      if (next !== 'background') return;
       try {
         navLogicRef.current?.stopNavigation?.();
       } catch (error) {
@@ -896,7 +901,7 @@ export default function MapScreen() {
       const distanceMeters =
         p?.distanceToNextManeuverMeters ?? nav.navigationProgress?.nextStepDistanceMeters ?? null;
       const bucket = navigationVoiceCueBucket(distanceMeters);
-      if (!bucket) return;
+      if (!shouldSpeakTurnVoiceCue(bucket)) return;
 
       const key = navigationVoiceCueKey({
         legIndex: p?.legIndex ?? nav.navigationProgress?.nativeStepIdentity?.legIndex,
@@ -904,14 +909,14 @@ export default function MapScreen() {
           p?.stepIndex ??
           nav.navigationProgress?.nativeStepIdentity?.stepIndex ??
           nav.navigationProgress?.nextStep?.index,
-        bucket,
+        bucket: 'advance',
       });
       if (sdkVoiceCueKeysRef.current.has(key)) return;
       sdkVoiceCueKeysRef.current.add(key);
 
       const phrase = formatSdkNavigationVoiceCue({
         text: t,
-        bucket,
+        bucket: 'advance',
         kind: nav.navigationProgress?.nextStep?.kind,
         seed: key,
         userName: user?.name,
@@ -1852,8 +1857,11 @@ export default function MapScreen() {
       if (d != null && Number.isFinite(d)) return d;
       return Math.max(0, nav.navigationProgress?.banner?.primaryDistanceMeters ?? 0);
     }
+    const progNextIdx = nav.navigationProgress?.nextStep?.index;
+    const progNextStale =
+      progNextIdx != null && progNextIdx < nav.currentStepIndex;
     const d = nav.navigationProgress?.nextStepDistanceMeters;
-    if (nav.isNavigating && d != null && Number.isFinite(d)) return d;
+    if (nav.isNavigating && d != null && Number.isFinite(d) && !progNextStale) return d;
     return getDistanceToUpcomingManeuverMeters(
       nav.navigationData?.steps,
       nav.currentStepIndex,
@@ -1864,6 +1872,7 @@ export default function MapScreen() {
     isNativeSdkPassThrough,
     nav.isNavigating,
     nav.navigationProgress?.nextStepDistanceMeters,
+    nav.navigationProgress?.nextStep?.index,
     nav.navigationProgress?.banner?.primaryDistanceMeters,
     nav.navigationData?.steps,
     nav.navigationData?.polyline,
@@ -1998,8 +2007,20 @@ export default function MapScreen() {
     pitch: number;
     at: number;
   } | null>(null);
-  /** Skip one camera tick after foreground resume — Mapbox RN can assert if setCamera runs too early. */
+  /** Skip camera ticks while inactive/background and briefly after resume — Mapbox RN can assert. */
   const navCameraDeferUntilMsRef = useRef(0);
+  const appStateForNavRef = useRef(AppState.currentState);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') {
+        navCameraDeferUntilMsRef.current = Date.now() + 450;
+      } else if (appStateForNavRef.current.match(/inactive|background/)) {
+        navCameraDeferUntilMsRef.current = Date.now() + 180;
+      }
+      appStateForNavRef.current = next;
+    });
+    return () => sub.remove();
+  }, []);
   /**
    * While navigating, `followUserLocation` uses Mapbox's internal GPS — not
    * `CustomLocationProvider` — which fights the snapped puck (camera feels offset).
@@ -2009,7 +2030,7 @@ export default function MapScreen() {
   useEffect(() => {
     if (!nav.isNavigating || !cameraLocked || navFollowZoomLevel == null || navFollowPitch == null) return;
     /** Mapbox RN can assert if we drive the camera while inactive/background (resume crashes). */
-    if (AppState.currentState !== 'active') return;
+    if (appStateForNavRef.current !== 'active') return;
     if (Date.now() < navCameraDeferUntilMsRef.current) return;
     const cam = cameraRef.current;
     if (!cam?.setCamera) return;
@@ -5063,8 +5084,7 @@ export default function MapScreen() {
       <View style={[s.center, { backgroundColor: colors.background }]}>
         <Ionicons name="location-outline" size={48} color={colors.textTertiary} />
         <Text style={{ color: colors.text, fontSize: 16, textAlign: 'center', paddingHorizontal: 32, marginTop: 16 }}>
-          SnapRoad uses your location for navigation, road awareness, driving insights, and location sharing when
-          enabled.{'\n\n'}
+          SnapRoad uses your location for navigation, road awareness, and driving insights.{'\n\n'}
           Location was denied or restricted. You can enable it in Settings when you are ready.
         </Text>
         <TouchableOpacity
@@ -5972,14 +5992,14 @@ export default function MapScreen() {
         }
 
         const banner = prog.banner ?? null;
-        const nextIdx = prog?.nextStep?.index;
-        const nextStepIsCurrentStep =
-          nextIdx != null && nextIdx <= nav.currentStepIndex;
-
-        const nextManeuverCoord =
-          nextIdx != null && !nextStepIsCurrentStep && nav.navigationData?.steps
-            ? nav.navigationData.steps[nextIdx] ?? upcomingGuidanceStep
-            : upcomingGuidanceStep;
+        /** Geometry-aligned maneuver — same anchor as step index + route line. */
+        const turnAnchorStep = upcomingGuidanceStep;
+        const progNextIdx = prog?.nextStep?.index;
+        const progNextStale =
+          progNextIdx != null && turnAnchorStep && nav.navigationData?.steps
+            ? progNextIdx < nav.navigationData.steps.indexOf(turnAnchorStep)
+            : progNextIdx != null && progNextIdx < nav.currentStepIndex;
+        const nextManeuverCoord = turnAnchorStep;
 
         const turnCardManeuverFields = resolveManeuverFieldsForTurnCard({
           nextManeuverCoord: nextManeuverCoord ?? undefined,
@@ -5991,18 +6011,47 @@ export default function MapScreen() {
 
         const poly = nav.navigationData?.polyline;
 
-        const liveDistMeters = sdkBannerOwns
-          ? Math.max(
-              0,
-              Number.isFinite(prog.nextStepDistanceMeters) ? prog.nextStepDistanceMeters : 0,
-            )
-          : prog != null && Number.isFinite(prog.nextStepDistanceMeters) && !nextStepIsCurrentStep
-            ? prog.nextStepDistanceMeters
-            : poly && poly.length >= 2 && nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
-              ? alongRouteDistanceMeters(poly, navDisplayCoord, { lat: nextManeuverCoord.lat, lng: nextManeuverCoord.lng })
-              : nextManeuverCoord && isFinite(nextManeuverCoord.lat) && isFinite(nextManeuverCoord.lng)
-                ? haversineMeters(navDisplayCoord.lat, navDisplayCoord.lng, nextManeuverCoord.lat, nextManeuverCoord.lng)
-                : (turnCurrentStep?.distanceMeters ?? 0);
+        const liveDistMeters = (() => {
+          if (sdkBannerOwns) {
+            if (
+              !progNextStale &&
+              Number.isFinite(prog.nextStepDistanceMeters)
+            ) {
+              return Math.max(0, prog.nextStepDistanceMeters);
+            }
+          } else if (
+            prog != null &&
+            Number.isFinite(prog.nextStepDistanceMeters) &&
+            !progNextStale
+          ) {
+            return prog.nextStepDistanceMeters;
+          }
+          if (
+            poly &&
+            poly.length >= 2 &&
+            nextManeuverCoord &&
+            isFinite(nextManeuverCoord.lat) &&
+            isFinite(nextManeuverCoord.lng)
+          ) {
+            return alongRouteDistanceMeters(poly, navDisplayCoord, {
+              lat: nextManeuverCoord.lat,
+              lng: nextManeuverCoord.lng,
+            });
+          }
+          if (
+            nextManeuverCoord &&
+            isFinite(nextManeuverCoord.lat) &&
+            isFinite(nextManeuverCoord.lng)
+          ) {
+            return haversineMeters(
+              navDisplayCoord.lat,
+              navDisplayCoord.lng,
+              nextManeuverCoord.lat,
+              nextManeuverCoord.lng,
+            );
+          }
+          return turnCurrentStep?.distanceMeters ?? 0;
+        })();
 
         const turnCardNow = Date.now();
         const cardState = resolveTurnCardState({

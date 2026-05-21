@@ -115,7 +115,10 @@ export type NavVoiceState = {
   guidanceSuppressed: boolean;
   msSinceLastSdkVoice: number;
   advisorySdkHoldoffMs: number;
+  /** @deprecated Prefer {@link withinTurnVoiceWindow} — true during advance + imminent windows. */
   imminentManeuver: boolean;
+  /** Block companion/advisory TTS while a turn cue window is active (advance or imminent). */
+  withinTurnVoiceWindow?: boolean;
 };
 
 export type DialogueVariant = {
