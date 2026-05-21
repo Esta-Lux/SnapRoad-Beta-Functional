@@ -30,6 +30,7 @@ import type { GeocodeResult } from '../../lib/directions';
 import { formatRowDistance } from '../../lib/placeSearchRanking';
 import { formatOpenLabelForSearchRow } from '../../utils/placeHours';
 import type { SavedLocation } from '../../types';
+import { isQuickAccessSavedPlace, normalizeSavedCategory, sortQuickAccessSavedPlaces } from '../../utils/savedPlaces';
 
 type Chip = {
   key: string;
@@ -217,7 +218,10 @@ export default function MapSearchTopBar(props: Props) {
 
   const queryActive = props.searchQuery.trim().length > 0;
   const favoritesAndQuick = useMemo(
-    () => props.savedPlaces.filter((p) => ['home', 'work', 'favorite'].includes(p.category)).slice(0, 8),
+    () =>
+      sortQuickAccessSavedPlaces(
+        props.savedPlaces.filter((p) => isQuickAccessSavedPlace(p) && p.lat != null && p.lng != null),
+      ).slice(0, 8),
     [props.savedPlaces],
   );
 
@@ -308,9 +312,17 @@ export default function MapSearchTopBar(props: Props) {
               onPress={() => props.onSelectSavedPlace(item)}
             >
               <Ionicons
-                name={item.category === 'home' ? 'home-outline' : item.category === 'work' ? 'briefcase-outline' : 'star-outline'}
+                name={
+                  normalizeSavedCategory(item.category) === 'home'
+                    ? 'home-outline'
+                    : normalizeSavedCategory(item.category) === 'work'
+                      ? 'briefcase-outline'
+                      : 'heart'
+                }
                 size={14}
-                color={props.colors.textTertiary}
+                color={
+                  normalizeSavedCategory(item.category) === 'favorite' ? '#EF4444' : props.colors.textTertiary
+                }
               />
               <View>
                 <Text style={[s.qpTitle, { color: props.colors.text }]}>{item.name}</Text>

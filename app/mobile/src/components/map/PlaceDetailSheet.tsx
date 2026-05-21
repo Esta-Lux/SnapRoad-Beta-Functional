@@ -18,6 +18,7 @@ import { parseOpenNowBooleanFromDetailsPayload } from '../../utils/placeHours';
 import { formatTime } from '../../utils/format';
 import { routeSummaryFromMapboxMetersSeconds } from '../../utils/routeDisplay';
 import { haversineMeters } from '../../utils/distance';
+import { findSavedPlaceNearCoords, hasSavedPlaceCoords } from '../../utils/savedPlaces';
 import type { DrivingMode, SavedLocation } from '../../types';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -95,6 +96,9 @@ interface Props {
   onDirections: (place: { name: string; address: string; lat: number; lng: number }) => void;
   onSave?: (place: SavedPlacePayload) => void | Promise<void>;
   savedPlaces?: SavedLocation[];
+  /** Preferred: parent handles API + optimistic saved-place list updates. */
+  onToggleFavorite?: (place: { name: string; address?: string; lat: number; lng: number }) => void | Promise<boolean>;
+  /** @deprecated use onToggleFavorite */
   onFavoritesChange?: () => void;
   isLight?: boolean;
   /**
@@ -310,6 +314,7 @@ export default function PlaceDetailSheet({
   onDirections,
   onSave,
   savedPlaces = [],
+  onToggleFavorite,
   onFavoritesChange,
   isLight = false,
   accent,
@@ -462,15 +467,11 @@ export default function PlaceDetailSheet({
 
   const favoriteMatch = useMemo((): SavedLocation | null => {
     if (lat == null || lng == null || !savedPlaces.length) return null;
-    for (const p of savedPlaces) {
-      if (p.lat == null || p.lng == null) continue;
-      if (haversineMeters(lat, lng, p.lat, p.lng) < 85) {
-        const c = (p.category || '').toLowerCase();
-        if (c === 'favorite' || (c !== 'home' && c !== 'work')) return p;
-      }
-    }
-    return null;
+    if (!hasSavedPlaceCoords(lat, lng)) return null;
+    return findSavedPlaceNearCoords(savedPlaces, lat, lng);
   }, [lat, lng, savedPlaces]);
+
+  const canToggleFavorite = Boolean(onToggleFavorite || onSave || onFavoritesChange);
 
   useEffect(() => {
     setSaved(!!favoriteMatch);
@@ -527,7 +528,26 @@ export default function PlaceDetailSheet({
 
   const handleFavorite = useCallback(async () => {
     if (!place || lat == null || lng == null) return;
+    if (!hasSavedPlaceCoords(lat, lng)) {
+      Alert.alert('Location unavailable', 'Wait for place details to finish loading, then try again.');
+      return;
+    }
+    const payload = {
+      name: place.name,
+      address: place.address ?? '',
+      lat,
+      lng,
+    };
     try {
+      if (onToggleFavorite) {
+        const ok = await onToggleFavorite(payload);
+        if (ok === false) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          return;
+        }
+        setSaved(!favoriteMatch);
+        return;
+      }
       if (favoriteMatch?.id) {
         const res = await api.delete(`/api/locations/${favoriteMatch.id}`);
         if (!res.success) {
@@ -537,6 +557,12 @@ export default function PlaceDetailSheet({
         setSaved(false);
         onFavoritesChange?.();
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        return;
+      }
+      if (onSave) {
+        await onSave({ placeId: place.place_id, name: place.name, address: place.address, lat, lng });
+        setSaved(true);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         return;
       }
       const res = await api.post('/api/locations', {
@@ -556,7 +582,7 @@ export default function PlaceDetailSheet({
     } catch {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
-  }, [place, lat, lng, favoriteMatch, onFavoritesChange]);
+  }, [place, lat, lng, favoriteMatch, onToggleFavorite, onSave, onFavoritesChange]);
 
   const handleShare = useCallback(async () => {
     if (!place || lat == null || lng == null) return;
@@ -1093,7 +1119,7 @@ export default function PlaceDetailSheet({
                 ) : null}
 
                 <View style={S.bottomActions}>
-                  {onSave ? (
+                  {canToggleFavorite ? (
                     <TouchableOpacity
                       style={[S.bottomBtn, { backgroundColor: surface, borderColor: saved ? '#FECACA' : border }]}
                       onPress={handleFavorite}

@@ -277,6 +277,13 @@ import type { MapStackParamList, MapStackScreenNavigationProp } from '../navigat
 import { extractLocationSharingState, getApiErrorMessage } from '../features/social/locationSharing';
 import { storage } from '../utils/storage';
 import { logMapDataIssue } from '../utils/mapApiDiagnostics';
+import {
+  findSavedPlaceNearCoords,
+  hasSavedPlaceCoords,
+  isFavoriteCategory,
+  parseSavedLocationsPayload,
+  unwrapSavedLocationFromWriteResponse,
+} from '../utils/savedPlaces';
 import { supabase, supabaseConfigured } from '../lib/supabase';
 import type { DrivingMode, Incident, SavedLocation, Offer, FriendLocation } from '../types';
 import {
@@ -2427,7 +2434,7 @@ export default function MapScreen() {
   }, [placeCardLocGridLat, placeCardLocGridLng, selectedPlace?.lat, selectedPlace?.lng, nav.isNavigating, nav.navigationProgressCoord.lat, nav.navigationProgressCoord.lng]);
 
   const refreshSavedPlaces = useCallback(() => {
-    if (!user?.id) {
+    if (!user?.id || user.isGuest) {
       setSavedPlaces([]);
       return;
     }
@@ -2438,25 +2445,70 @@ export default function MapScreen() {
           logMapDataIssue('GET /api/locations', r.error);
           return;
         }
-        const d = (r.data as any)?.data ?? r.data;
-        if (Array.isArray(d)) setSavedPlaces(d);
+        setSavedPlaces(parseSavedLocationsPayload(r.data));
       })
       .catch((e) => logMapDataIssue('GET /api/locations', e));
-  }, [user?.id]);
+  }, [user?.id, user?.isGuest]);
 
   const selectedPlaceFavoriteMatch = useMemo(() => {
-    if (!selectedPlace?.lat || !selectedPlace?.lng) return { id: null as number | null, isFavorite: false };
-    for (const p of savedPlaces) {
-      if (p.lat == null || p.lng == null) continue;
-      if (haversineMeters(selectedPlace.lat, selectedPlace.lng, p.lat, p.lng) < 85) {
-        const c = (p.category || '').toLowerCase();
-        if (c === 'favorite' || (c !== 'home' && c !== 'work')) {
-          return { id: p.id, isFavorite: true };
-        }
-      }
+    if (!selectedPlace || !hasSavedPlaceCoords(selectedPlace.lat, selectedPlace.lng)) {
+      return { id: null as number | null, isFavorite: false };
     }
-    return { id: null, isFavorite: false };
+    const match = findSavedPlaceNearCoords(savedPlaces, selectedPlace.lat, selectedPlace.lng);
+    return { id: match?.id ?? null, isFavorite: Boolean(match) };
   }, [selectedPlace, savedPlaces]);
+
+  const toggleFavoriteForPlace = useCallback(
+    async (place: { name: string; address?: string; lat: number; lng: number }) => {
+      if (user?.isGuest) {
+        Alert.alert('Sign in to save favorites', 'Create an account or sign in to save places to your map.');
+        return false;
+      }
+      if (!hasSavedPlaceCoords(place.lat, place.lng)) {
+        Alert.alert('Location unavailable', 'Wait for place details to finish loading, then try again.');
+        return false;
+      }
+      const existing = findSavedPlaceNearCoords(savedPlaces, place.lat, place.lng);
+      try {
+        if (existing?.id != null) {
+          const res = await api.delete(`/api/locations/${existing.id}`);
+          if (!res.success) {
+            Alert.alert('Error', res.error ?? 'Could not remove favorite.');
+            return false;
+          }
+          setSavedPlaces((prev) => prev.filter((p) => p.id !== existing.id));
+          refreshSavedPlaces();
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          return true;
+        }
+        const res = await api.post('/api/locations', {
+          name: place.name,
+          address: place.address ?? '',
+          category: 'favorite',
+          lat: place.lat,
+          lng: place.lng,
+        });
+        if (!res.success) {
+          Alert.alert('Error', res.error ?? 'Could not add favorite.');
+          return false;
+        }
+        const saved = unwrapSavedLocationFromWriteResponse(res.data);
+        if (saved) {
+          setSavedPlaces((prev) => {
+            const withoutDup = prev.filter((p) => p.id !== saved.id);
+            return [...withoutDup, saved];
+          });
+        }
+        refreshSavedPlaces();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        return true;
+      } catch {
+        Alert.alert('Error', 'Could not update favorites.');
+        return false;
+      }
+    },
+    [refreshSavedPlaces, savedPlaces, user?.isGuest],
+  );
 
   const placeDetailUserLocation = useMemo(() => {
     const src = nav.isNavigating ? nav.navigationProgressCoord : location;
@@ -3975,9 +4027,7 @@ export default function MapScreen() {
     }
     setActiveChip(chipKey);
     if (chipKey === 'favorites') {
-      const favs = savedPlaces.filter(
-        (p) => (p.category || '').toLowerCase() === 'favorite',
-      );
+      const favs = savedPlaces.filter((p) => isFavoriteCategory(p.category));
       const withCoords = favs.filter((p) => p.lat != null && p.lng != null);
       if (withCoords.length === 0) {
         Alert.alert('No favorites', 'Use the heart on a place card to add favorites, or save a place in Profile.');
@@ -4176,7 +4226,7 @@ export default function MapScreen() {
   const orionFavoriteSummary = useMemo(
     () =>
       savedPlaces
-        .filter((p) => (p.category || '').toLowerCase() === 'favorite')
+        .filter((p) => isFavoriteCategory(p.category))
         .slice(0, 8)
         .map((p) => p.name)
         .join(', '),
@@ -5678,35 +5728,7 @@ export default function MapScreen() {
           }}
           isFavorite={selectedPlaceFavoriteMatch.isFavorite}
           onDirections={() => handleStartDirections(selectedPlace)}
-          onToggleFavorite={async () => {
-            try {
-              if (selectedPlaceFavoriteMatch.id != null) {
-                const res = await api.delete(`/api/locations/${selectedPlaceFavoriteMatch.id}`);
-                if (!res.success) {
-                  Alert.alert('Error', res.error ?? 'Could not remove favorite.');
-                  return;
-                }
-                refreshSavedPlaces();
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                return;
-              }
-              const res = await api.post('/api/locations', {
-                name: selectedPlace.name,
-                address: selectedPlace.address ?? '',
-                category: 'favorite',
-                lat: selectedPlace.lat,
-                lng: selectedPlace.lng,
-              });
-              if (!res.success) {
-                Alert.alert('Error', res.error ?? 'Could not add favorite.');
-                return;
-              }
-              refreshSavedPlaces();
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            } catch {
-              Alert.alert('Error', 'Could not update favorites.');
-            }
-          }}
+          onToggleFavorite={() => toggleFavoriteForPlace(selectedPlace)}
           onDismiss={() => {
             setSelectedPlace(null);
             restoreExploreList();
@@ -5732,7 +5754,7 @@ export default function MapScreen() {
           travelProfile={nav.travelProfile}
           onTravelProfileChange={nav.setTravelProfile}
           savedPlaces={savedPlaces}
-          onFavoritesChange={refreshSavedPlaces}
+          onToggleFavorite={toggleFavoriteForPlace}
           onClose={() => {
             setSelectedPlaceId(null);
             setSelectedPlace(null);
@@ -5745,18 +5767,8 @@ export default function MapScreen() {
             handleStartDirections(place);
           }}
           onSave={async (p) => {
-            const res = await api.post('/api/locations', {
-              name: p.name,
-              address: p.address ?? '',
-              category: 'favorite',
-              lat: p.lat,
-              lng: p.lng,
-            });
-            if (!res.success) {
-              Alert.alert('Could not save', res.error ?? 'Try again later.');
-              throw new Error(res.error ?? 'Save failed');
-            }
-            refreshSavedPlaces();
+            const ok = await toggleFavoriteForPlace(p);
+            if (!ok) throw new Error('Save failed');
           }}
         />
       )}
