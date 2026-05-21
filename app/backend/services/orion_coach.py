@@ -102,6 +102,33 @@ def build_orion_system_prompt(ctx: Optional[Dict[str, Any]] = None) -> str:
     profile_lines.append(f"- Premium subscriber: {'yes' if premium else 'no'}")
     profile_block = "\n".join(profile_lines)
 
+    orion_prefs = c.get("orionPreferences") or c.get("orion_preferences") or {}
+    if isinstance(orion_prefs, dict) and orion_prefs:
+        pref_lines = []
+        for key in ("mood", "chattiness", "auto_buddy", "use_llm_buddy", "voice"):
+            if orion_prefs.get(key) is not None:
+                pref_lines.append(f"- {key}: {orion_prefs[key]}")
+        if pref_lines:
+            profile_block += "\n\n## Orion user preferences:\n" + "\n".join(pref_lines)
+
+    kb_query_parts = [
+        str(c.get("lastUserMessage") or ""),
+        str(c.get("destination") or ""),
+        "gems premium offers safety score",
+    ]
+    kb_block = ""
+    try:
+        from services.orion_knowledge import format_knowledge_for_prompt, retrieve_orion_knowledge
+
+        snippets = retrieve_orion_knowledge(
+            " ".join(kb_query_parts),
+            categories=["product", "premium", "offers", "safety"],
+            limit=4,
+        )
+        kb_block = format_knowledge_for_prompt(snippets)
+    except Exception:
+        kb_block = ""
+
     return f"""You are Orion, the AI navigator and personal assistant for SnapRoad — a privacy-first navigation app that rewards drivers for safe driving.
 
 ## Your personality:
@@ -118,6 +145,8 @@ def build_orion_system_prompt(ctx: Optional[Dict[str, Any]] = None) -> str:
 - Premium: 2× gem multiplier, deeper analytics, traffic cameras layer, more place alerts, and richer Orion context when available
 - Features: turn-by-turn nav, offers, road reports, live friend locations (Premium), fuel tracker, driving score, weekly recap, badges, place alerts, quick routes, favorites
 - Privacy: encrypted location; data is not sold
+
+{kb_block}
 
 ## What Orion can do inside the app:
 - Answer premium-level SnapRoad questions using the live context below.

@@ -2,7 +2,7 @@ import { shouldSpeakNow } from './OrionCadenceEngine';
 import { buildOrionDriveContext, deriveOrionStressLevel } from './OrionContextEngine';
 import { generateCompanionMessage, generateCompanionMessageSync } from './OrionDialogueGenerator';
 import type { OrionMemoryEngine } from './OrionMemoryEngine';
-import { selectMood } from './OrionPersonalityEngine';
+import { selectMood, resolveMoodWithPreference } from './OrionPersonalityEngine';
 import {
   deriveTripPhase,
   markDriveStarted,
@@ -16,6 +16,7 @@ import type {
   OrionCompanionEventType,
   OrionCompanionResult,
   OrionDriveContextInput,
+  OrionMood,
 } from './types';
 
 export type EvaluateOptions = {
@@ -24,6 +25,7 @@ export type EvaluateOptions = {
   navVoice?: Partial<NavVoiceState>;
   llm?: LlmDialogueProvider;
   speakRoll?: number;
+  preferredMood?: OrionMood | 'auto' | null;
 };
 
 const DEFAULT_NAV_VOICE: NavVoiceState = {
@@ -77,7 +79,7 @@ function evaluateInternal(
     lastPhaseChangeMs: ctx.nowMs,
   });
 
-  const mood = selectMood(ctx, event, stress, phase);
+  const mood = resolveMoodWithPreference(options.preferredMood, ctx, event, stress, phase);
   const navVoice: NavVoiceState = { ...DEFAULT_NAV_VOICE, ...options.navVoice };
 
   const genArgs = {
@@ -145,7 +147,7 @@ export async function evaluateOrionCompanion(
   resolvePhase(ctx, stress, event, session);
   const phase = session?.phase ?? 'cruising';
 
-  const mood = selectMood(ctx, event, stress, phase);
+  const mood = resolveMoodWithPreference(options.preferredMood, ctx, event, stress, phase);
   const navVoice: NavVoiceState = { ...DEFAULT_NAV_VOICE, ...options.navVoice };
 
   const { message, category, priority, variantId, patternKey, tripId } = await generateCompanionMessage({

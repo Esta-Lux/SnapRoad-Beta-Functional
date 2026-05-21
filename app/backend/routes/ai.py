@@ -6,7 +6,7 @@ from typing import Annotated, Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from starlette.requests import Request
 from fastapi.responses import StreamingResponse
-from models.schemas import OrionMessageRequest, OrionCompletionRequest, PhotoAnalysisRequest, ImageGenerateRequest
+from models.schemas import OrionMessageRequest, OrionCompletionRequest, OrionBuddyLineRequest, PhotoAnalysisRequest, ImageGenerateRequest
 from middleware.auth import get_current_user, get_current_user_optional
 
 from limiter import limiter
@@ -265,10 +265,12 @@ async def orion_completions(
     require_enabled("orion_enabled", ORION_DISABLED_DETAIL)
     from services.orion_coach import orion_service
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
-    content = await orion_service.completion(messages, body.context)
-
-    ctx = body.context or {}
+    ctx = dict(body.context or {})
     last_raw = body.messages[-1].content if body.messages else ""
+    if last_raw:
+        ctx["lastUserMessage"] = last_raw
+    content = await orion_service.completion(messages, ctx)
+
     actions = await _navigation_actions_from_message(ctx, last_raw)
     actions.extend(_app_control_actions_from_message(last_raw))
     take_me = await _take_me_from_pending(ctx, last_raw)
@@ -341,6 +343,34 @@ async def clear_orion_session(session_id: str, _user: CurrentUser):
     from services.orion_coach import orion_service
     success = orion_service.clear_session(session_id)
     return {"success": success}
+
+
+@router.post("/orion/buddy-line")
+@limiter.limit("30/minute")
+async def orion_buddy_line(
+    request: Request,
+    body: OrionBuddyLineRequest,
+    user: OptionalUser,
+):
+    """Generate one short proactive Orion buddy line (ChatGPT primary, NVIDIA fallback)."""
+    from services.runtime_config import require_enabled
+
+    _ = request
+    require_enabled("orion_enabled", ORION_DISABLED_DETAIL)
+    from services.orion_buddy import generate_buddy_line
+
+    ctx = dict(body.context or {})
+    prefs = ctx.get("orionPreferences") or ctx.get("orion_preferences") or {}
+    if not isinstance(prefs, dict):
+        prefs = {}
+    line = await generate_buddy_line(
+        event_type=body.event_type,
+        context=ctx,
+        mood=body.mood,
+        orion_prefs=prefs,
+        max_words=body.max_words,
+    )
+    return {"success": True, "line": line, "event_type": body.event_type}
 
 
 @router.get("/orion/tips")

@@ -49,6 +49,15 @@ import {
   SignOutButton,
   VehicleCard,
 } from '../components/profile/ProfileSections';
+import { OrionRoadBuddyCard } from '../components/profile/OrionRoadBuddyCard';
+import {
+  DEFAULT_ORION_PREFERENCES,
+  ORION_PREFS_STORAGE_KEY,
+  orionPreferencesFromProfilePayload,
+  parseOrionPreferences,
+  type OrionPreferences,
+} from '../types/orionPreferences';
+import { storage } from '../utils/storage';
 import type { ProfileOverviewActionItem } from '../components/profile/types';
 import { ProfileTabBar } from '../components/profile/ProfileScreenBlocks';
 import { registerCommutePushToken } from '../utils/pushNotifications';
@@ -99,6 +108,7 @@ export default function ProfileScreen() {
   const [pushEnabled, setPushEnabled] = useState(true);
 
   const [defaultMode, setDefaultMode] = useState<DrivingMode>('adaptive');
+  const [orionPrefs, setOrionPrefs] = useState<OrionPreferences>(DEFAULT_ORION_PREFERENCES);
   const [showAddPlace, setShowAddPlace] = useState(false);
   const [newPlaceName, setNewPlaceName] = useState('');
   const [newPlaceAddress, setNewPlaceAddress] = useState('');
@@ -279,6 +289,13 @@ export default function ProfileScreen() {
       ) {
         const dmP = (pp.app_preferences as Record<string, unknown>).default_driving_mode;
         if (dmP === 'calm' || dmP === 'adaptive' || dmP === 'sport') setDefaultMode(dmP);
+      }
+      const loadedOrion = orionPreferencesFromProfilePayload(pp);
+      setOrionPrefs(loadedOrion);
+      try {
+        storage.set(ORION_PREFS_STORAGE_KEY, JSON.stringify(loadedOrion));
+      } catch {
+        /* ignore */
       }
       const statsBody = (unwrapProfileApiData(fuelStatsRes?.data) as Record<string, unknown>) ?? {};
       const trendsBody = (unwrapProfileApiData(fuelTrendsRes?.data) as Record<string, unknown>) ?? {};
@@ -538,6 +555,26 @@ export default function ProfileScreen() {
       setNotifSyncing(false);
     }
   }, []);
+
+  const persistOrionPreferences = useCallback(
+    async (patch: Partial<OrionPreferences>) => {
+      const next = { ...orionPrefs, ...patch };
+      setOrionPrefs(next);
+      try {
+        storage.set(ORION_PREFS_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      if (isGuest) return;
+      const res = await api.put('/api/user/profile', {
+        app_preferences: { orion: next },
+      });
+      if (!res.success) {
+        Alert.alert('Could not save', res.error ?? 'Orion settings were not synced.');
+      }
+    },
+    [isGuest, orionPrefs],
+  );
 
   const persistDefaultDrivingMode = useCallback(
     async (mode: DrivingMode) => {
@@ -878,6 +915,20 @@ export default function ProfileScreen() {
                   },
                 },
               ]}
+            />
+
+            <SectionHeader title="Orion road buddy" isLight={isLight} subtitle="Mood, chattiness, and proactive companion on drives." />
+            <OrionRoadBuddyCard
+              cardBg={cardBg}
+              text={text}
+              sub={sub}
+              border={colors.border}
+              primary={colors.primary}
+              prefs={orionPrefs}
+              onChange={(patch) => {
+                void persistOrionPreferences(patch);
+              }}
+              onClearLocalMemory={() => Alert.alert('Cleared', 'Local Orion memory reset on this device.')}
             />
 
             <SectionHeader title="Appearance & map mode" isLight={isLight} subtitle="Theme and default routing style." />

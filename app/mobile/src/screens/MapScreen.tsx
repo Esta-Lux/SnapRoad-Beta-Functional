@@ -202,6 +202,10 @@ import { parseLiveLocationUpdate } from '../api/dto/realtime';
 import OrionChat, { type OrionPlaceSuggestion } from '../components/orion/OrionChat';
 import OrionQuickMic from '../components/orion/OrionQuickMic';
 import { useOrionCompanion } from '../orion/companion/useOrionCompanion';
+import { createApiLlmDialogueProvider } from '../orion/companion/llmDialogueProvider';
+import type { OrionPreferences } from '../types/orionPreferences';
+import { DEFAULT_ORION_PREFERENCES, ORION_PREFS_STORAGE_KEY, parseOrionPreferences } from '../types/orionPreferences';
+import { isProviderTrafficIncident } from '../utils/incidentSource';
 import {
   buildOrionNavVoiceSnapshot,
   getOrionCompanionMemory,
@@ -355,6 +359,7 @@ const TRAFFIC_CAM_MIN_ZOOM = 12;
 const INCIDENT_COLORS: Record<string, string> = {
   police: '#4A90D9', accident: '#D04040', hazard: '#E07830',
   construction: '#F59E0B', closure: '#D04040', pothole: '#F97316',
+  traffic: '#BE123C', weather: '#0EA5E9',
 };
 
 /** Mapbox Standard (+ optional Satellite). Driving modes control lighting via `StyleImport` only — no classic dark/streets URLs. */
@@ -583,6 +588,19 @@ export default function MapScreen() {
   // ── Driving mode ──
   const [drivingMode, setDrivingMode] = useState<DrivingMode>('adaptive');
   const modeConfig = DRIVING_MODES[drivingMode];
+  const [orionPrefs, setOrionPrefs] = useState<OrionPreferences>(() => {
+    try {
+      const raw = storage.getString(ORION_PREFS_STORAGE_KEY);
+      return raw ? parseOrionPreferences(JSON.parse(raw)) : DEFAULT_ORION_PREFERENCES;
+    } catch {
+      return DEFAULT_ORION_PREFERENCES;
+    }
+  });
+  const orionPrefsRef = useRef(orionPrefs);
+  useEffect(() => {
+    orionPrefsRef.current = orionPrefs;
+  }, [orionPrefs]);
+  const orionLlmProvider = useMemo(() => createApiLlmDialogueProvider(() => orionPrefsRef.current), []);
 
   /** Translucent slate HUD — avoids white “pill box” over the map. */
   const hudChromeGlass = useMemo(
@@ -4283,6 +4301,8 @@ export default function MapScreen() {
         drivingMode,
       };
     },
+    getOrionPrefs: () => orionPrefsRef.current,
+    getLlm: () => orionLlmProvider,
     onCompanionLine: pushOrionHud,
   });
 
@@ -4876,6 +4896,7 @@ export default function MapScreen() {
   }, [confirmIncident]);
 
   const handleUpvote = useCallback(async (inc: Incident) => {
+    if (isProviderTrafficIncident(inc)) return;
     try {
       const res = await api.post<{ upvotes?: number; downvotes?: number }>(`/api/incidents/${inc.id}/upvote`);
       if (!res.success) throw new Error(res.error || 'Failed');
@@ -4893,6 +4914,7 @@ export default function MapScreen() {
   }, []);
 
   const handleDownvote = useCallback(async (inc: Incident) => {
+    if (isProviderTrafficIncident(inc)) return;
     try {
       const res = await api.post<{ upvotes?: number; downvotes?: number; removed?: boolean }>(
         `/api/incidents/${inc.id}/downvote`,

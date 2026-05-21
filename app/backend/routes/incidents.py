@@ -430,6 +430,13 @@ def get_road_report_feed(
     except Exception as e:
         logger.debug("road feed OSM merge failed: %s", e)
 
+    try:
+        from services.tomtom_incidents import fetch_tomtom_incidents
+
+        merged.extend(fetch_tomtom_incidents(lat, lng, radius_miles))
+    except Exception as e:
+        logger.debug("road feed TomTom merge failed: %s", e)
+
     seen: set[str] = set()
     out: list[dict[str, Any]] = []
     for row in merged:
@@ -439,7 +446,7 @@ def get_road_report_feed(
         seen.add(key)
         out.append(row)
     out.sort(key=lambda row: float(row.get("distance_miles") or 999))
-    return {"success": True, "data": out[:limit], "sources": ["snaproad", "osm"]}
+    return {"success": True, "data": out[:limit], "sources": ["snaproad", "osm", "tomtom"]}
 
 
 @router.get("/nearby", responses=OPENAPI_ERROR_RESPONSES)

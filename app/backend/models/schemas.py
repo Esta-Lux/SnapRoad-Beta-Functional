@@ -439,6 +439,14 @@ class OrionCompletionRequest(BaseModel):
     messages: List[OrionMessageItem]
     context: Optional[Dict[str, Any]] = None
 
+
+class OrionBuddyLineRequest(BaseModel):
+    """POST /api/orion/buddy-line — one proactive companion line for navigation events."""
+    event_type: str = Field(..., min_length=1, max_length=64)
+    context: Optional[Dict[str, Any]] = None
+    mood: Optional[str] = Field(default=None, max_length=24)
+    max_words: int = Field(default=16, ge=8, le=24)
+
 class PhotoAnalysisRequest(BaseModel):
     image_base64: str
     image_type: Optional[str] = "image/jpeg"

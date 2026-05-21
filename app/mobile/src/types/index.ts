@@ -326,6 +326,17 @@ export interface Incident {
   created_at: string;
   expires_at: string;
   distance_miles?: number;
+  /** snaproad | tomtom | osm */
+  source?: string;
+  provider?: string;
+  verified?: boolean;
+  delay_seconds?: number;
+  road_numbers?: string[];
+  road_name?: string;
+  from?: string;
+  to?: string;
+  number_of_reports?: number;
+  last_report_time?: string;
 }
 
 export type DrivingMode = 'calm' | 'adaptive' | 'sport';

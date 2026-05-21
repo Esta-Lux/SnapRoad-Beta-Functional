@@ -111,3 +111,20 @@ export function selectMood(
   }
   return 'calm';
 }
+
+/** User Profile mood override (`auto` keeps event-driven selection). */
+export function resolveMoodWithPreference(
+  preferred: OrionMood | 'auto' | null | undefined,
+  ctx: OrionDriveContext,
+  eventType: OrionCompanionEventType,
+  stressLevel: OrionStressLevel,
+  phase: OrionTripPhase = 'cruising',
+): OrionMood {
+  if (preferred && preferred !== 'auto') {
+    if (stressLevel === 'high' || eventType === 'safety_caution') {
+      return preferred === 'sassy' || preferred === 'hype' || preferred === 'witty' ? 'focused' : preferred;
+    }
+    return preferred;
+  }
+  return selectMood(ctx, eventType, stressLevel, phase);
+}

@@ -16,6 +16,9 @@ import {
 } from './orionCompanionShared';
 import { deliverCompanionSpeech } from './OrionSpeechCoordinator';
 import { orionCompanionV1Enabled } from './orionCompanionFlags';
+import type { LlmDialogueProvider } from './llmDialogueProvider';
+import type { OrionPreferences } from '../../types/orionPreferences';
+import { DEFAULT_ORION_PREFERENCES } from '../../types/orionPreferences';
 import type { OrionCompanionEventType, OrionDriveContextInput, OrionHudLineMeta } from './types';
 
 const DRIVE_STARTED_DELAY_MS = 4000;
@@ -30,15 +33,21 @@ export type OrionCompanionSnapshot = OrionDriveContextInput & {
 export type UseOrionCompanionArgs = {
   enabled?: boolean;
   getSnapshot: () => OrionCompanionSnapshot;
+  getOrionPrefs?: () => OrionPreferences;
+  getLlm?: () => LlmDialogueProvider | undefined;
   onCompanionLine?: (meta: OrionHudLineMeta) => void;
 };
 
 export function useOrionCompanion({
   enabled = orionCompanionV1Enabled(),
   getSnapshot,
+  getOrionPrefs,
+  getLlm,
   onCompanionLine,
 }: UseOrionCompanionArgs) {
   const getSnapshotRef = useRef(getSnapshot);
+  const getOrionPrefsRef = useRef(getOrionPrefs);
+  const getLlmRef = useRef(getLlm);
   const onLineRef = useRef(onCompanionLine);
   const tripStartedRef = useRef(false);
   const driveStartedEmittedRef = useRef(false);
@@ -76,6 +85,14 @@ export function useOrionCompanion({
   }, [getSnapshot]);
 
   useEffect(() => {
+    getOrionPrefsRef.current = getOrionPrefs;
+  }, [getOrionPrefs]);
+
+  useEffect(() => {
+    getLlmRef.current = getLlm;
+  }, [getLlm]);
+
+  useEffect(() => {
     onLineRef.current = onCompanionLine;
   }, [onCompanionLine]);
 
@@ -90,6 +107,8 @@ export function useOrionCompanion({
       try {
         const snap = getSnapshotRef.current();
         if (snap.voiceMuted) return false;
+        const prefs = getOrionPrefsRef.current?.() ?? DEFAULT_ORION_PREFERENCES;
+        if (!prefs.auto_buddy) return false;
 
         const raw: OrionDriveContextInput = {
           ...snap,
@@ -104,6 +123,8 @@ export function useOrionCompanion({
           memory,
           session,
           navVoice: buildNavVoice(raw),
+          llm: prefs.use_llm_buddy ? getLlmRef.current?.() : undefined,
+          preferredMood: prefs.mood,
         });
 
         if (!result.shouldSpeak || !result.message) return false;

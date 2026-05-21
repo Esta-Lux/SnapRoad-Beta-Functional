@@ -203,7 +203,7 @@ export async function generateCompanionMessage(args: GenerateMessageArgs): Promi
   const { llm } = args;
   if (llm?.generate) {
     try {
-      const llmLine = await llm.generate(args.event, args.ctx);
+      const llmLine = await llm.generate(args.event, args.ctx, args.mood);
       if (llmLine?.trim()) {
         const knobs = getPersonalityKnobs(args.mood);
         return {
