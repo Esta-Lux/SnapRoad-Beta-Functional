@@ -216,6 +216,11 @@ import TripSummaryModal from '../components/common/Modal';
 import { useNavigationMode } from '../contexts/NavigatingContext';
 import { useCameraController } from '../hooks/useCameraController';
 import { navLogicDebugEnabled, navLogicSdkEnabled, navNativeFullScreenEnabled } from '../navigation/navFeatureFlags';
+import {
+  applyRouteOverviewCamera,
+  computeRouteOverviewBounds,
+  firstPolylineUsableForOverview,
+} from '../navigation/routeOverviewCamera';
 import { logNavVerify } from '../navigation/navLogicDebug';
 import {
   ingestSdkCameraState,
@@ -498,39 +503,6 @@ function timeAgo(iso: string): string {
   if (diff < 1) return 'just now';
   if (diff < 60) return `${diff}m ago`;
   return `${Math.round(diff / 60)}h ago`;
-}
-
-/** Normalize vertices from REST Directions, sticky SDK geometry, or `navLogicCoords`. */
-function coerceRouteOverviewPoint(p: {
-  lat?: unknown;
-  lng?: unknown;
-  latitude?: unknown;
-  longitude?: unknown;
-}): Coordinate | null {
-  const lat = typeof p.lat === 'number' ? p.lat : typeof p.latitude === 'number' ? p.latitude : NaN;
-  const lng = typeof p.lng === 'number' ? p.lng : typeof p.longitude === 'number' ? p.longitude : NaN;
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  return { lat, lng };
-}
-
-function firstPolylineUsableForOverview(
-  candidates: (readonly unknown[] | Coordinate[] | null | undefined)[],
-): Coordinate[] | null {
-  for (const raw of candidates) {
-    if (!raw || raw.length < 2) continue;
-    const out: Coordinate[] = [];
-    for (const pt of raw) {
-      const c = coerceRouteOverviewPoint(pt as {
-        lat?: unknown;
-        lng?: unknown;
-        latitude?: unknown;
-        longitude?: unknown;
-      });
-      if (c) out.push(c);
-    }
-    if (out.length >= 2) return out;
-  }
-  return null;
 }
 
 type CategoryExploreState = {
@@ -1877,6 +1849,9 @@ export default function MapScreen() {
   const [navCameraSessionKey, setNavCameraSessionKey] = useState(0);
   /** User tapped recenter — forces the next follow `setCamera` even if follow was already locked. */
   const [navFollowKick, setNavFollowKick] = useState(0);
+  /** Route overview (map HUD): camera pulled out to show full route; tap map again to exit. */
+  const [routeOverviewActive, setRouteOverviewActive] = useState(false);
+  const routeOverviewRelockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Single distance field for maneuver-aware presets (must match banner/speech). */
   const nextManeuverDistanceMeters = useMemo(() => {
     if (isNativeSdkPassThrough) {
@@ -3235,7 +3210,22 @@ export default function MapScreen() {
     setCameraLocked(true);
     userInteracting.current = false;
     setFollowMode('follow');
+    setRouteOverviewActive(false);
+    if (routeOverviewRelockTimerRef.current) {
+      clearTimeout(routeOverviewRelockTimerRef.current);
+      routeOverviewRelockTimerRef.current = null;
+    }
   }, [nav.isNavigating]);
+
+  useEffect(() => {
+    if (!nav.showRoutePreview) {
+      setRouteOverviewActive(false);
+      if (routeOverviewRelockTimerRef.current) {
+        clearTimeout(routeOverviewRelockTimerRef.current);
+        routeOverviewRelockTimerRef.current = null;
+      }
+    }
+  }, [nav.showRoutePreview]);
 
   // Trip end: show summary card directly (no gem bounce animation)
   useEffect(() => {
@@ -4734,6 +4724,11 @@ export default function MapScreen() {
   }, [nav.isNavigating]);
 
   const handleRecenter = useCallback(() => {
+    if (routeOverviewRelockTimerRef.current) {
+      clearTimeout(routeOverviewRelockTimerRef.current);
+      routeOverviewRelockTimerRef.current = null;
+    }
+    setRouteOverviewActive(false);
     if (autoRelockTimer.current) {
       clearTimeout(autoRelockTimer.current);
       autoRelockTimer.current = null;
@@ -4766,8 +4761,33 @@ export default function MapScreen() {
     }
   }, [location.lat, location.lng, nav.isNavigating]);
 
+  const exitRouteOverview = useCallback(() => {
+    if (routeOverviewRelockTimerRef.current) {
+      clearTimeout(routeOverviewRelockTimerRef.current);
+      routeOverviewRelockTimerRef.current = null;
+    }
+    setRouteOverviewActive(false);
+    if (nav.isNavigating) {
+      lastNavCameraCommandRef.current = null;
+      setNavFollowKick((k) => k + 1);
+      setCameraLocked(true);
+      userInteracting.current = false;
+      setFollowMode('follow');
+    }
+  }, [nav.isNavigating]);
+
   const handleRouteOverview = useCallback(() => {
-    if (!nav.isNavigating) return;
+    if (!nav.isNavigating && !nav.showRoutePreview) return;
+
+    if (routeOverviewActive) {
+      try {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {
+        /* optional */
+      }
+      exitRouteOverview();
+      return;
+    }
 
     try {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -4792,103 +4812,80 @@ export default function MapScreen() {
       return;
     }
 
-    const dest = nav.navigationData?.destination;
-    const lngs = [
-      ...route.map((c) => c.lng),
-      navDisplayCoord.lng,
-      dest && Number.isFinite(dest.lng) ? dest.lng : NaN,
-    ].filter(Number.isFinite) as number[];
-    const lats = [
-      ...route.map((c) => c.lat),
-      navDisplayCoord.lat,
-      dest && Number.isFinite(dest.lat) ? dest.lat : NaN,
-    ].filter(Number.isFinite) as number[];
-    if (lngs.length < 2 || lats.length < 2) {
+    const dest = nav.navigationData?.destination ?? nav.selectedDestination;
+    const extras: Coordinate[] = [];
+    if (nav.isNavigating) {
+      extras.push({ lat: navDisplayCoord.lat, lng: navDisplayCoord.lng });
+    } else if (Number.isFinite(location.lat) && Number.isFinite(location.lng)) {
+      extras.push({ lat: location.lat, lng: location.lng });
+    }
+    if (dest && Number.isFinite(dest.lat) && Number.isFinite(dest.lng)) {
+      extras.push({ lat: dest.lat, lng: dest.lng });
+    }
+
+    const bounds = computeRouteOverviewBounds(route, extras);
+    if (!bounds) {
       Alert.alert('Route overview', 'Could not frame this route right now.');
       return;
     }
 
-    let maxLng = Math.max(...lngs);
-    let minLng = Math.min(...lngs);
-    let maxLat = Math.max(...lats);
-    let minLat = Math.min(...lats);
-    const spanLng = Math.max(maxLng - minLng, 0.00035);
-    const spanLat = Math.max(maxLat - minLat, 0.00035);
-    const padLng = Math.max(spanLng * 0.12, 0.001);
-    const padLat = Math.max(spanLat * 0.12, 0.001);
-    maxLng += padLng;
-    minLng -= padLng;
-    maxLat += padLat;
-    minLat -= padLat;
-
     if (autoRelockTimer.current) clearTimeout(autoRelockTimer.current);
+    if (routeOverviewRelockTimerRef.current) clearTimeout(routeOverviewRelockTimerRef.current);
     userInteracting.current = true;
     setCameraLocked(false);
     setFollowMode('free');
+    setIsExploring(true);
+    setRouteOverviewActive(true);
 
     const winH = Dimensions.get('window').height;
-    const topPad = insets.top + 170;
+    const topPad = insets.top + (nav.showRoutePreview ? 96 : 170);
     const sidePad = 40;
-    const bottomPad = Math.min(
-      Math.round(winH * 0.48),
-      MAP_NAV_BOTTOM_INSET + insets.bottom + 56,
-    );
-
-    const ne: [number, number] = [maxLng, maxLat];
-    const sw: [number, number] = [minLng, minLat];
-    const padding = {
-      paddingTop: topPad,
-      paddingRight: sidePad,
-      paddingBottom: bottomPad,
-      paddingLeft: sidePad,
-    };
+    const bottomPad = nav.showRoutePreview
+      ? (routePreviewHeight > 48
+          ? routePreviewHeight + Math.max(insets.bottom, 12) + 12
+          : Math.min(Math.round(winH * 0.4) + Math.max(insets.bottom, 8), Math.round(winH * 0.46)))
+      : Math.min(
+          Math.round(winH * 0.48),
+          MAP_NAV_BOTTOM_INSET + insets.bottom + 56,
+        );
 
     const runOverviewCamera = () => {
-      const cam = cameraRef.current;
-      if (!cam) return;
-      try {
-        if (typeof cam.setCamera === 'function') {
-          cam.setCamera({
-            type: 'CameraStop',
-            bounds: { ne, sw },
-            padding,
-            animationDuration: 520,
-            animationMode: 'easeTo',
-            pitch: 28,
-          });
-        } else if (typeof cam.fitBounds === 'function') {
-          cam.fitBounds(ne, sw, [topPad, sidePad, bottomPad, sidePad], 520);
-        }
-      } catch (err) {
-        if (__DEV__) console.warn('[MapScreen] route overview camera failed', err);
-      }
+      applyRouteOverviewCamera(
+        cameraRef,
+        bounds,
+        { topPad, sidePad, bottomPad },
+        560,
+      );
     };
 
     InteractionManager.runAfterInteractions(() => {
       requestAnimationFrame(() => requestAnimationFrame(runOverviewCamera));
     });
 
-    autoRelockTimer.current = setTimeout(() => {
-      if (nav.isNavigating) {
-        lastNavCameraCommandRef.current = null;
-        setNavFollowKick((k) => k + 1);
-        setCameraLocked(true);
-        userInteracting.current = false;
-        setFollowMode('follow');
-      }
-    }, 9000);
+    if (nav.isNavigating) {
+      routeOverviewRelockTimerRef.current = setTimeout(() => {
+        routeOverviewRelockTimerRef.current = null;
+        if (nav.isNavigating) exitRouteOverview();
+      }, 12_000);
+    }
   }, [
+    exitRouteOverview,
     insets.bottom,
     insets.top,
+    location.lat,
+    location.lng,
     nav.isNavigating,
+    nav.showRoutePreview,
     nav.navigationData?.polyline,
-    nav.navigationData?.destination?.lat,
-    nav.navigationData?.destination?.lng,
+    nav.navigationData?.destination,
+    nav.selectedDestination,
     nav.sdkRoutePolyline,
     nav.navigationProgress?.routePolyline,
     navDisplayCoord.lat,
     navDisplayCoord.lng,
     polylineToRender,
+    routeOverviewActive,
+    routePreviewHeight,
     stickyRoutePolyline,
     navLogicCoords,
   ]);
@@ -6747,7 +6744,7 @@ export default function MapScreen() {
 
       {/* ═══ FLOATING BUTTONS (navigation) ════════════════════════════════ */}
 
-      {nav.isNavigating && !nav.showRoutePreview && !activeTripSummary && (
+      {((nav.isNavigating && !nav.showRoutePreview) || nav.showRoutePreview) && !activeTripSummary && (
         <View
           style={[
             s.navHudCluster,
@@ -6758,6 +6755,7 @@ export default function MapScreen() {
             },
           ]}
         >
+          {nav.isNavigating ? (
           <TouchableOpacity
             style={[
               s.navHudBtn,
@@ -6772,20 +6770,25 @@ export default function MapScreen() {
           >
             <Ionicons name="navigate" size={20} color="#fff" />
           </TouchableOpacity>
+          ) : null}
           <TouchableOpacity
             style={[
               s.navHudBtn,
               {
-                backgroundColor: hudChromeGlass.tileFill,
+                backgroundColor: routeOverviewActive
+                  ? 'rgba(37,99,235,0.92)'
+                  : hudChromeGlass.tileFill,
                 borderWidth: 1,
-                borderColor: hudChromeGlass.tileBorder,
+                borderColor: routeOverviewActive ? 'rgba(255,255,255,0.48)' : hudChromeGlass.tileBorder,
               },
             ]}
             onPress={handleRouteOverview}
-            accessibilityLabel="Show route overview"
+            accessibilityLabel={routeOverviewActive ? 'Exit route overview' : 'Show full route overview'}
           >
-            <Ionicons name="map-outline" size={20} color="#F1F5F9" />
+            <Ionicons name={routeOverviewActive ? 'map' : 'map-outline'} size={20} color="#F1F5F9" />
           </TouchableOpacity>
+          {nav.isNavigating ? (
+          <>
           <TouchableOpacity
             style={[
               s.navHudBtn,
@@ -6820,6 +6823,8 @@ export default function MapScreen() {
           >
             <Ionicons name="camera-outline" size={20} color="#F1F5F9" />
           </TouchableOpacity>
+          </>
+          ) : null}
         </View>
       )}
 
