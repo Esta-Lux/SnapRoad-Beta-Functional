@@ -139,6 +139,9 @@ export default function ProfileInsightsDashboard({
   const [drivingMetrics, setDrivingMetrics] = useState<DrivingMetric[]>([]);
   const [orionTips, setOrionTips] = useState<OrionTip[]>([]);
   const [drivingError, setDrivingError] = useState<string | null>(null);
+  const [rangeRecap, setRangeRecap] = useState<ProfileWeeklyRecap | null>(null);
+
+  const effectiveRecap = rangeRecap ?? effectiveRecap;
 
   const orionCompanionPreview = useMemo(() => {
     if (!visible) return null;
@@ -147,7 +150,7 @@ export default function ProfileInsightsDashboard({
       'idle_checkin',
       {
         isNavigating: false,
-        gemsEarned: weeklyRecap.gemsEarnedWeek,
+        gemsEarned: effectiveRecap.gemsEarnedWeek,
         driveDurationMinutes: 0,
       },
       {
@@ -161,7 +164,7 @@ export default function ProfileInsightsDashboard({
         },
       },
     );
-  }, [visible, weeklyRecap.gemsEarnedWeek]);
+  }, [visible, effectiveRecap.gemsEarnedWeek]);
 
   const range = useMemo(
     () => getPresetRange(preset, customStart, customEnd),
@@ -186,7 +189,7 @@ export default function ProfileInsightsDashboard({
   const previousKpis = useMemo(() => computeKpis(previousTrips), [previousTrips]);
   const deltas = useMemo(() => computeDeltas(kpis, previousKpis), [kpis, previousKpis]);
   const rangeOfferSavings =
-    preset === 'week' ? Number(weeklyRecap.offerSavingsDollars ?? 0) : 0;
+    preset === 'week' ? Number(effectiveRecap.offerSavingsDollars ?? 0) : 0;
   const rangeTotalSavings = kpis.routeSavingsUsd + rangeOfferSavings;
 
   /**
@@ -207,20 +210,20 @@ export default function ProfileInsightsDashboard({
   /** Week view: server weekly total can include trips not yet in the recent-history list. */
   const kpiTripsDisplay = useMemo(() => {
     let n = kpis.trips;
-    if (preset === 'week' && weeklyRecap.totalTrips > 0) {
-      n = Math.max(n, weeklyRecap.totalTrips);
+    if (preset === 'week' && effectiveRecap.totalTrips > 0) {
+      n = Math.max(n, effectiveRecap.totalTrips);
     }
     return n;
-  }, [kpis.trips, preset, weeklyRecap.totalTrips]);
+  }, [kpis.trips, preset, effectiveRecap.totalTrips]);
 
   /** Top speed display — prefer in-range max; fall back to server recap when the range is "week". */
   const topSpeedDisplay = useMemo(() => {
     let v = kpis.topSpeedMph;
-    if (preset === 'week' && weeklyRecap.topSpeedMph && weeklyRecap.topSpeedMph > v) {
-      v = weeklyRecap.topSpeedMph;
+    if (preset === 'week' && effectiveRecap.topSpeedMph && effectiveRecap.topSpeedMph > v) {
+      v = effectiveRecap.topSpeedMph;
     }
     return v;
-  }, [kpis.topSpeedMph, preset, weeklyRecap.topSpeedMph]);
+  }, [kpis.topSpeedMph, preset, effectiveRecap.topSpeedMph]);
 
   const badgesByCategory = useMemo(() => {
     const m = new Map<string, ProfileBadgeItem[]>();
@@ -264,6 +267,59 @@ export default function ProfileInsightsDashboard({
     if (!visible) return;
     void loadDrivingScore();
   }, [visible, loadDrivingScore]);
+
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const startIso = new Date(range.startMs).toISOString();
+        const endIso = new Date(range.endMs).toISOString();
+        const res = await api.get<unknown>(
+          `/api/weekly-recap?start=${encodeURIComponent(startIso)}&end=${encodeURIComponent(endIso)}`,
+        );
+        if (cancelled || !res.success) {
+          if (!cancelled) setRangeRecap(null);
+          return;
+        }
+        const weekly = (unwrapProfileApiData(res.data) as Record<string, unknown>) ?? {};
+        const beh = weekly.behavior;
+        setRangeRecap({
+          totalTrips: Number(weekly.total_trips ?? weekly.trips_this_week ?? 0),
+          totalMiles: Number(weekly.total_miles ?? weekly.miles_this_week ?? 0),
+          gemsEarnedWeek: Number(weekly.gems_earned ?? weekly.gems_earned_week ?? 0),
+          avgSafetyScore: Number(weekly.safety_score_avg ?? weekly.avg_safety_score ?? 0),
+          aiTip: '',
+          highlights: Array.isArray(weekly.highlights) ? weekly.highlights.map((x: unknown) => String(x)) : [],
+          orionCommentary: typeof weekly.orion_commentary === 'string' ? weekly.orion_commentary : null,
+          behavior:
+            beh && typeof beh === 'object'
+              ? {
+                  hard_braking_events_total: Number((beh as Record<string, unknown>).hard_braking_events_total ?? 0),
+                  hard_acceleration_events_total: Number((beh as Record<string, unknown>).hard_acceleration_events_total ?? 0),
+                  speeding_events_total: Number((beh as Record<string, unknown>).speeding_events_total ?? 0),
+                }
+              : { hard_braking_events_total: 0, hard_acceleration_events_total: 0, speeding_events_total: 0 },
+          topSpeedMph: Number(weekly.top_speed_mph ?? 0),
+          avgSpeedMph: Number(weekly.avg_speed_mph ?? 0),
+          fuelUsedGallons: Number(weekly.fuel_used_gallons ?? 0),
+          fuelCostEstimate: Number(weekly.fuel_cost_estimate ?? 0),
+          mileageValueEstimate: Number(weekly.mileage_value_estimate ?? 0),
+          routeFuelSavingsGallons: Number(weekly.route_fuel_savings_gallons ?? 0),
+          routeSavingsDollars: Number(weekly.route_savings_dollars ?? weekly.route_savings_usd ?? 0),
+          offerSavingsDollars: Number(weekly.offer_savings_dollars ?? weekly.offer_savings_usd ?? 0),
+          totalSavingsDollars: Number(weekly.total_savings_dollars ?? weekly.total_savings_usd ?? 0),
+          timeSavedSeconds: Number(weekly.time_saved_seconds ?? 0),
+          savingsDisclaimer: typeof weekly.savings_disclaimer === 'string' ? weekly.savings_disclaimer : '',
+        });
+      } catch {
+        if (!cancelled) setRangeRecap(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, range.startMs, range.endMs]);
 
   useEffect(() => {
     if (!visible) setTripDetail(null);
@@ -569,7 +625,7 @@ export default function ProfileInsightsDashboard({
             </View>
           </View>
           <Text style={[typography.caption, { color: colors.textTertiary, marginTop: 10, lineHeight: 18 }]}>
-            {weeklyRecap.savingsDisclaimer ||
+            {effectiveRecap.savingsDisclaimer ||
               'Route savings are estimated against a modeled baseline. Offer savings come from redemption value when available.'}
           </Text>
         </View>
@@ -644,7 +700,7 @@ export default function ProfileInsightsDashboard({
             </View>
           ) : null}
 
-          {weeklyRecap.highlights && weeklyRecap.highlights.length > 0 ? (
+          {effectiveRecap.highlights && effectiveRecap.highlights.length > 0 ? (
             <View
               style={[
                 styles.weekHighlightPanel,
@@ -662,7 +718,7 @@ export default function ProfileInsightsDashboard({
               >
                 WEEK HIGHLIGHTS (SERVER)
               </Text>
-              {weeklyRecap.highlights.map((h) => (
+              {effectiveRecap.highlights.map((h) => (
                 <View key={h} style={{ flexDirection: 'row', gap: 8, marginBottom: 6 }}>
                   <Text style={{ color: colors.primary, fontWeight: '800', marginTop: 1 }}>•</Text>
                   <Text style={{ color: colors.text, fontSize: 13, lineHeight: 19, flex: 1 }}>{h}</Text>
@@ -677,7 +733,7 @@ export default function ProfileInsightsDashboard({
             <Text style={{ color: colors.textSecondary }}>{drivingError}</Text>
           ) : (
             <>
-              {weeklyRecap.orionCommentary ? (
+              {effectiveRecap.orionCommentary ? (
                 <LinearGradient
                   colors={[colors.rewardsGradientStart, colors.rewardsGradientEnd]}
                   style={{ borderRadius: radius.md, padding: 12, marginBottom: spacing.sm }}
@@ -685,18 +741,18 @@ export default function ProfileInsightsDashboard({
                   <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 10, fontWeight: '800', marginBottom: 6, letterSpacing: 0.6 }}>
                     ORION RECAP
                   </Text>
-                  <Text style={{ color: '#fff', fontSize: 14, lineHeight: 20 }}>{weeklyRecap.orionCommentary}</Text>
+                  <Text style={{ color: '#fff', fontSize: 14, lineHeight: 20 }}>{effectiveRecap.orionCommentary}</Text>
                 </LinearGradient>
-              ) : weeklyRecap.behavior &&
-                (weeklyRecap.behavior.hard_braking_events_total > 0 ||
-                  (weeklyRecap.behavior.hard_acceleration_events_total ?? 0) > 0 ||
-                  weeklyRecap.behavior.speeding_events_total > 0) ? (
+              ) : effectiveRecap.behavior &&
+                (effectiveRecap.behavior.hard_braking_events_total > 0 ||
+                  (effectiveRecap.behavior.hard_acceleration_events_total ?? 0) > 0 ||
+                  effectiveRecap.behavior.speeding_events_total > 0) ? (
                 <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: spacing.sm }}>
-                  This week: {weeklyRecap.behavior.hard_braking_events_total} hard braking segments ·{' '}
-                  {weeklyRecap.behavior.hard_acceleration_events_total ?? 0} hard acceleration segments ·{' '}
-                  {weeklyRecap.behavior.speeding_events_total} speeding events from synced trips.
+                  This week: {effectiveRecap.behavior.hard_braking_events_total} hard braking segments ·{' '}
+                  {effectiveRecap.behavior.hard_acceleration_events_total ?? 0} hard acceleration segments ·{' '}
+                  {effectiveRecap.behavior.speeding_events_total} speeding events from synced trips.
                 </Text>
-              ) : !weeklyRecap.orionCommentary ? (
+              ) : !effectiveRecap.orionCommentary ? (
                 <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: spacing.sm }}>
                   Deeper Orion commentary appears when your weekly recap sync includes behavior signals and the AI service
                   is configured on the server.

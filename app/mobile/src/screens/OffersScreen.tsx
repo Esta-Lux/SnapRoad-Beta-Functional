@@ -146,6 +146,10 @@ function onlineCategoryRank(row: OnlineOfferItem): number {
   return ONLINE_CATEGORY_SORT_RANK[inferOnlineCategory(row).slug] ?? 50;
 }
 
+function isAutomotiveOffer(row: OnlineOfferItem): boolean {
+  return inferOnlineCategory(row).slug === 'automotive';
+}
+
 function headlineTitle(o: Offer): string {
   const t = o.title?.trim();
   if (t) return t;
@@ -180,7 +184,9 @@ function inferOnlineCategory(row: OnlineOfferItem): { slug: string; label: strin
   const explicit = row.category_slug?.trim().toLowerCase();
   if (explicit) return { slug: explicit, label: row.category_label?.trim() || titleCaseLabel(explicit) };
   const hay = `${row.category_label || ''} ${row.title || ''} ${row.description || ''} ${row.merchant_name || ''} ${row.merchant_domain || ''}`.toLowerCase();
-  if (/gas|fuel|auto|car|tire|oil|parts|garage/.test(hay)) return { slug: 'automotive', label: 'Auto' };
+  if (/gas|fuel|auto|automotive|car\b|cars\b|tire|oil\b|parts|garage|vehicle|motor|windshield|brake|battery|mechanic|detailing|wax|dash cam|dashcam|floor mat|wiper/.test(hay)) {
+    return { slug: 'automotive', label: 'Auto' };
+  }
   if (/grocery|market|pantry|snack|coffee|restaurant|meal|food/.test(hay)) return { slug: 'food', label: 'Food' };
   if (/hotel|flight|travel|trip|luggage|stay|resort/.test(hay)) return { slug: 'travel', label: 'Travel' };
   if (/shoe|shirt|jean|coat|fashion|apparel|clothing|watch|jewelry/.test(hay)) return { slug: 'fashion', label: 'Fashion' };
@@ -951,6 +957,9 @@ export default function OffersScreen() {
   /** Category-first order: auto/car → travel → lifestyle/home, featured within each group. */
   const onlineCarouselOrdered = useMemo(() => {
     const sorted = [...filteredOnlineItems].sort((a, b) => {
+      const autoA = isAutomotiveOffer(a);
+      const autoB = isAutomotiveOffer(b);
+      if (autoA !== autoB) return autoA ? -1 : 1;
       const ca = onlineCategoryRank(a);
       const cb = onlineCategoryRank(b);
       if (ca !== cb) return ca - cb;

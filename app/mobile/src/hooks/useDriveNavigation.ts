@@ -225,6 +225,9 @@ export function useDriveNavigation(params: {
   const [availableRoutes, setAvailableRoutes] = useState<DirectionsResult[]>([]);
   const [selectedRouteIndex, setSelectedRouteIndex] = useState(0);
   const [showRoutePreview, setShowRoutePreview] = useState(false);
+  /** True while a directions request is in flight (route preview can show a loading shell). */
+  const [isFetchingRoute, setIsFetchingRoute] = useState(false);
+  const fetchDirectionsGenRef = useRef(0);
   /** Set when a navigation session ends — used to delay + hard-refresh the next route fetch from the new origin. */
   const [lastTripEndedAtMs, setLastTripEndedAtMs] = useState(0);
   const [tripSummary, setTripSummary] = useState<TripSummary | null>(null);
@@ -706,6 +709,11 @@ export function useDriveNavigation(params: {
       };
     }
 
+    const fetchGen = ++fetchDirectionsGenRef.current;
+    if (!isNavigatingRef.current) {
+      setIsFetchingRoute(true);
+    }
+
     try {
       const options = await getMapboxRouteOptions(o, destination, {
         mode: drivingMode,
@@ -824,6 +832,10 @@ export function useDriveNavigation(params: {
       const msg = e instanceof Error ? e.message : 'Could not load directions.';
       console.warn('fetchDirections error:', e);
       return { ok: false, reason: 'route_failed', message: msg };
+    } finally {
+      if (fetchGen === fetchDirectionsGenRef.current && !isNavigatingRef.current) {
+        setIsFetchingRoute(false);
+      }
     }
   }, [userLocation, drivingMode, gpsAccuracy, speed, dynamicDestinationFollow, travelProfile]);
 
@@ -1440,6 +1452,7 @@ export function useDriveNavigation(params: {
       const res = await raceWithTimeout(postPromise, JS_NAV_TRIP_POST_TIMEOUT_MS);
       if (!res?.success || !res.data) {
         setTripSummary(summaryPayload);
+        bumpStatsVersionRef.current();
         return;
       }
 
@@ -1455,6 +1468,7 @@ export function useDriveNavigation(params: {
       bumpStatsVersionRef.current();
     })().catch(() => {
       setTripSummary(summaryPayload);
+      bumpStatsVersionRef.current();
     });
   }, [navigationData, navigationProgressCoord, tripFuelContextRef]);
 
@@ -1471,6 +1485,8 @@ export function useDriveNavigation(params: {
 
   /** Leave route preview: clears directions overlay (distinct from starting or stopping active navigation). */
   const cancelRoutePreview = useCallback(() => {
+    fetchDirectionsGenRef.current += 1;
+    setIsFetchingRoute(false);
     setShowRoutePreview(false);
     setNavigationData(null);
     setAvailableRoutes([]);
@@ -2254,6 +2270,7 @@ export function useDriveNavigation(params: {
     selectedRouteIndex,
     liveEta,
     showRoutePreview,
+    isFetchingRoute,
     setShowRoutePreview,
     cancelRoutePreview,
     resetRoutePlanningState,

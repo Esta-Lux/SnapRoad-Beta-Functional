@@ -2523,9 +2523,10 @@ export default function MapScreen() {
     }
   }, [compassMode, nav.isNavigating, isExploring]);
 
-  // Compass mode: clamped-step bearing toward device heading (not raw 8fps feed — avoids wobble/spin).
+  // Compass mode: clamped-step bearing toward device heading (legacy north-up compass tap).
+  // Heading-follow mode uses Mapbox FollowWithHeading + CustomLocationProvider instead.
   useEffect(() => {
-    if (!compassMode || nav.isNavigating || isExploring) return;
+    if (!compassMode || nav.isNavigating || isExploring || followMode === 'heading') return;
     const id = setInterval(() => {
       const raw = headingRef.current;
       const mph = speedRef.current;
@@ -2538,7 +2539,7 @@ export default function MapScreen() {
       });
     }, 175);
     return () => clearInterval(id);
-  }, [compassMode, nav.isNavigating, isExploring]);
+  }, [compassMode, nav.isNavigating, isExploring, followMode]);
 
   const currentStep = nav.navigationData?.steps?.[nav.currentStepIndex];
   const upcomingGuidanceStep = useMemo(
@@ -3614,13 +3615,16 @@ export default function MapScreen() {
     setSearchQuery(text);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     if (!text.trim() || text.trim().length < 2) { setSearchResults([]); setIsSearching(false); return; }
+    const loc = locationRef.current;
+    const hasLoc = Math.abs(loc.lat) > 1e-5 || Math.abs(loc.lng) > 1e-5;
+    const prep = prepareMapSearchQuery(text.trim());
+    const localFirst = localMatchesForSearchQuery(prep.query, savedPlaces, recentSearches);
+    if (localFirst.length > 0) {
+      setSearchResults(sortGeocodeByProximity(localFirst, loc));
+    }
     setIsSearching(true);
     const gen = ++searchGenRef.current;
     searchTimerRef.current = setTimeout(async () => {
-      const loc = locationRef.current;
-      const hasLoc = Math.abs(loc.lat) > 1e-5 || Math.abs(loc.lng) > 1e-5;
-      const prep = prepareMapSearchQuery(text.trim());
-      const localFirst = localMatchesForSearchQuery(prep.query, savedPlaces, recentSearches);
       if (prep.query.length < 2) {
         setSearchResults([]);
         setIsSearching(false);
@@ -3835,86 +3839,120 @@ export default function MapScreen() {
       };
     };
 
-    if (result.place_id) {
-      let detailRecord: Record<string, unknown> | null = null;
-      try {
-        const details = await api.get<any>(`/api/places/details/${result.place_id}`);
-        const d = details.data?.data ?? details.data;
-        if (d && typeof d === 'object') detailRecord = d as Record<string, unknown>;
-      } catch {
-        detailRecord = null;
-      }
+    const carriedPhotoRef = (result as { photo_reference?: unknown }).photo_reference;
+    const rowLat = Number(result.lat);
+    const rowLng = Number(result.lng);
+    const rowHasCoords =
+      Number.isFinite(rowLat) &&
+      Number.isFinite(rowLng) &&
+      !(Math.abs(rowLat) < 1e-6 && Math.abs(rowLng) < 1e-6);
 
-      const detailLat = detailRecord
-        ? Number(
-            detailRecord.lat ??
-              (detailRecord.geometry as { location?: { lat?: number } })?.location?.lat,
-          )
-        : NaN;
-      const detailLng = detailRecord
-        ? Number(
-            detailRecord.lng ??
-              (detailRecord.geometry as { location?: { lng?: number } })?.location?.lng,
-          )
-        : NaN;
-
-      /**
-       * Resolve the canonical map coordinate. `pickBestPlaceLocation` always
-       * prefers details geometry when valid — this fixes the
-       * "tap pulls up wrong things" bug where row coords (potentially stale
-       * or duplicated from another provider) used to override authoritative
-       * details geometry whenever `hasCoords()` was true on the row.
-       */
-      const best = pickBestPlaceLocation(
-        Number(result.lat),
-        Number(result.lng),
-        Number.isFinite(detailLat) ? detailLat : null,
-        Number.isFinite(detailLng) ? detailLng : null,
-      );
-
-      const observedAt = Date.now();
-      const recentRow = buildRecentRow(result, detailRecord, observedAt);
-      // Functional updater so concurrent recent updates can't pin a stale snapshot.
-      setRecentSearches((prev) => {
-        const updated = [recentRow, ...prev.filter((r) => r.name !== result.name)].slice(0, 10);
-        storage.set('snaproad_recent_searches', JSON.stringify(updated));
-        return updated;
+    const showPlaceOnMap = (lat: number, lng: number, partial: Partial<GeocodeResult> & { name: string; address: string; lat: number; lng: number }) => {
+      cameraRef.current?.setCamera({
+        centerCoordinate: [lng, lat],
+        zoomLevel: 16,
+        pitch: 45,
+        animationDuration: 600,
       });
+      setSelectedPlace({
+        name: partial.name,
+        address: partial.address,
+        lat,
+        lng,
+        placeType: partial.placeType ?? result.placeType,
+        category: partial.category ?? result.placeType ?? result.category,
+        price_level: partial.price_level ?? result.price_level,
+        open_now: partial.open_now,
+        rating: partial.rating ?? (typeof (result as { rating?: number }).rating === 'number' ? (result as { rating?: number }).rating : undefined),
+        photo_reference:
+          typeof partial.photo_reference === 'string'
+            ? partial.photo_reference
+            : typeof carriedPhotoRef === 'string'
+              ? carriedPhotoRef
+              : undefined,
+      });
+    };
 
-      if (best) {
-        cameraRef.current?.setCamera({
-          centerCoordinate: [best.lng, best.lat],
-          zoomLevel: 16,
-          pitch: 45,
-          animationDuration: 800,
+    if (result.place_id) {
+      setSelectedPlaceId(result.place_id);
+      if (rowHasCoords) {
+        showPlaceOnMap(rowLat, rowLng, {
+          name: result.name,
+          address: result.address,
+          lat: rowLat,
+          lng: rowLng,
+          open_now: result.open_now,
         });
       } else {
-        Alert.alert(
-          'Location unavailable',
-          'Could not load coordinates for this place. Try another search result or open the listing again in a moment.',
-        );
+        setSelectedPlace({
+          name: result.name,
+          address: result.address,
+          lat: 0,
+          lng: 0,
+          placeType: result.placeType,
+          category: result.placeType ?? result.category,
+          price_level: result.price_level,
+          photo_reference: typeof carriedPhotoRef === 'string' ? carriedPhotoRef : undefined,
+        });
       }
 
-      const summaryOpen = detailRecord ? parseOpenNowBooleanFromDetailsPayload(detailRecord) : null;
-      // When the upstream search row already has a Google `photo_reference`
-      // (text-search / category explore), keep it on the selected place so the
-      // detail sheet renders an instant hero before /api/places/details lands.
-      const carriedPhotoRef = (result as { photo_reference?: unknown }).photo_reference;
-      setSelectedPlace({
-        name: result.name,
-        address: result.address,
-        lat: best ? best.lat : 0,
-        lng: best ? best.lng : 0,
-        placeType: result.placeType,
-        category: result.placeType ?? result.category,
-        price_level: result.price_level,
-        open_now: summaryOpen === null ? undefined : summaryOpen,
-        rating: typeof (result as { rating?: number }).rating === 'number'
-          ? (result as { rating?: number }).rating
-          : undefined,
-        photo_reference: typeof carriedPhotoRef === 'string' ? carriedPhotoRef : undefined,
-      });
-      setSelectedPlaceId(result.place_id);
+      void (async () => {
+        let detailRecord: Record<string, unknown> | null = null;
+        try {
+          const details = await api.get<any>(`/api/places/details/${result.place_id}`);
+          const d = details.data?.data ?? details.data;
+          if (d && typeof d === 'object') detailRecord = d as Record<string, unknown>;
+        } catch {
+          detailRecord = null;
+        }
+
+        const detailLat = detailRecord
+          ? Number(
+              detailRecord.lat ??
+                (detailRecord.geometry as { location?: { lat?: number } })?.location?.lat,
+            )
+          : NaN;
+        const detailLng = detailRecord
+          ? Number(
+              detailRecord.lng ??
+                (detailRecord.geometry as { location?: { lng?: number } })?.location?.lng,
+            )
+          : NaN;
+
+        const best = pickBestPlaceLocation(
+          Number(result.lat),
+          Number(result.lng),
+          Number.isFinite(detailLat) ? detailLat : null,
+          Number.isFinite(detailLng) ? detailLng : null,
+        );
+
+        const observedAt = Date.now();
+        const recentRow = buildRecentRow(result, detailRecord, observedAt);
+        setRecentSearches((prev) => {
+          const updated = [recentRow, ...prev.filter((r) => r.name !== result.name)].slice(0, 10);
+          storage.set('snaproad_recent_searches', JSON.stringify(updated));
+          return updated;
+        });
+
+        if (!best) {
+          if (!rowHasCoords) {
+            Alert.alert(
+              'Location unavailable',
+              'Could not load coordinates for this place. Try another search result or open the listing again in a moment.',
+            );
+          }
+          return;
+        }
+
+        const summaryOpen = detailRecord ? parseOpenNowBooleanFromDetailsPayload(detailRecord) : null;
+        showPlaceOnMap(best.lat, best.lng, {
+          name: result.name,
+          address: result.address,
+          lat: best.lat,
+          lng: best.lng,
+          open_now: summaryOpen === null ? undefined : summaryOpen,
+        });
+      })();
       return;
     }
 
@@ -3929,29 +3967,13 @@ export default function MapScreen() {
       return updated;
     });
 
-    {
-      const carriedPhotoRef = (result as { photo_reference?: unknown }).photo_reference;
-      setSelectedPlace({
-        name: result.name,
-        address: result.address,
-        category: result.category,
-        maki: result.maki,
-        placeType: result.placeType,
-        price_level: result.price_level,
-        open_now: undefined,
-        rating: typeof (result as { rating?: number }).rating === 'number'
-          ? (result as { rating?: number }).rating
-          : undefined,
-        photo_reference: typeof carriedPhotoRef === 'string' ? carriedPhotoRef : undefined,
-        lat: result.lat,
-        lng: result.lng,
-      });
-    }
-    cameraRef.current?.setCamera({
-      centerCoordinate: [result.lng, result.lat],
-      zoomLevel: 16,
-      pitch: 45,
-      animationDuration: 800,
+    showPlaceOnMap(rowLat, rowLng, {
+      name: result.name,
+      address: result.address,
+      lat: rowLat,
+      lng: rowLng,
+      category: result.category,
+      placeType: result.placeType,
     });
   }, []);
 
@@ -4404,19 +4426,26 @@ export default function MapScreen() {
       setSelectedPlaceId(null);
       nav.setSelectedDestination({ name: place.name, address: place.address ?? '', lat: place.lat, lng: place.lng });
       nav.resetRoutePlanningState();
+      cameraRef.current?.setCamera({
+        centerCoordinate: [place.lng, place.lat],
+        zoomLevel: 14,
+        pitch: 45,
+        animationDuration: 500,
+      });
       const tripJustEnded = nav.lastTripEndedAtMs > 0 && Date.now() - nav.lastTripEndedAtMs < 120_000;
-      if (tripJustEnded) {
-        await new Promise<void>((r) => setTimeout(r, 400));
-      }
-      const routeResult = await nav.fetchDirections(
-        { name: place.name, address: place.address ?? '', lat: place.lat, lng: place.lng },
-        origin,
-        { maxHeightMeters: avoidLowClearances ? vehicleHeight : undefined },
-      );
-      if (routeResult.ok) {
-        nav.clearLastTripEndedMark();
-      }
-      if (!routeResult.ok) {
+      const runFetch = async () => {
+        if (tripJustEnded) {
+          await new Promise<void>((r) => setTimeout(r, 400));
+        }
+        const routeResult = await nav.fetchDirections(
+          { name: place.name, address: place.address ?? '', lat: place.lat, lng: place.lng },
+          origin,
+          { maxHeightMeters: avoidLowClearances ? vehicleHeight : undefined },
+        );
+        if (routeResult.ok) {
+          nav.clearLastTripEndedMark();
+          return;
+        }
         const detail = routeResult.message ?? 'Try again in a moment.';
         if (routeResult.reason === 'no_mapbox') {
           Alert.alert(
@@ -4428,7 +4457,8 @@ export default function MapScreen() {
         } else {
           Alert.alert('Could not plan route', detail);
         }
-      }
+      };
+      void runFetch();
     },
     [nav, avoidLowClearances, vehicleHeight, permissionDenied, isLocating],
   );
@@ -5764,6 +5794,7 @@ export default function MapScreen() {
           void commitSearch();
         }}
         onClearSearch={handleClearSearch}
+        onOpenOrion={() => setShowOrion(true)}
         activeChip={activeChip}
         onSelectChip={openCategoryExplore}
         savedPlaces={savedPlaces}
@@ -6384,8 +6415,19 @@ export default function MapScreen() {
       )}
 
       <RoutePreviewPanel
-        visible={nav.showRoutePreview && !!nav.navigationData && !nav.isNavigating}
-        navData={nav.navigationData ? { destination: nav.navigationData.destination } : null}
+        visible={
+          !nav.isNavigating &&
+          !!nav.selectedDestination &&
+          (nav.showRoutePreview || nav.isFetchingRoute)
+        }
+        navData={
+          nav.navigationData
+            ? { destination: nav.navigationData.destination }
+            : nav.selectedDestination
+              ? { destination: nav.selectedDestination }
+              : null
+        }
+        isLoading={nav.isFetchingRoute && !nav.navigationData}
         availableRoutes={nav.availableRoutes}
         selectedRouteIndex={nav.selectedRouteIndex}
         onSelectRoute={nav.handleRouteSelect}

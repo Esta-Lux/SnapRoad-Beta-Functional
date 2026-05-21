@@ -1,5 +1,5 @@
 import React from 'react';
-import { FlatList, Platform, Pressable, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, Platform, Pressable, Switch, Text, TouchableOpacity, View } from 'react-native';
 import Animated, { Easing, SlideInDown, SlideOutDown } from 'react-native-reanimated';
 import { GestureDetector } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -24,6 +24,8 @@ type NavData = {
 type Props = {
   visible: boolean;
   navData: NavData | null;
+  /** Directions API in flight — show destination shell while the user can still pan the map. */
+  isLoading?: boolean;
   availableRoutes: PreviewRoute[];
   selectedRouteIndex: number;
   onSelectRoute: (index: number) => void;
@@ -62,6 +64,7 @@ export default function RoutePreviewPanel(props: Props) {
   if (!props.visible || !props.navData) return null;
   const previewCompact = !props.detailsExpanded;
   const selectedRoute = props.availableRoutes[props.selectedRouteIndex];
+  const routeLoading = Boolean(props.isLoading && !selectedRoute);
   const selType = selectedRoute?.routeType ?? 'fastest';
   const s = props.styles;
 
@@ -202,6 +205,14 @@ export default function RoutePreviewPanel(props: Props) {
         </View>
       ) : null}
 
+      {routeLoading ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: previewCompact ? 10 : 14, paddingVertical: 8 }}>
+          <ActivityIndicator size="small" color={props.colors.primary} />
+          <Text style={{ color: props.colors.textSecondary, fontSize: 13, fontWeight: '600' }}>
+            Calculating route…
+          </Text>
+        </View>
+      ) : (
       <FlatList
         horizontal
         data={props.availableRoutes}
@@ -266,6 +277,7 @@ export default function RoutePreviewPanel(props: Props) {
           );
         }}
       />
+      )}
 
       {props.hasTallVehicle && props.travelProfile !== 'walking' && (
         <View style={s.truckRow}>
@@ -276,8 +288,8 @@ export default function RoutePreviewPanel(props: Props) {
           <Switch value={props.avoidLowClearances} onValueChange={props.setAvoidLowClearances} trackColor={{ false: props.colors.border, true: props.colors.primary }} thumbColor="#fff" />
         </View>
       )}
-      <TouchableOpacity onPress={props.onStartNavigationPress} activeOpacity={0.85}>
-        <LinearGradient colors={startGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.startBtn}>
+      <TouchableOpacity onPress={props.onStartNavigationPress} activeOpacity={0.85} disabled={routeLoading}>
+        <LinearGradient colors={routeLoading ? ['#64748B', '#475569'] : startGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[s.startBtn, routeLoading && { opacity: 0.72 }]}>
           <Ionicons
             name={
               routeIcon(selType) === 'flash'
@@ -294,9 +306,11 @@ export default function RoutePreviewPanel(props: Props) {
             color="#fff"
           />
           <Text style={s.startBtnT}>
-            {props.travelProfile === 'walking'
-              ? 'Start walking'
-              : `Start ${selectedRoute?.routeLabel ?? routeLabel(selType, props.selectedRouteIndex)}`}
+            {routeLoading
+              ? 'Loading route…'
+              : props.travelProfile === 'walking'
+                ? 'Start walking'
+                : `Start ${selectedRoute?.routeLabel ?? routeLabel(selType, props.selectedRouteIndex)}`}
           </Text>
         </LinearGradient>
       </TouchableOpacity>

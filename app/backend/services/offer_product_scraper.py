@@ -453,6 +453,14 @@ def augment_items_with_scraped_images(
         for key in ("title", "description", "regular_price", "sale_price", "currency"):
             if not item.get(key) and scraped.get(key) is not None:
                 item[key] = scraped[key]
+        oid = str(item.get("id") or "").strip()
+        if oid and hero and not oid.startswith("fmtc_"):
+            try:
+                from services.online_offers_db import resync_online_offer_images
+
+                resync_online_offer_images(oid, scraped=scraped)
+            except Exception as exc:
+                logger.debug("persist scraped offer images failed for %s: %s", oid, exc)
 
 
 __all__ = [
