@@ -141,7 +141,7 @@ export default function ProfileInsightsDashboard({
   const [drivingError, setDrivingError] = useState<string | null>(null);
   const [rangeRecap, setRangeRecap] = useState<ProfileWeeklyRecap | null>(null);
 
-  const effectiveRecap = rangeRecap ?? effectiveRecap;
+  const effectiveRecap = rangeRecap ?? weeklyRecap;
 
   const orionCompanionPreview = useMemo(() => {
     if (!visible) return null;

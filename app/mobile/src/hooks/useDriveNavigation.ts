@@ -718,7 +718,7 @@ export function useDriveNavigation(params: {
       const options = await getMapboxRouteOptions(o, destination, {
         mode: drivingMode,
         maxHeightMeters: opts?.maxHeightMeters,
-        fastSingleRoute: opts?.fastSingleRoute,
+        fastSingleRoute: opts?.fastSingleRoute ?? !isNavigatingRef.current,
         travelProfile,
       });
       if (!options.length || !options[0].polyline.length) {

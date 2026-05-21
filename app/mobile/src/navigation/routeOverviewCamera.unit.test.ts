@@ -4,6 +4,7 @@ import {
   computeRouteOverviewBounds,
   coerceRouteOverviewPoint,
   firstPolylineUsableForOverview,
+  longestPolylineUsableForOverview,
 } from './routeOverviewCamera';
 
 test('coerceRouteOverviewPoint accepts lat/lng and latitude/longitude', () => {
@@ -22,6 +23,19 @@ test('firstPolylineUsableForOverview picks first valid polyline', () => {
   ]);
   assert.ok(route);
   assert.equal(route!.length, 2);
+});
+
+test('longestPolylineUsableForOverview prefers the longest candidate', () => {
+  const short = [
+    { lat: 40.0, lng: -83.0 },
+    { lat: 40.01, lng: -82.99 },
+  ];
+  const long = Array.from({ length: 120 }, (_, i) => ({
+    lat: 40 + i * 0.001,
+    lng: -83 + i * 0.001,
+  }));
+  const picked = longestPolylineUsableForOverview([short, long]);
+  assert.equal(picked?.length, long.length);
 });
 
 test('computeRouteOverviewBounds pads route envelope', () => {

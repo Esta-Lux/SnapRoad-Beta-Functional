@@ -14,24 +14,47 @@ export function coerceRouteOverviewPoint(p: {
   return { lat, lng };
 }
 
+function polylineFromCandidate(
+  raw: readonly unknown[] | Coordinate[] | null | undefined,
+): Coordinate[] | null {
+  if (!raw || raw.length < 2) return null;
+  const out: Coordinate[] = [];
+  for (const pt of raw) {
+    const c = coerceRouteOverviewPoint(pt as {
+      lat?: unknown;
+      lng?: unknown;
+      latitude?: unknown;
+      longitude?: unknown;
+    });
+    if (c) out.push(c);
+  }
+  return out.length >= 2 ? out : null;
+}
+
 export function firstPolylineUsableForOverview(
   candidates: (readonly unknown[] | Coordinate[] | null | undefined)[],
 ): Coordinate[] | null {
   for (const raw of candidates) {
-    if (!raw || raw.length < 2) continue;
-    const out: Coordinate[] = [];
-    for (const pt of raw) {
-      const c = coerceRouteOverviewPoint(pt as {
-        lat?: unknown;
-        lng?: unknown;
-        latitude?: unknown;
-        longitude?: unknown;
-      });
-      if (c) out.push(c);
-    }
-    if (out.length >= 2) return out;
+    const poly = polylineFromCandidate(raw);
+    if (poly) return poly;
   }
   return null;
+}
+
+/**
+ * Prefer the longest polyline — during navigation the trimmed "remaining" line is
+ * often listed before the full route and made overview look like a tiny local preview.
+ */
+export function longestPolylineUsableForOverview(
+  candidates: (readonly unknown[] | Coordinate[] | null | undefined)[],
+): Coordinate[] | null {
+  let best: Coordinate[] | null = null;
+  for (const raw of candidates) {
+    const poly = polylineFromCandidate(raw);
+    if (!poly) continue;
+    if (!best || poly.length > best.length) best = poly;
+  }
+  return best;
 }
 
 export function computeRouteOverviewBounds(
@@ -47,8 +70,8 @@ export function computeRouteOverviewBounds(
   let minLat = Math.min(...lats);
   const spanLng = Math.max(maxLng - minLng, 0.00035);
   const spanLat = Math.max(maxLat - minLat, 0.00035);
-  const padLng = Math.max(spanLng * 0.12, 0.001);
-  const padLat = Math.max(spanLat * 0.12, 0.001);
+  const padLng = Math.max(spanLng * 0.14, 0.0015);
+  const padLat = Math.max(spanLat * 0.14, 0.0015);
   return {
     ne: [maxLng + padLng, maxLat + padLat],
     sw: [minLng - padLng, minLat - padLat],
@@ -64,22 +87,28 @@ export function applyRouteOverviewCamera(
   const cam = cameraRef.current;
   if (!cam) return;
   const { topPad, sidePad, bottomPad } = padding;
+  const pad = [topPad, sidePad, bottomPad, sidePad];
   try {
-    if (typeof cam.fitBounds === 'function') {
-      cam.fitBounds(bounds.ne, bounds.sw, [topPad, sidePad, bottomPad, sidePad], animationMs);
+    // fitBounds alone — a follow-up setCamera(pitch/heading) resets zoom and shrinks the overview.
+    if (typeof cam.setCamera === 'function') {
+      cam.setCamera({
+        bounds: { ne: bounds.ne, sw: bounds.sw },
+        padding: {
+          paddingTop: topPad,
+          paddingRight: sidePad,
+          paddingBottom: bottomPad,
+          paddingLeft: sidePad,
+        },
+        heading: 0,
+        pitch: 0,
+        animationMode: 'easeTo',
+        animationDuration: animationMs,
+      });
+      return;
     }
-    requestAnimationFrame(() => {
-      try {
-        cam.setCamera?.({
-          heading: 0,
-          pitch: 32,
-          animationMode: 'easeTo',
-          animationDuration: Math.min(420, animationMs),
-        });
-      } catch {
-        /* bird's-eye polish */
-      }
-    });
+    if (typeof cam.fitBounds === 'function') {
+      cam.fitBounds(bounds.ne, bounds.sw, pad, animationMs);
+    }
   } catch (err) {
     if (typeof __DEV__ !== 'undefined' && __DEV__) {
       console.warn('[routeOverviewCamera] fit failed', err);

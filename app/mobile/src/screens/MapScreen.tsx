@@ -219,7 +219,7 @@ import { navLogicDebugEnabled, navLogicSdkEnabled, navNativeFullScreenEnabled } 
 import {
   applyRouteOverviewCamera,
   computeRouteOverviewBounds,
-  firstPolylineUsableForOverview,
+  longestPolylineUsableForOverview,
 } from '../navigation/routeOverviewCamera';
 import { logNavVerify } from '../navigation/navLogicDebug';
 import {
@@ -3267,6 +3267,7 @@ export default function MapScreen() {
     if (!nav.showRoutePreview || !nav.selectedDestination) return;
     void nav.fetchDirections(nav.selectedDestination, undefined, {
       maxHeightMeters: avoidLowClearances ? vehicleHeight : undefined,
+      fastSingleRoute: true,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only refetch when switching travel mode during preview
   }, [nav.travelProfile]);
@@ -4416,12 +4417,14 @@ export default function MapScreen() {
       setSelectedPlaceId(null);
       nav.setSelectedDestination({ name: place.name, address: place.address ?? '', lat: place.lat, lng: place.lng });
       nav.resetRoutePlanningState();
-      cameraRef.current?.setCamera({
-        centerCoordinate: [place.lng, place.lat],
-        zoomLevel: 14,
-        pitch: 45,
-        animationDuration: 500,
-      });
+      const lngs = [origin.lng, place.lng];
+      const lats = [origin.lat, place.lat];
+      cameraRef.current?.fitBounds(
+        [Math.max(...lngs), Math.max(...lats)],
+        [Math.min(...lngs), Math.min(...lats)],
+        [insets.top + 96, 36, Math.round(Dimensions.get('window').height * 0.38), 36],
+        420,
+      );
       const tripJustEnded = nav.lastTripEndedAtMs > 0 && Date.now() - nav.lastTripEndedAtMs < 120_000;
       const runFetch = async () => {
         if (tripJustEnded) {
@@ -4430,7 +4433,10 @@ export default function MapScreen() {
         const routeResult = await nav.fetchDirections(
           { name: place.name, address: place.address ?? '', lat: place.lat, lng: place.lng },
           origin,
-          { maxHeightMeters: avoidLowClearances ? vehicleHeight : undefined },
+          {
+            maxHeightMeters: avoidLowClearances ? vehicleHeight : undefined,
+            fastSingleRoute: true,
+          },
         );
         if (routeResult.ok) {
           nav.clearLastTripEndedMark();
@@ -4450,7 +4456,7 @@ export default function MapScreen() {
       };
       void runFetch();
     },
-    [nav, avoidLowClearances, vehicleHeight, permissionDenied, isLocating],
+    [nav, avoidLowClearances, vehicleHeight, permissionDenied, isLocating, insets.top],
   );
 
   const beginFriendFollowNavigation = useCallback(
@@ -4795,13 +4801,15 @@ export default function MapScreen() {
       /* optional */
     }
 
-    const route = firstPolylineUsableForOverview([
+    const route = longestPolylineUsableForOverview([
       nav.navigationData?.polyline,
-      polylineToRender ?? undefined,
-      stickyRoutePolyline ?? undefined,
       nav.sdkRoutePolyline?.length ? nav.sdkRoutePolyline : undefined,
-      nav.navigationProgress?.routePolyline,
       navLogicCoords.length >= 2 ? navLogicCoords : undefined,
+      nav.availableRoutes?.[nav.selectedRouteIndex]?.polyline,
+      nav.availableRoutes?.[0]?.polyline,
+      stickyRoutePolyline ?? undefined,
+      nav.navigationProgress?.routePolyline,
+      polylineToRender ?? undefined,
     ]);
 
     if (!route || route.length < 2) {
@@ -4813,14 +4821,18 @@ export default function MapScreen() {
     }
 
     const dest = nav.navigationData?.destination ?? nav.selectedDestination;
+    const origin = nav.navigationData?.origin;
     const extras: Coordinate[] = [];
+    if (origin && Number.isFinite(origin.lat) && Number.isFinite(origin.lng)) {
+      extras.push({ lat: origin.lat, lng: origin.lng });
+    }
+    if (dest && Number.isFinite(dest.lat) && Number.isFinite(dest.lng)) {
+      extras.push({ lat: dest.lat, lng: dest.lng });
+    }
     if (nav.isNavigating) {
       extras.push({ lat: navDisplayCoord.lat, lng: navDisplayCoord.lng });
     } else if (Number.isFinite(location.lat) && Number.isFinite(location.lng)) {
       extras.push({ lat: location.lat, lng: location.lng });
-    }
-    if (dest && Number.isFinite(dest.lat) && Number.isFinite(dest.lng)) {
-      extras.push({ lat: dest.lat, lng: dest.lng });
     }
 
     const bounds = computeRouteOverviewBounds(route, extras);
@@ -4836,17 +4848,18 @@ export default function MapScreen() {
     setFollowMode('free');
     setIsExploring(true);
     setRouteOverviewActive(true);
+    navCameraDeferUntilMsRef.current = Date.now() + 14_000;
 
     const winH = Dimensions.get('window').height;
-    const topPad = insets.top + (nav.showRoutePreview ? 96 : 170);
-    const sidePad = 40;
+    const topPad = insets.top + (nav.showRoutePreview ? 88 : 120);
+    const sidePad = 28;
     const bottomPad = nav.showRoutePreview
       ? (routePreviewHeight > 48
-          ? routePreviewHeight + Math.max(insets.bottom, 12) + 12
-          : Math.min(Math.round(winH * 0.4) + Math.max(insets.bottom, 8), Math.round(winH * 0.46)))
+          ? routePreviewHeight + Math.max(insets.bottom, 12) + 16
+          : Math.min(Math.round(winH * 0.36) + Math.max(insets.bottom, 8), Math.round(winH * 0.42)))
       : Math.min(
-          Math.round(winH * 0.48),
-          MAP_NAV_BOTTOM_INSET + insets.bottom + 56,
+          MAP_NAV_BOTTOM_INSET + insets.bottom + 72,
+          Math.round(winH * 0.38),
         );
 
     const runOverviewCamera = () => {
@@ -4879,7 +4892,11 @@ export default function MapScreen() {
     nav.navigationData?.polyline,
     nav.navigationData?.destination,
     nav.selectedDestination,
+    nav.navigationData?.origin?.lat,
+    nav.navigationData?.origin?.lng,
     nav.sdkRoutePolyline,
+    nav.availableRoutes,
+    nav.selectedRouteIndex,
     nav.navigationProgress?.routePolyline,
     navDisplayCoord.lat,
     navDisplayCoord.lng,
