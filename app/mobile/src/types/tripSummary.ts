@@ -34,8 +34,10 @@ export interface TripSummary {
   hard_acceleration_events?: number;
   speeding_events?: number;
   incidents_reported?: number;
-  /** False = trip sheet still shows, but drive did not meet min distance/time for rewards. */
+  /** False = trip sheet still shows, but drive did not meet min distance/time for history/recap. */
   counted?: boolean;
+  /** False when the drive was tracked but stayed below the about-1-mile gem threshold. */
+  reward_eligible?: boolean;
   /** Auto-ended at destination — show “You’ve arrived” hero in trip sheet. */
   arrivedAtDestination?: boolean;
   /** Authoritative profile totals after /api/trips/complete (when returned). */

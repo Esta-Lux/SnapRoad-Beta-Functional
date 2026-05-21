@@ -588,8 +588,10 @@ class TripCompleteBody(BaseModel):
     incidents_reported: int = 0
     region_state: Optional[str] = None
 
-# Keep in sync with mobile passive + navigation trip gates (~1 mi, 30s, real movement).
-_MIN_TRIP_MILES = 1.0
+# Keep in sync with mobile passive + navigation trip gates.
+# A short real drive should be stored for Insights/Recap; gems require about 1 mile.
+_MIN_TRACKED_TRIP_MILES = 0.10
+_MIN_REWARD_TRIP_MILES = 1.0
 _MIN_TRIP_SECONDS = 30
 
 
@@ -611,6 +613,13 @@ def _trip_gems_today_utc(user_id: str) -> int:
         return 0
 
 
+def _compute_trip_xp(distance: float, safety: float) -> int:
+    """Bounded XP for any tracked drive so recap reflects real trip activity."""
+    xp_base = min(100, max(5, int(round(float(distance) * 2.0))))
+    bonus = 15 if safety >= 85 else (5 if safety >= 70 else 0)
+    return min(150, xp_base + bonus)
+
+
 def _compute_trip_rewards(
     distance: float,
     safety: float,
@@ -627,11 +636,7 @@ def _compute_trip_rewards(
     gems = trip_gems_from_duration_minutes(duration_min, bool(is_premium))
     if profile_id:
         gems = apply_trip_gem_daily_cap(gems, _trip_gems_today_utc(profile_id))
-    # Bounded XP so Insights/recap stay readable (was distance*100 + large safety bonus).
-    xp_base = min(100, max(5, int(round(float(distance) * 2.0))))
-    bonus = 15 if safety >= 85 else (5 if safety >= 70 else 0)
-    xp = min(150, xp_base + bonus)
-    return gems, xp
+    return gems, _compute_trip_xp(distance, safety)
 
 
 def _int_for_pg(v: Any, *, lo: Optional[int] = None, hi: Optional[int] = None) -> int:
@@ -912,28 +917,34 @@ def complete_trip(request: Request, body: TripCompleteBody, user: CurrentUserOrG
         body.duration_seconds,
         body.max_speed_mph if body.max_speed_mph is not None else body.avg_speed_mph,
     )
-    if body.duration_seconds < _MIN_TRIP_SECONDS or distance < _MIN_TRIP_MILES:
+    if body.duration_seconds < _MIN_TRIP_SECONDS or distance < _MIN_TRACKED_TRIP_MILES:
         return {
             "success": True,
             "data": {
                 "trip_id": None,
                 "counted": False,
+                "reward_eligible": False,
                 "gems_earned": 0,
                 "xp_earned": 0,
                 "safety_score": max(0, min(100, body.safety_score)),
                 "distance_miles": round(distance, 2),
-                "message": f"Trips need at least ~{_MIN_TRIP_MILES:.2f} mi and {_MIN_TRIP_SECONDS}s of driving.",
+                "message": f"Trips need at least ~{_MIN_TRACKED_TRIP_MILES:.2f} mi and {_MIN_TRIP_SECONDS}s of driving.",
             },
         }
     safety = max(0, min(100, body.safety_score))
+    reward_eligible = distance >= _MIN_REWARD_TRIP_MILES
     if is_guest_user_id(user_id):
         trip_id = f"guest_trip_{uuid4()}"
-        gems_earned, xp_earned = _compute_trip_rewards(
-            distance,
-            safety,
-            {"plan": "free", "is_premium": False},
-            body.duration_seconds,
-            profile_id="",
+        gems_earned, xp_earned = (
+            _compute_trip_rewards(
+                distance,
+                safety,
+                {"plan": "free", "is_premium": False},
+                body.duration_seconds,
+                profile_id="",
+            )
+            if reward_eligible
+            else (0, _compute_trip_xp(distance, safety))
         )
         record_guest_activity(
             user_id,
@@ -954,6 +965,7 @@ def complete_trip(request: Request, body: TripCompleteBody, user: CurrentUserOrG
             "data": {
                 "trip_id": trip_id,
                 "counted": True,
+                "reward_eligible": reward_eligible,
                 "guest": True,
                 "gems_earned": gems_earned,
                 "xp_earned": xp_earned,
@@ -967,9 +979,11 @@ def complete_trip(request: Request, body: TripCompleteBody, user: CurrentUserOrG
         }
     prof = sb_get_profile(str(user_id)) if user_id else None
     reward_user = {**user, **(prof or {})}
-    already_today = _trip_gems_today_utc(user_id)
-    gems_earned, xp_earned = _compute_trip_rewards(
-        distance, safety, reward_user, body.duration_seconds, profile_id=user_id
+    already_today = _trip_gems_today_utc(user_id) if reward_eligible else 0
+    gems_earned, xp_earned = (
+        _compute_trip_rewards(distance, safety, reward_user, body.duration_seconds, profile_id=user_id)
+        if reward_eligible
+        else (0, _compute_trip_xp(distance, safety))
     )
     trip_id = str(uuid4())
     trip_row = _build_trip_row(trip_id, user_id, body, distance, safety, gems_earned, xp_earned)
@@ -992,6 +1006,7 @@ def complete_trip(request: Request, body: TripCompleteBody, user: CurrentUserOrG
             "data": {
                 "trip_id": None,
                 "counted": False,
+                "reward_eligible": False,
                 "gems_earned": 0,
                 "xp_earned": 0,
                 "safety_score": round(safety, 1),
@@ -1044,6 +1059,7 @@ def complete_trip(request: Request, body: TripCompleteBody, user: CurrentUserOrG
     payload = {
         "trip_id": trip_id,
         "counted": True,
+        "reward_eligible": reward_eligible,
         "gems_earned": gems_earned,
         "xp_earned": xp_earned,
         "safety_score": round(safety, 1),
@@ -1307,9 +1323,10 @@ def _week_trip_dicts_from_supabase(user_id: str) -> list:
     sb = get_supabase()
     cutoff = datetime.now(timezone.utc) - timedelta(days=7)
     res = (
-        sb.table("trips")
-        .select("distance_miles,gems_earned,safety_score,ended_at,started_at")
-        .eq("user_id", user_id)
+        _trip_owner_filter(
+            sb.table("trips").select("distance_miles,gems_earned,safety_score,ended_at,started_at"),
+            user_id,
+        )
         .order("ended_at", desc=True)
         .limit(400)
         .execute()

@@ -18,7 +18,7 @@ import {
 
 const MIN_SPEED_MPH = 4;
 const STATIONARY_MS = 120_000;
-const MIN_ODOM_M = 1609;
+const MIN_ODOM_M = 160;
 const MIN_DURATION_SEC = 30;
 const COOLDOWN_AFTER_NAV_MS = 90_000;
 const SUBMIT_COOLDOWN_MS = 15_000;

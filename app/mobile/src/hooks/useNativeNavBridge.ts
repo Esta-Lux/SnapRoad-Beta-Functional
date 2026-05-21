@@ -56,14 +56,18 @@ export interface NativeNavTripMetrics {
   distanceMiles: number;
   roundedDistanceMiles: number;
   qualifiesTrip: boolean;
+  rewardEligible: boolean;
   startedAtIso: string;
   endedAtIso: string;
 }
 
-/** Minimum qualifying drive — matches backend `/api/trips/complete` gates so gem/XP rules stay consistent. */
-export const NATIVE_NAV_MIN_QUALIFYING_MI = 1.0;
+/** Minimum tracked drive — matches backend `/api/trips/complete` history gates. */
+export const NATIVE_NAV_MIN_TRACKED_MI = 0.10;
 export const NATIVE_NAV_MIN_QUALIFYING_SEC = 30;
-export const NATIVE_NAV_MIN_QUALIFYING_METERS = 1609;
+export const NATIVE_NAV_MIN_TRACKED_METERS = 160;
+/** Minimum tracked drive that earns trip gems. */
+export const NATIVE_NAV_MIN_REWARD_MI = 1.0;
+export const NATIVE_NAV_MIN_REWARD_METERS = 1609;
 
 /** Max time we'll wait for `/api/trips/complete` before falling back to the local summary. */
 export const NATIVE_NAV_TRIP_POST_TIMEOUT_MS = 2500;
@@ -170,15 +174,20 @@ export function useNativeNavBridge(params: {
     const distanceMeters = distanceMiles * 1609.34;
     const roundedDistanceMiles = Math.round(distanceMiles * 10) / 10;
     const qualifiesTrip =
-      distanceMiles >= NATIVE_NAV_MIN_QUALIFYING_MI &&
+      distanceMiles >= NATIVE_NAV_MIN_TRACKED_MI &&
       durationSec >= NATIVE_NAV_MIN_QUALIFYING_SEC &&
-      distanceMeters >= NATIVE_NAV_MIN_QUALIFYING_METERS;
+      distanceMeters >= NATIVE_NAV_MIN_TRACKED_METERS;
+    const rewardEligible =
+      qualifiesTrip &&
+      distanceMiles >= NATIVE_NAV_MIN_REWARD_MI &&
+      distanceMeters >= NATIVE_NAV_MIN_REWARD_METERS;
     return {
       durationSec,
       distanceMeters,
       distanceMiles,
       roundedDistanceMiles,
       qualifiesTrip,
+      rewardEligible,
       startedAtIso: new Date(startTimeRef.current).toISOString(),
       endedAtIso: new Date(nowMs).toISOString(),
     };
@@ -216,7 +225,7 @@ export function useNativeNavBridge(params: {
         duration: durationMin,
         duration_seconds: metrics.durationSec,
         safety_score: tripSafetyScore,
-        gems_earned: metrics.qualifiesTrip ? tripGemsFromDurationMinutes(durationMin, Boolean(isPremium)) : 0,
+        gems_earned: metrics.rewardEligible ? tripGemsFromDurationMinutes(durationMin, Boolean(isPremium)) : 0,
         xp_earned: metrics.qualifiesTrip ? previewXpForCountedTrip(dist, tripSafetyScore) : 0,
         origin: originName ?? 'Current Location',
         destination: destLabel,
@@ -233,6 +242,7 @@ export function useNativeNavBridge(params: {
         speeding_events: speedingEvents,
         incidents_reported: 0,
         counted: metrics.qualifiesTrip,
+        reward_eligible: metrics.rewardEligible,
         arrivedAtDestination: arrived,
       };
     },

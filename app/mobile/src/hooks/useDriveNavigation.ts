@@ -1265,11 +1265,13 @@ export function useDriveNavigation(params: {
     isNavigatingRef.current = false;
     stopSpeaking();
 
-    /** Must match backend /api/trips/complete gates (distance + duration + real GPS movement). */
-    const MIN_QUALIFYING_MI = 1.0;
+    /** Must match backend /api/trips/complete gates (history tracking vs gem rewards). */
+    const MIN_TRACKED_TRIP_MI = 0.10;
+    const MIN_REWARD_TRIP_MI = 1.0;
     const MIN_QUALIFYING_SEC = 30;
-    /** About 1 mile of real movement (GPS + route projection) for trip rewards/history. */
-    const MIN_GPS_METERS = 1609;
+    const MIN_TRACKED_GPS_METERS = 160;
+    /** About 1 mile of real movement (GPS + route projection) for trip gems. */
+    const MIN_REWARD_GPS_METERS = 1609;
 
     const now = Date.now();
     const durationSec = tripStartTimeRef.current
@@ -1353,11 +1355,15 @@ export function useDriveNavigation(params: {
     routeModelRefreshedAtRef.current = Date.now();
     setRouteModelRefreshKey((k) => k + 1);
 
-    const qualifiesTrip =
+    const tracksTrip =
       !dynamicDest
-      && odoMeters >= MIN_GPS_METERS
+      && odoMeters >= MIN_TRACKED_GPS_METERS
       && durationSec >= MIN_QUALIFYING_SEC
-      && roundedDist >= MIN_QUALIFYING_MI;
+      && roundedDist >= MIN_TRACKED_TRIP_MI;
+    const rewardEligible =
+      tracksTrip
+      && odoMeters >= MIN_REWARD_GPS_METERS
+      && roundedDist >= MIN_REWARD_TRIP_MI;
 
     const arrivedAtDestination = autoEndFromArrivalRef.current;
     autoEndFromArrivalRef.current = false;
@@ -1368,10 +1374,10 @@ export function useDriveNavigation(params: {
       duration: Math.max(1, durationMin || 1),
       duration_seconds: durationSec,
       safety_score: tripSafetyScore,
-      gems_earned: qualifiesTrip
+      gems_earned: rewardEligible
         ? tripGemsFromDurationMinutes(Math.max(1, durationMin || 1), Boolean(user?.isPremium))
         : 0,
-      xp_earned: qualifiesTrip ? previewXpForCountedTrip(roundedDist, tripSafetyScore) : 0,
+      xp_earned: tracksTrip ? previewXpForCountedTrip(roundedDist, tripSafetyScore) : 0,
       origin: originName,
       destination: destName,
       date: new Date().toLocaleDateString(),
@@ -1386,7 +1392,8 @@ export function useDriveNavigation(params: {
       hard_acceleration_events: hardAccelerationCt,
       speeding_events: speedingCt,
       incidents_reported: 0,
-      counted: qualifiesTrip,
+      counted: tracksTrip,
+      reward_eligible: rewardEligible,
       arrivedAtDestination,
     };
 
@@ -1395,7 +1402,7 @@ export function useDriveNavigation(params: {
       return;
     }
 
-    if (!qualifiesTrip) {
+    if (!tracksTrip) {
       setTripSummary(summaryPayload);
       return;
     }

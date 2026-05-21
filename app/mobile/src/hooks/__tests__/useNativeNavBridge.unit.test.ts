@@ -54,6 +54,24 @@ test('mergeTripCompleteResponse: bare body (no outer data) still works', () => {
   assert.equal(merged.counted, true);
 });
 
+test('mergeTripCompleteResponse: tracks reward eligibility separately from trip history', () => {
+  const body = {
+    data: {
+      trip_id: 'short-trip',
+      counted: true,
+      reward_eligible: false,
+      gems_earned: 0,
+      xp_earned: 20,
+      distance_miles: 0.5,
+    },
+  };
+  const merged = mergeTripCompleteResponse(baseSummary(), body);
+  assert.equal(merged.counted, true);
+  assert.equal(merged.reward_eligible, false);
+  assert.equal(merged.gems_earned, 0);
+  assert.equal(merged.xp_earned, 20);
+});
+
 test('mergeTripCompleteResponse: merges tracking metrics used by trip summary', () => {
   const body = {
     data: {

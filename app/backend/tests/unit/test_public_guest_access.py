@@ -127,5 +127,56 @@ def test_guest_can_complete_trip_without_profile(monkeypatch):
     assert res["success"] is True
     assert res["data"]["guest"] is True
     assert res["data"]["counted"] is True
+    assert res["data"]["reward_eligible"] is True
     assert res["data"]["trip_id"].startswith("guest_trip_")
     assert seen["event_type"] == "trip_complete"
+
+
+def test_complete_trip_tracks_short_real_drive_without_gems(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(trips, "sb_get_profile", lambda _uid: {"gems": 10, "xp": 20})
+    monkeypatch.setattr(trips, "_persist_trip_and_update_profile", lambda row, *_args: seen.update({"row": row}) or True)
+    monkeypatch.setattr(
+        trips,
+        "_read_profile_totals_after_trip",
+        lambda _uid: {"gems": 10, "xp": 40, "total_trips": 3, "total_miles": 5.5, "level": 1, "safety_score": 91},
+    )
+
+    res = trips.complete_trip(
+        request=guest_request(),
+        body=trips.TripCompleteBody(
+            distance_miles=0.5,
+            duration_seconds=180,
+            safety_score=91,
+            origin="Start",
+            destination="Cafe",
+        ),
+        user={"id": "real_user", "user_id": "real_user"},
+    )
+
+    assert res["success"] is True
+    assert res["data"]["counted"] is True
+    assert res["data"]["reward_eligible"] is False
+    assert res["data"]["gems_earned"] == 0
+    assert res["data"]["xp_earned"] > 0
+    assert seen["row"]["distance_miles"] == 0.5
+    assert seen["row"]["gems_earned"] == 0
+
+
+def test_complete_trip_rejects_noise_below_history_gate(monkeypatch):
+    monkeypatch.setattr(trips, "_persist_trip_and_update_profile", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not persist")))
+
+    res = trips.complete_trip(
+        request=guest_request(),
+        body=trips.TripCompleteBody(
+            distance_miles=0.05,
+            duration_seconds=180,
+            safety_score=91,
+        ),
+        user={"id": "real_user", "user_id": "real_user"},
+    )
+
+    assert res["success"] is True
+    assert res["data"]["counted"] is False
+    assert res["data"]["reward_eligible"] is False
+    assert res["data"]["trip_id"] is None

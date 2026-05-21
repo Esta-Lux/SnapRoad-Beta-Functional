@@ -15,6 +15,7 @@ import {
 export interface TripCompleteApiData {
   trip_id?: string | null;
   counted?: boolean;
+  reward_eligible?: boolean;
   gems_earned?: number;
   xp_earned?: number;
   safety_score?: number;
@@ -154,6 +155,8 @@ export function mergeTripCompleteResponse(base: TripSummary, body: unknown): Tri
     incidents_reported:
       d.incidents_reported != null ? Number(d.incidents_reported) : base.incidents_reported,
     counted: apiCounted,
+    reward_eligible:
+      d.reward_eligible != null ? Boolean(d.reward_eligible) : base.reward_eligible,
     profile_totals: profileSnap ?? base.profile_totals,
   };
 }
