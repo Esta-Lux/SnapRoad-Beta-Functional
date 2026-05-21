@@ -280,13 +280,14 @@ export function useNativeNavBridge(params: {
         const raced = await raceWithTimeout(postPromise, NATIVE_NAV_TRIP_POST_TIMEOUT_MS);
         if (!raced || !raced.success || raced.data == null) return base;
         const merged = mergeTripCompleteResponse(base, raced.data);
-        if (merged.counted) {
-          const d = unwrapTripCompleteData(raced.data);
+        const d = unwrapTripCompleteData(raced.data);
+        if (d.profile) {
           applyTripCompleteProfileToUser(updateUser, d.profile);
-          bumpStatsVersion();
-          // Fire-and-forget; the summary card re-renders from the returned snapshot immediately.
+        }
+        if (merged.counted) {
           void refreshUserFromServer();
         }
+        bumpStatsVersion();
         return merged;
       } catch {
         // Backend offline / network flap — show the locally computed summary so the user still sees their trip.

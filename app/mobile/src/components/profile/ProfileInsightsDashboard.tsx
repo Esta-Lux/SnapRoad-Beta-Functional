@@ -105,8 +105,6 @@ type Props = {
   gemTxRows: ProfileGemTxItem[];
   badgeRows: ProfileBadgeItem[];
   fuelSummary: FuelSummary;
-  isPremium: boolean;
-  onUpgrade: () => void;
   onOpenFuelTracker: () => void;
   /** When true, fuel logging needs a signed-in account (guest mode). */
   fuelLogRequiresSignIn?: boolean;
@@ -120,8 +118,6 @@ export default function ProfileInsightsDashboard({
   gemTxRows,
   badgeRows,
   fuelSummary,
-  isPremium,
-  onUpgrade,
   onOpenFuelTracker,
   fuelLogRequiresSignIn = false,
 }: Props) {
@@ -239,7 +235,6 @@ export default function ProfileInsightsDashboard({
   const earnedCount = badgeRows.filter((b) => b.earned).length;
 
   const loadDrivingScore = useCallback(async () => {
-    void isPremium;
     setDrivingLoading(true);
     setDrivingError(null);
     try {
@@ -263,7 +258,7 @@ export default function ProfileInsightsDashboard({
     } finally {
       setDrivingLoading(false);
     }
-  }, [isPremium]);
+  }, []);
 
   useEffect(() => {
     if (!visible) return;
@@ -297,8 +292,6 @@ export default function ProfileInsightsDashboard({
       </Text>
     </TouchableOpacity>
   );
-
-  void onUpgrade;
 
   const kpiTile = (
     icon: keyof typeof Ionicons.glyphMap,

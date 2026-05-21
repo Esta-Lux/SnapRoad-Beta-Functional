@@ -1005,11 +1005,6 @@ export default function ProfileScreen() {
         gemTxRows={gemTxRows}
         badgeRows={badgeRows}
         fuelSummary={fuelSummary}
-        isPremium
-        onUpgrade={() => {
-          setShowInsightsDashboard(false);
-          openPlanOptions();
-        }}
         fuelLogRequiresSignIn={isGuest}
         onOpenFuelTracker={() => {
           if (isGuest) {

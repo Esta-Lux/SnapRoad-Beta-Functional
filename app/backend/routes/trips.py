@@ -23,7 +23,6 @@ from config import ENVIRONMENT, TOMTOM_API_KEY
 from services.llm_client import chat_completion_model, get_sync_openai_client
 from database import get_supabase
 from services.supabase_service import sb_get_profile
-from services.premium_access import require_premium_user
 from services.guest_activity import is_guest_user_id, record_guest_activity
 from limiter import limiter
 from services.gas_prices_service import regular_price_usd_for_state_label
@@ -495,7 +494,6 @@ def get_weekly_insights(user: OptionalUser):
     if ENVIRONMENT == "production":
         if not user:
             raise HTTPException(status_code=401, detail="Authentication required")
-        require_premium_user(user)
         return _weekly_insights_supabase(user)
     _legacy_trips_guard()
     cutoff_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")

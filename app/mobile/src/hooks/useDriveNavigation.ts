@@ -128,7 +128,7 @@ const ARRIVAL_TIGHT_CROW_METERS = 25;
 const ARRIVAL_TIGHT_ROUTE_MI = 0.03;
 const ARRIVAL_TERMINAL_ROUTE_METERS = 45;
 const ARRIVAL_TERMINAL_SECONDS = 30;
-const JS_NAV_TRIP_POST_TIMEOUT_MS = 2500;
+const JS_NAV_TRIP_POST_TIMEOUT_MS = 8000;
 function applyTripCompleteProfileToUser(updateUser: (u: Partial<User>) => void, profile: unknown) {
   if (!profile || typeof profile !== 'object') return;
   const p = profile as Record<string, unknown>;
@@ -1439,9 +1439,12 @@ export function useDriveNavigation(params: {
       const merged = mergeTripCompleteResponse(summaryPayload, res.data);
       setTripSummary(merged);
       const d = unwrapTripCompleteData(res.data);
-      if (d.counted === false || d.trip_id == null) return;
-      applyTripCompleteProfileToUser(updateUserRef.current, d.profile);
-      await refreshUserFromServerRef.current();
+      if (d.profile) {
+        applyTripCompleteProfileToUser(updateUserRef.current, d.profile);
+      }
+      if (d.counted !== false && d.trip_id != null) {
+        await refreshUserFromServerRef.current();
+      }
       bumpStatsVersionRef.current();
     })().catch(() => {
       setTripSummary(summaryPayload);

@@ -23,11 +23,7 @@ from services.supabase_service import (
     sb_get_friend_challenge_for_opponent,
     sb_update_friend_challenge,
 )
-from services.premium_access import (
-    MSG_PREMIUM_REQUIRED,
-    profile_row_is_premium,
-    user_id_is_premium,
-)
+from services.premium_access import profile_row_is_premium
 from config import ENVIRONMENT
 from services.llm_client import chat_completion_model, get_sync_openai_client
 import uuid
@@ -900,8 +896,6 @@ def get_gem_activity_detail(wallet_tx_id: str, user: CurrentUser):
 @router.get("/driving-score")
 def get_driving_score(user: CurrentUser):
     user_id = str(user.get("user_id") or user.get("id") or "").strip() or current_user_id
-    if not user_id_is_premium(user_id):
-        raise HTTPException(status_code=403, detail=MSG_PREMIUM_REQUIRED)
     tip_templates = {
         "speed": "Keep your cruise target within 5 mph of the posted limit.",
         "braking": "Start braking earlier for smoother stops.",
@@ -955,9 +949,15 @@ def get_driving_score(user: CurrentUser):
             {"id": "acceleration", "name": "Smooth Acceleration", "score": acceleration_score, "trend": "stable", "description": "Gradual speed increases"},
         ]
         sorted_metrics = sorted(metrics, key=lambda x: x["score"])
-        orion_tips = []
-        if is_premium:
-            orion_tips = [{"id": str(i + 1), "metric": m["id"], "tip": tip_templates.get(m["id"], "Keep driving safely!"), "priority": "high" if i == 0 else "medium"} for i, m in enumerate(sorted_metrics[:3])]
+        orion_tips = [
+            {
+                "id": str(i + 1),
+                "metric": m["id"],
+                "tip": tip_templates.get(m["id"], "Keep driving safely!"),
+                "priority": "high" if i == 0 else "medium",
+            }
+            for i, m in enumerate(sorted_metrics[:3])
+        ]
         overall_score = base_score or (sum(m["score"] for m in metrics) // len(metrics))
         return {"success": True, "data": {"overall_score": overall_score, "metrics": metrics, "orion_tips": orion_tips, "last_updated": datetime.now().isoformat(), "premium_insights": is_premium}}
     except Exception:
@@ -1010,8 +1010,6 @@ def get_weekly_recap(
     end: Annotated[Optional[str], Query(description="ISO8601 end")] = None,
 ):
     user_id = str(user.get("user_id") or user.get("id") or "").strip() or current_user_id
-    if not user_id_is_premium(user_id):
-        raise HTTPException(status_code=403, detail=MSG_PREMIUM_REQUIRED)
     try:
         sb = get_supabase()
         profile = sb_get_profile(user_id) or {}
@@ -1086,7 +1084,7 @@ def get_weekly_recap(
             highlights.append(f"Offer savings: ${offer_savings_sum:.2f}")
 
         orion_commentary: Optional[str] = None
-        if is_premium and trips:
+        if trips:
             payload = {
                 "trips": len(trips),
                 "miles_rounded": round(total_miles, 1),
