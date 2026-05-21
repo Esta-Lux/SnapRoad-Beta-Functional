@@ -656,6 +656,27 @@ export function getModeDirectionsConfig(_mode: DrivingMode): { profile: Directio
 }
 
 type MapboxDirectionsJson = { routes?: RawRoute[]; message?: string };
+type TomTomRouteCandidate = {
+  provider?: 'tomtom';
+  polyline?: Coordinate[];
+  steps?: Array<{
+    instruction?: string;
+    distanceMeters?: number;
+    durationSeconds?: number;
+    maneuver?: string;
+    lat?: number;
+    lng?: number;
+  }>;
+  distance?: number;
+  duration?: number;
+  routeType?: RouteKind;
+  routeLabel?: string;
+  routeReason?: string;
+  congestionScore?: number;
+  trafficDelaySeconds?: number;
+  noTrafficDurationSeconds?: number;
+};
+type TomTomRoutesJson = { routes?: TomTomRouteCandidate[]; provider?: string };
 
 const ECO_TIME_FACTOR = 1.2;
 const MAX_PREVIEW_ROUTES = 6;
@@ -801,6 +822,82 @@ async function fetchMapboxTrafficRoutesRaw(
   }
 }
 
+function parseTomTomDirectionsRoute(route: TomTomRouteCandidate, idx: number): DirectionsResult | null {
+  const polyline = Array.isArray(route.polyline)
+    ? route.polyline.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
+    : [];
+  const distance = Number(route.distance ?? 0);
+  const duration = Number(route.duration ?? 0);
+  if (polyline.length < 2 || !Number.isFinite(distance) || distance <= 0 || !Number.isFinite(duration) || duration <= 0) {
+    return null;
+  }
+  const summary = routeSummaryFromMapboxMetersSeconds(distance, duration);
+  const steps: DirectionsStep[] = Array.isArray(route.steps)
+    ? route.steps.map((s) => {
+        const d = Number(s.distanceMeters ?? 0);
+        const dur = Number(s.durationSeconds ?? 0);
+        return {
+          instruction: String(s.instruction || 'Continue'),
+          distance: formatDistance(Math.max(0, d)),
+          distanceMeters: Math.max(0, d),
+          duration: formatDuration(Math.max(0, dur)),
+          durationSeconds: Math.max(0, dur),
+          maneuver: String(s.maneuver || 'straight'),
+          lat: Number.isFinite(s.lat) ? Number(s.lat) : 0,
+          lng: Number.isFinite(s.lng) ? Number(s.lng) : 0,
+        };
+      })
+    : [];
+  return {
+    polyline,
+    steps,
+    distance,
+    duration,
+    distanceText: summary.distanceText,
+    durationText: summary.durationText,
+    routeType: route.routeType ?? (idx === 0 ? 'fastest' : 'alt'),
+    routeLabel: route.routeLabel ?? (idx === 0 ? 'TomTom Traffic' : `TomTom Alt ${idx}`),
+    routeReason: route.routeReason ?? 'Live TomTom traffic',
+    congestionScore: Math.max(0, Math.min(1, Number(route.congestionScore ?? 0))),
+    timeSavedSeconds: 0,
+    closureEdgeCount: 0,
+  };
+}
+
+async function fetchTomTomTrafficRouteOptions(
+  origin: Coordinate,
+  destination: Coordinate,
+  options?: {
+    maxHeightMeters?: number;
+    mode?: DrivingMode;
+    fastSingleRoute?: boolean;
+    exclude?: string | null;
+    alternatives?: boolean;
+    profile?: DirectionsProfile;
+  },
+): Promise<DirectionsResult[]> {
+  try {
+    const res = await api.post<TomTomRoutesJson>('/api/navigation/tomtom-routes', {
+      origin_lat: origin.lat,
+      origin_lng: origin.lng,
+      dest_lat: destination.lat,
+      dest_lng: destination.lng,
+      profile: options?.profile ?? 'driving-traffic',
+      exclude: options?.exclude || undefined,
+      max_height_m:
+        typeof options?.maxHeightMeters === 'number' && Number.isFinite(options.maxHeightMeters)
+          ? Math.max(0, Math.min(10, options.maxHeightMeters))
+          : undefined,
+      alternatives: options?.alternatives ?? !options?.fastSingleRoute,
+      cache_bust_ms: Date.now(),
+    });
+    const raw = res.success && Array.isArray(res.data?.routes) ? res.data.routes : [];
+    return raw.map((route, idx) => parseTomTomDirectionsRoute(route, idx)).filter((r): r is DirectionsResult => !!r);
+  } catch {
+    return [];
+  }
+}
+
 function routeGeometryHash(route: DirectionsResult): string {
   const pts = route.polyline;
   if (pts.length < 4) return `${route.distance}`;
@@ -926,15 +1023,23 @@ export async function getMapboxRouteOptions(
   }
 
   if (options?.fastSingleRoute) {
-    const raw = await fetchMapboxTrafficRoutesRaw(origin, destination, {
-      exclude: undefined,
-      alternatives: true,
-      maxHeightMeters: maxH,
-      mode: options?.mode,
-      timeoutMs: options?.mode === 'sport' ? 21000 : 19000,
-      profile: 'driving-traffic',
-    });
-    if (!raw.length) return [];
+    const [raw, tomtom] = await Promise.all([
+      fetchMapboxTrafficRoutesRaw(origin, destination, {
+        exclude: undefined,
+        alternatives: true,
+        maxHeightMeters: maxH,
+        mode: options?.mode,
+        timeoutMs: options?.mode === 'sport' ? 21000 : 19000,
+        profile: 'driving-traffic',
+      }),
+      fetchTomTomTrafficRouteOptions(origin, destination, {
+        alternatives: true,
+        fastSingleRoute: true,
+        maxHeightMeters: maxH,
+        mode: options?.mode,
+        profile: 'driving-traffic',
+      }),
+    ]);
     const parsed = raw.map((route, idx) =>
       parseMapboxDirectionsRoute(route, {
         routeType: idx === 0 ? 'fastest' : 'alt',
@@ -942,15 +1047,25 @@ export async function getMapboxRouteOptions(
         routeReason: idx === 0 ? fastestBaseReasonForMode(options?.mode) : ROUTE_DEFAULTS.alt.reason,
       }),
     );
+    for (const candidate of tomtom) {
+      if (!isDuplicateDirectionsResult(candidate, parsed)) parsed.push(candidate);
+    }
+    if (!parsed.length) return [];
     const ranked = rankDirectionsRoutesForMode(parsed, options?.mode);
     return ranked.length ? [ranked[0]!] : [];
   }
 
-  const settled = await Promise.allSettled(
-    ROUTE_STRATEGIES.map((strategy) =>
+  const settled = await Promise.allSettled([
+    ...ROUTE_STRATEGIES.map((strategy) =>
       executeRouteStrategy(origin, destination, strategy, maxH, options?.mode),
     ),
-  );
+    fetchTomTomTrafficRouteOptions(origin, destination, {
+      alternatives: true,
+      maxHeightMeters: maxH,
+      mode: options?.mode,
+      profile: 'driving-traffic',
+    }),
+  ]);
 
   const allRoutes: DirectionsResult[] = [];
   for (const s of settled) {

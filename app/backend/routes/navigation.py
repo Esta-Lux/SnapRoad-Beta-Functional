@@ -251,11 +251,6 @@ def _minutes_to_time(minutes: int) -> str:
     return f"{h:02d}:{m:02d}"
 
 
-def _is_premium_or_family(user: Dict[str, Any]) -> bool:
-    plan = str(user.get("plan") or "").lower()
-    return bool(user.get("is_premium")) or plan in {"premium", "family"} or bool(user.get("is_family_plan"))
-
-
 def _traffic_profile_for_departure(dep_minutes: int, now_minutes: int) -> Tuple[float, int]:
     """
     Return (traffic_multiplier, alt_minutes_saved) tuned for peak windows.
@@ -307,11 +302,10 @@ def get_route_notifications(
     Return route notifications with two options:
     1) Leave early to still arrive on scheduled time.
     2) Faster route to avoid traffic stress.
-    Premium/family users are push-eligible; free users receive in-app only notifications.
+    All signed-in drivers are push-eligible; plan labels are intentionally not used.
     """
-    user_id, _, user_routes = _resolve_user_scoped_data(auth_user)
-    user = get_user_snapshot(user_id)
-    push_eligible = _is_premium_or_family(user)
+    _user_id, _, user_routes = _resolve_user_scoped_data(auth_user)
+    push_eligible = True
     now = datetime.now()
     today_weekday = now.strftime("%a")  # Mon, Tue, ...
     current_minutes = now.hour * 60 + now.minute

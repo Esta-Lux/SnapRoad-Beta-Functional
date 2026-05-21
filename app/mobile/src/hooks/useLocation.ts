@@ -171,10 +171,13 @@ export type UseLocationOptions = {
    * Keeps last known coordinates in state so UI stays coherent when returning.
    */
   paused?: boolean;
+  /** Use tighter foreground GPS + heading while the map is actively being browsed. */
+  highAccuracy?: boolean;
 };
 
 export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
   const paused = opts?.paused ?? false;
+  const highAccuracy = opts?.highAccuracy ?? false;
   const [state, setState] = useState<LocationState>({
     location: UNKNOWN_LOCATION,
     heading: 0,
@@ -314,9 +317,11 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
 
     const accuracy = isNavigating
       ? Location.Accuracy.BestForNavigation
-      : Location.Accuracy.Balanced;
-    const timeInterval = isNavigating ? 500 : 8000;
-    const distanceInterval = isNavigating ? 0.5 : 25;
+      : highAccuracy
+        ? Location.Accuracy.High
+        : Location.Accuracy.Balanced;
+    const timeInterval = isNavigating ? 500 : highAccuracy ? 1200 : 8000;
+    const distanceInterval = isNavigating ? 0.5 : highAccuracy ? 3 : 25;
 
     watchRef.current = await Location.watchPositionAsync(
       {
@@ -475,7 +480,7 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
       },
     );
 
-    if (isNavigating) {
+    if (isNavigating || highAccuracy) {
       headingSubRef.current = await Location.watchHeadingAsync((h) => {
         const deg = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
         if (typeof deg !== 'number' || !Number.isFinite(deg)) return;
@@ -495,7 +500,7 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
         });
       });
     }
-  }, [isNavigating]);
+  }, [isNavigating, highAccuracy]);
 
   useEffect(() => {
     if (paused) {
@@ -528,7 +533,9 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
           const fix = await Location.getCurrentPositionAsync({
             accuracy: isNavigating
               ? Location.Accuracy.BestForNavigation
-              : Location.Accuracy.Balanced,
+              : highAccuracy
+                ? Location.Accuracy.High
+                : Location.Accuracy.Balanced,
           });
           const lat = fix.coords.latitude;
           const lng = fix.coords.longitude;
@@ -554,7 +561,7 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
     };
     const sub = AppState.addEventListener('change', onAppState);
     return () => sub.remove();
-  }, [paused, isNavigating]);
+  }, [paused, isNavigating, highAccuracy]);
 
   return state;
 }

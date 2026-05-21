@@ -577,6 +577,7 @@ export default function MapScreen() {
   /** Keep GPS scoped to the map unless active navigation is running in the background. */
   const { location, heading, speed, accuracy, isLocating, permissionDenied } = useLocation(isNavActive, {
     paused: !mapTabFocused && !ctxNavigating,
+    highAccuracy: mapTabFocused,
   });
 
   // ── Driving mode ──
@@ -1782,8 +1783,16 @@ export default function MapScreen() {
     const customLocationActive =
       nav.isNavigating && ((sdkNav && nav.sdkNavLocation) || !sdkNav);
     if (customLocationActive) return 'heading';
+    if (
+      !nav.isNavigating &&
+      Number.isFinite(browseDisplayCoord.lat) &&
+      Number.isFinite(browseDisplayCoord.lng) &&
+      !(Math.abs(browseDisplayCoord.lat) < 1e-7 && Math.abs(browseDisplayCoord.lng) < 1e-7)
+    ) {
+      return 'heading';
+    }
     return displaySpeedMph > 10 ? 'course' : 'heading';
-  }, [nav.isNavigating, nav.sdkNavLocation, displaySpeedMph, navLogicEffective]);
+  }, [nav.isNavigating, nav.sdkNavLocation, displaySpeedMph, navLogicEffective, browseDisplayCoord.lat, browseDisplayCoord.lng]);
 
   const navFetchRef = useRef(nav.fetchDirections);
   const navSetDestRef = useRef(nav.setSelectedDestination);

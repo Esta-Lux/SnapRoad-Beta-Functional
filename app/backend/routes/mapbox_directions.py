@@ -14,6 +14,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from config import TOMTOM_API_KEY
 from config import mapbox_token_from_env
 from limiter import get_mapbox_rate_limit_key, limiter
 from middleware.auth import get_current_user
@@ -28,6 +29,7 @@ DIRECTIONS_BASE = "https://api.mapbox.com/directions/v5/mapbox"
 BANNER_VOICE_QS = (
     "banner_instructions=true&voice_instructions=true&voice_units=imperial"
 )
+TOMTOM_ROUTING_BASE = "https://api.tomtom.com/routing/1/calculateRoute"
 
 
 def _mapbox_token() -> str:
@@ -67,6 +69,97 @@ class MapboxRoutesBody(BaseModel):
     alternatives: bool = True
     # Client-supplied epoch ms — not sent to Mapbox; avoids stale identical OD POST bodies behind intermediaries.
     cache_bust_ms: Optional[int] = Field(default=None)
+
+
+def _tt_points(route: dict[str, Any]) -> list[dict[str, float]]:
+    out: list[dict[str, float]] = []
+    for leg in route.get("legs") or []:
+        for p in leg.get("points") or []:
+            lat = p.get("latitude")
+            lng = p.get("longitude")
+            if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
+                out.append({"lat": float(lat), "lng": float(lng)})
+    return out
+
+
+def _tt_maneuver(m: str) -> str:
+    s = str(m or "").lower()
+    if "left" in s:
+        return "turn-left"
+    if "right" in s:
+        return "turn-right"
+    if "uturn" in s or "u_turn" in s:
+        return "u-turn"
+    if "roundabout" in s:
+        return "roundabout"
+    if "arrive" in s:
+        return "arrive"
+    if "merge" in s:
+        return "merge"
+    return "straight"
+
+
+def _tt_steps(route: dict[str, Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    instructions = (route.get("guidance") or {}).get("instructions") or []
+    route_len = float((route.get("summary") or {}).get("lengthInMeters") or 0)
+    offsets = [max(0.0, float(ins.get("routeOffsetInMeters") or 0)) for ins in instructions]
+    times = [max(0.0, float(ins.get("travelTimeInSeconds") or 0)) for ins in instructions]
+    for idx, ins in enumerate(instructions):
+        p = ins.get("point") or {}
+        lat = p.get("latitude")
+        lng = p.get("longitude")
+        offset = offsets[idx] if idx < len(offsets) else 0.0
+        next_offset = offsets[idx + 1] if idx + 1 < len(offsets) else route_len
+        travel_t = times[idx] if idx < len(times) else 0.0
+        next_t = times[idx + 1] if idx + 1 < len(times) else travel_t
+        out.append(
+            {
+                "instruction": str(ins.get("message") or ins.get("street") or "Continue"),
+                "distanceMeters": max(0, next_offset - offset),
+                "durationSeconds": max(0, next_t - travel_t),
+                "maneuver": _tt_maneuver(str(ins.get("maneuver") or "")),
+                "lat": float(lat) if isinstance(lat, (int, float)) else 0,
+                "lng": float(lng) if isinstance(lng, (int, float)) else 0,
+            }
+        )
+    return out
+
+
+def _traffic_score(delay_sec: float, travel_sec: float) -> float:
+    if travel_sec <= 0:
+        return 0.0
+    return max(0.0, min(1.0, delay_sec / max(60.0, travel_sec)))
+
+
+def _normalize_tomtom_route(route: dict[str, Any], idx: int) -> dict[str, Any] | None:
+    summary = route.get("summary") or {}
+    distance_m = float(summary.get("lengthInMeters") or 0)
+    duration_s = float(summary.get("travelTimeInSeconds") or 0)
+    if distance_m <= 0 or duration_s <= 0:
+        return None
+    delay_s = max(0.0, float(summary.get("trafficDelayInSeconds") or 0))
+    no_traffic_s = max(0.0, float(summary.get("noTrafficTravelTimeInSeconds") or 0))
+    points = _tt_points(route)
+    if len(points) < 2:
+        return None
+    label = "TomTom Traffic" if idx == 0 else f"TomTom Alt {idx}"
+    reason = "Live TomTom traffic"
+    if delay_s >= 120:
+        reason = f"TomTom live traffic · {round(delay_s / 60)} min delay"
+    return {
+        "provider": "tomtom",
+        "polyline": points,
+        "steps": _tt_steps(route),
+        "distance": distance_m,
+        "duration": duration_s,
+        "routeType": "alt" if idx else "fastest",
+        "routeLabel": label,
+        "routeReason": reason,
+        "congestionScore": _traffic_score(delay_s, duration_s),
+        "trafficDelaySeconds": delay_s,
+        "noTrafficDurationSeconds": no_traffic_s,
+    }
 
 
 @router.post("/mapbox-routes")
@@ -129,6 +222,61 @@ async def post_mapbox_routes(
         raise HTTPException(status_code=404, detail=str(msg or "No routes"))
 
     return data
+
+
+@router.post("/tomtom-routes")
+@limiter.limit("45/minute", key_func=get_mapbox_rate_limit_key)
+async def post_tomtom_routes(
+    request: Request,
+    body: MapboxRoutesBody,
+    _user: CurrentUser,
+) -> Any:
+    """
+    TomTom traffic-aware route candidate feed. Used as an additional routing signal
+    beside Mapbox so SnapRoad can prefer cleaner roads when TomTom sees live delay.
+    """
+    if not TOMTOM_API_KEY:
+        raise HTTPException(status_code=503, detail="TomTom key not configured")
+    if body.profile == "walking":
+        return {"routes": [], "provider": "tomtom"}
+
+    locations = f"{body.origin_lat},{body.origin_lng}:{body.dest_lat},{body.dest_lng}"
+    url = f"{TOMTOM_ROUTING_BASE}/{quote(locations, safe=':,')}/json"
+    params: dict[str, Any] = {
+        "key": TOMTOM_API_KEY,
+        "traffic": "true",
+        "routeType": "fastest",
+        "travelMode": "car",
+        "routeRepresentation": "polyline",
+        "computeTravelTimeFor": "all",
+        "instructionsType": "text",
+        "language": "en-US",
+        "sectionType": "traffic",
+        "maxAlternatives": "2" if body.alternatives else "0",
+    }
+    if body.exclude == "toll":
+        params["avoid"] = "tollRoads"
+    elif body.exclude == "motorway":
+        params["avoid"] = "motorways"
+
+    client = _get_http()
+    try:
+        r = await client.get(url, params=params, headers={"Cache-Control": "no-cache"})
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"TomTom request failed: {e!s}") from e
+
+    if not r.is_success:
+        raise HTTPException(status_code=r.status_code, detail=r.text[:500] if r.text else "TomTom error")
+    try:
+        data = r.json()
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail="Invalid JSON from TomTom") from e
+
+    routes = data.get("routes") if isinstance(data, dict) else None
+    if not isinstance(routes, list):
+        return {"routes": [], "provider": "tomtom"}
+    normalized = [x for i, route in enumerate(routes[:3]) if (x := _normalize_tomtom_route(route, i))]
+    return {"routes": normalized, "provider": "tomtom"}
 
 
 @router.post("/canonical-eta")

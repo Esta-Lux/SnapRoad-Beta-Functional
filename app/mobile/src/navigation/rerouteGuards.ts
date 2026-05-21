@@ -43,7 +43,7 @@ export function shouldCountRerouteCandidate({
   courseDeg,
 }: RerouteCandidateInput): boolean {
   if (!finite(lateralMeters) || lateralMeters < thresholdMeters) return false;
-  if (lateralMeters >= thresholdMeters * 1.55) return true;
+  if (lateralMeters >= thresholdMeters * 1.25) return true;
   if (!previous || route.length < 2 || !finite(speedMps) || speedMps < 8) return true;
 
   const projection = projectOntoPolyline(current, route);
@@ -55,5 +55,5 @@ export function shouldCountRerouteCandidate({
 
   const headingMismatch = angleDeltaDeg(heading, routeBearing);
   const travelMismatch = angleDeltaDeg(travelBearing, routeBearing);
-  return headingMismatch >= 35 || travelMismatch >= 42;
+  return headingMismatch >= 26 || travelMismatch >= 32;
 }
