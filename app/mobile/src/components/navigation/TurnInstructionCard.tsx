@@ -18,6 +18,8 @@ import type { DirectionsStep } from '../../lib/directions';
 import type { ManeuverKind, RoadSignal, LaneInfo, RoadShield } from '../../navigation/navModel';
 import type { NativeFormattedDistance, NativeLaneAsset } from '../../navigation/navSdkMirrorTypes';
 import { resolveDisplayDistance } from '../../navigation/navDisplayDistance';
+import { formatImperialManeuverDistance } from '../../navigation/turnCardModel';
+import { useInterpolatedDistance } from '../../navigation/hooks/useInterpolatedDistance';
 import { getBannerThenLine, getLaneData, lanesFromLegacyJson } from '../../navigation/bannerInstructions';
 import {
   resolveStableText,
@@ -118,6 +120,8 @@ export type TurnInstructionCardProps = {
   roadDisambiguationLabel?: string | null;
   isSportBorder: boolean;
   speedMph?: number;
+  /** Authoritative maneuver distance in meters; interpolated locally between route-progress ticks. */
+  distanceMeters?: number | null;
 
   maneuverKind?: ManeuverKind;
   /** Raw Mapbox maneuver `type` (preferred for turn glyph when set). */
@@ -163,6 +167,7 @@ export default React.memo(function TurnInstructionCard({
   roadDisambiguationLabel,
   isSportBorder,
   speedMph = 0,
+  distanceMeters,
   maneuverKind,
   maneuverType,
   maneuverModifier,
@@ -184,10 +189,31 @@ export default React.memo(function TurnInstructionCard({
   const tcTextColor = modeConfig.turnCardTextColor;
   const d = DENSITY[mode];
 
-  const displayDistance = useMemo(
-    () => resolveDisplayDistance(isNativeMirror, nativeFormattedDistance, distanceValue, distanceUnit),
-    [isNativeMirror, nativeFormattedDistance, distanceValue, distanceUnit],
-  );
+  const interpolatedDistanceMeters = useInterpolatedDistance(distanceMeters, {
+    resetKey: textStabilityKey?.trim() || `${step?.instruction ?? primaryInstruction ?? ''}|${_maneuverForIcon}`,
+    speedMps: Math.max(0, speedMph * 0.44704),
+  });
+  const rawDisplayDistance = useMemo(() => {
+    if (interpolatedDistanceMeters != null) {
+      return formatImperialManeuverDistance(interpolatedDistanceMeters, { speedMphForNow: speedMph });
+    }
+    return resolveDisplayDistance(isNativeMirror, nativeFormattedDistance, distanceValue, distanceUnit);
+  }, [
+    distanceUnit,
+    distanceValue,
+    interpolatedDistanceMeters,
+    isNativeMirror,
+    nativeFormattedDistance,
+    speedMph,
+  ]);
+  const lastDisplayDistanceRef = useRef<{ value: string; unit: string } | null>(null);
+  const displayDistance = useMemo(() => {
+    if (rawDisplayDistance.value && rawDisplayDistance.value !== '—') {
+      lastDisplayDistanceRef.current = rawDisplayDistance;
+      return rawDisplayDistance;
+    }
+    return lastDisplayDistanceRef.current ?? { value: 'Calculating', unit: '' };
+  }, [rawDisplayDistance]);
   const distanceChipText = displayDistance.value && displayDistance.value !== '—'
     ? `${displayDistance.value}${displayDistance.unit ? ` ${displayDistance.unit.toLowerCase()}` : ''}`
     : '';
@@ -404,7 +430,10 @@ export default React.memo(function TurnInstructionCard({
   const speedBoost = speedMph > 58 && state !== 'cruise' && state !== 'confirm' ? 1.05 : 1;
   const laneBoost = showLanes ? 1.04 : 1;
 
-  const distFont = Math.round(42 * (state === 'active' ? 1.04 : 1) * d.distScale * speedBoost);
+  const distanceIsLoading = displayDistance.value === 'Calculating';
+  const distFont = distanceIsLoading
+    ? 15
+    : Math.round(42 * (state === 'active' ? 1.04 : 1) * d.distScale * speedBoost);
   const emphasizeArrow = state === 'active' || state === 'preview';
   const iconBox = Math.round((emphasizeArrow ? 68 : 62) * laneBoost * speedBoost);
   const iconRadius = emphasizeArrow ? 18 : 16;
@@ -462,10 +491,14 @@ export default React.memo(function TurnInstructionCard({
             ]}
           >
             <Text
-              style={[styles.distVal, { color: tcTextColor, fontSize: distFont }]}
-              numberOfLines={1}
+              style={[
+                styles.distVal,
+                distanceIsLoading && styles.distValLoading,
+                { color: tcTextColor, fontSize: distFont },
+              ]}
+              numberOfLines={distanceIsLoading ? 2 : 1}
               adjustsFontSizeToFit
-              minimumFontScale={0.82}
+              minimumFontScale={distanceIsLoading ? 0.72 : 0.82}
             >
               {displayDistance.value}
             </Text>
@@ -657,6 +690,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center' },
   distCol: { alignItems: 'center', flexShrink: 0, marginRight: 4 },
   distVal: { fontWeight: '900', letterSpacing: -0.4, lineHeight: 44, textAlign: 'center' },
+  distValLoading: { lineHeight: 17, letterSpacing: 0, textTransform: 'uppercase' },
   distUnit: {
     fontSize: 14,
     fontWeight: '800',

@@ -279,6 +279,8 @@ export function useDriveNavigation(params: {
   const autoEndFromArrivalRef = useRef(false);
   /** Consecutive ticks with `navigationProgress.isOffRoute` before reroute. */
   const offRouteStreakRef = useRef(0);
+  /** Exit/ramp/fork commitment window: suppress false reroutes while the selected ramp geometry settles. */
+  const rampCommitmentUntilRef = useRef(0);
   /** Require consecutive arrival samples before auto-end (GPS flicker). */
   const arrivalNearStreakRef = useRef(0);
 
@@ -1840,11 +1842,13 @@ export function useDriveNavigation(params: {
     if (navSdkHeadless) {
       offRouteStreakRef.current = 0;
       driftSnapHistoryRef.current = [];
+      rampCommitmentUntilRef.current = 0;
       return;
     }
     if (!isNavigating || !navigationData?.destination || !navigationData?.polyline?.length || !navigationProgress) {
       offRouteStreakRef.current = 0;
       driftSnapHistoryRef.current = [];
+      rampCommitmentUntilRef.current = 0;
       return;
     }
 
@@ -1866,6 +1870,36 @@ export function useDriveNavigation(params: {
       speedMps,
       typeof gpsAccuracy === 'number' ? gpsAccuracy : null,
     );
+
+    const now = Date.now();
+    const nextKind = String(navigationProgress.nextStep?.kind ?? '');
+    const nextRaw = `${navigationProgress.nextStep?.rawType ?? ''} ${navigationProgress.nextStep?.rawModifier ?? ''}`;
+    const rampLikeManeuver =
+      /\b(ramp|fork|merge)\b/i.test(nextKind) ||
+      /\b(ramp|fork|merge|exit)\b/i.test(nextRaw) ||
+      /\bkeep_(left|right)\b/i.test(nextKind);
+    const distanceToManeuver =
+      typeof navigationProgress.nextStepDistanceMeters === 'number' && Number.isFinite(navigationProgress.nextStepDistanceMeters)
+        ? navigationProgress.nextStepDistanceMeters
+        : Number.POSITIVE_INFINITY;
+    const rampToleranceMeters = Math.max(220, offRouteThreshold * 4.5);
+    const severeRampMissMeters = Math.max(300, offRouteThreshold * 6);
+    const commitmentActive = rampCommitmentUntilRef.current > now;
+    const shouldStartRampCommitment =
+      rampLikeManeuver &&
+      distanceToManeuver <= 1300 &&
+      speedMps >= 5 &&
+      Number.isFinite(snapDist) &&
+      snapDist <= rampToleranceMeters;
+
+    if (shouldStartRampCommitment || (commitmentActive && snapDist <= severeRampMissMeters)) {
+      rampCommitmentUntilRef.current = Math.max(rampCommitmentUntilRef.current, now + 15_000);
+      offRouteStreakRef.current = 0;
+      driftSnapHistoryRef.current = [];
+      prefetchedRerouteRef.current = null;
+      return;
+    }
+
     /** Start prefetch earlier so a confirmed off-route reroute often hits cache (~1 s saved). */
     const prefetchThreshold = offRouteThreshold * 0.52;
 
@@ -1925,7 +1959,6 @@ export function useDriveNavigation(params: {
     if (offRouteStreakRef.current < streakNeeded) return;
     if (rerouteInFlightRef.current) return;
 
-    const now = Date.now();
     /** Short gap between reroutes so legitimate multi-correction trips still recover quickly. */
     const cooldownMs = lastRerouteAtRef.current ? 1100 : 0;
     if (cooldownMs > 0 && now - lastRerouteAtRef.current < cooldownMs) return;

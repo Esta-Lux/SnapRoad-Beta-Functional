@@ -7,11 +7,32 @@ function lowerFirst(s: string): string {
   return s ? s.charAt(0).toLowerCase() + s.slice(1) : s;
 }
 
+function shieldText(step: NavStep): string | null {
+  const shield = step.shields.find((s) => s.displayRef || s.ref);
+  if (!shield) return null;
+  const ref = (shield.displayRef || shield.ref).trim();
+  if (!ref) return null;
+  if (/interstate/i.test(shield.network) && !/^I[-\s]/i.test(ref)) return `I-${ref}`;
+  if (/^US[-\s]/i.test(ref) || /^I[-\s]/i.test(ref)) return ref;
+  if (/us-|us national|united states/i.test(shield.network)) return `US-${ref}`;
+  return ref;
+}
+
+function routeContextName(step: NavStep): string | null {
+  const shield = shieldText(step);
+  const road = step.destinationRoad || step.streetName;
+  if (shield && road && !road.toLowerCase().includes(shield.toLowerCase())) {
+    return `${shield} ${road}`;
+  }
+  return road || shield;
+}
+
 function primaryLine(step: NavStep): string {
   const base = hudPhraseForManeuverKind(step.kind, step.roundaboutExitNumber);
-  const name = step.streetName || step.destinationRoad;
+  const name = routeContextName(step);
   if (!name) return base;
   if (/\b(onto|toward|towards|to)\b/i.test(base)) return base;
+  if (/^(continue|stay)/i.test(base)) return `Stay on ${name}`;
   if (/^(turn|bear|make a sharp)/i.test(base)) return `${base} onto ${name}`;
   if (/^(take|keep|merge)/i.test(base)) return `${base} toward ${name}`;
   return base;
@@ -19,7 +40,7 @@ function primaryLine(step: NavStep): string {
 
 function enrichThenLine(following: NavStep, distanceMeters: number): string {
   const phrase = hudPhraseForManeuverKind(following.kind, following.roundaboutExitNumber);
-  const name = following.streetName || following.destinationRoad;
+  const name = routeContextName(following);
   const withName =
     name && !/\b(onto|toward|towards|to)\b/i.test(phrase)
       ? `${phrase} onto ${name}`

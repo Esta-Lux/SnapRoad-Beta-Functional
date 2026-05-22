@@ -10,7 +10,7 @@
  */
 
 import React from 'react';
-import { View, StyleSheet, Image } from 'react-native';
+import { View, StyleSheet, Image, Text } from 'react-native';
 import Svg, { Path, G } from 'react-native-svg';
 import type { LaneInfo, LaneIndication } from '../../navigation/navModel';
 import type { NativeLaneAsset } from '../../navigation/navSdkMirrorTypes';
@@ -26,7 +26,7 @@ interface Props {
   inactiveColor: string;
 }
 
-const VB = 14;
+const VB = 24;
 const VB_CENTER = VB / 2;
 
 /**
@@ -35,15 +35,15 @@ const VB_CENTER = VB / 2;
  */
 const LANE_GLYPH_ROTATION_FIX_DEG = 0;
 
-/** Filled arrow paths (Mapbox-style lane indications), 0–14 space. */
+/** Stroke arrow paths. Forward is always up toward the turn card, never down. */
 const ARROW_PATHS: Record<LaneIndication, string> = {
   straight: LANE_SVG_STRAIGHT,
-  left: 'M2 7l5-5v3h5v4H7v3L2 7z',
-  slight_left: 'M3 4l4-2v2.5l4 3v4l-4-3V11L3 4z',
-  right: 'M12 7l-5-5v3H2v4h5v3l5-5z',
-  slight_right: 'M11 4l-4-2v2.5l-4 3v4l4-3V11l4-7z',
+  left: 'M14 21V10H5M9 6l-4 4 4 4',
+  slight_left: 'M13 21V11L7 5M7 11V5h6',
+  right: 'M10 21V10h9M15 6l4 4-4 4',
+  slight_right: 'M11 21V11l6-6M17 11V5h-6',
   uturn:
-    'M10 2C7.2 2 5 4.2 5 7v3l-2.5-2.5L1 9l5 5 5-5-1.5-1.5L7 10V7c0-1.7 1.3-3 3-3s3 1.3 3 3v2h2V7c0-2.8-2.2-5-5-5z',
+    'M9 21V9c0-4.5 8-4.5 8 0v5M13 10l4 4 4-4',
 };
 
 function LaneArrow({
@@ -58,28 +58,45 @@ function LaneArrow({
   const { indications, active, preferred } = lane;
   const primaryIndication = primaryLaneGlyph(lane);
   const path = ARROW_PATHS[primaryIndication] ?? ARROW_PATHS.straight;
-  const color = active ? activeColor : inactiveColor;
-  const opacity = active ? 1.0 : 0.3;
+  const recommended = preferred && active;
+  const color = recommended ? '#FFFFFF' : active ? activeColor : inactiveColor;
+  const opacity = active ? 1.0 : 0.45;
   const secondaryIndication = indications.find((g) => g !== primaryIndication);
 
   return (
     <View
       style={[
         styles.laneSlot,
-        preferred && active && styles.preferredSlot,
-        preferred && active && { borderColor: activeColor },
+        active && styles.validSlot,
+        recommended && styles.recommendedSlot,
       ]}
     >
-      <Svg width={18} height={18} viewBox={`0 0 ${VB} ${VB}`} style={{ opacity }}>
+      <Svg width={recommended ? 25 : 23} height={recommended ? 25 : 23} viewBox={`0 0 ${VB} ${VB}`} style={{ opacity }}>
         <G transform={`rotate(${LANE_GLYPH_ROTATION_FIX_DEG}, ${VB_CENTER}, ${VB_CENTER})`}>
-          <Path d={path} fill={color} />
+          <Path
+            d={path}
+            stroke={color}
+            strokeWidth={recommended ? 2.8 : 2.35}
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
           {secondaryIndication ? (
-            <G transform="translate(3.5, 3.5) scale(0.55)">
-              <Path d={ARROW_PATHS[secondaryIndication] ?? ''} fill={color} opacity={0.45} />
+            <G transform="translate(6, 6) scale(0.55)">
+              <Path
+                d={ARROW_PATHS[secondaryIndication] ?? ''}
+                stroke={color}
+                strokeWidth={2.2}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity={0.42}
+              />
             </G>
           ) : null}
         </G>
       </Svg>
+      {recommended ? <Text style={styles.recommendedLabel}>USE</Text> : null}
     </View>
   );
 }
@@ -100,7 +117,8 @@ function LaneNativeBitmap({
     <View
       style={[
         styles.laneSlot,
-        lane.preferred && lane.active && styles.preferredSlot,
+        lane.active && styles.validSlot,
+        lane.preferred && lane.active && styles.recommendedSlot,
         lane.preferred && lane.active && { borderColor: 'rgba(255,255,255,0.55)' },
       ]}
     >
@@ -156,14 +174,33 @@ const styles = StyleSheet.create({
     borderTopColor: 'rgba(255,255,255,0.16)',
   },
   laneSlot: {
-    width: 26,
-    height: 26,
+    width: 38,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 4,
+    borderRadius: 9,
+    backgroundColor: 'rgba(17,24,39,0.58)',
   },
-  preferredSlot: {
-    borderWidth: 1.5,
-    borderRadius: 6,
+  validSlot: {
+    backgroundColor: 'rgba(31,41,55,0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.24)',
+  },
+  recommendedSlot: {
+    width: 42,
+    backgroundColor: '#2563EB',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    shadowColor: '#3B82F6',
+    shadowOpacity: 0.32,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  recommendedLabel: {
+    color: '#FFFFFF',
+    fontSize: 7,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+    marginTop: 1,
   },
 });

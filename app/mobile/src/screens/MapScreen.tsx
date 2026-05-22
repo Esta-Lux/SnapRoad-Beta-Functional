@@ -6029,6 +6029,7 @@ export default function MapScreen() {
                 roadDisambiguationLabel={null}
                 isSportBorder={useModeHudBorder}
                 speedMph={displaySpeedMph}
+                distanceMeters={null}
               />
             </View>
           );
@@ -6126,6 +6127,7 @@ export default function MapScreen() {
                 roadDisambiguationLabel={null}
                 isSportBorder={useModeHudBorder}
                 speedMph={displaySpeedMph}
+                distanceMeters={nativeTurnDistance ? live.nextStepDistanceMeters : null}
               />
             </View>
           );
@@ -6369,6 +6371,7 @@ export default function MapScreen() {
               roadDisambiguationLabel={disambigName}
               isSportBorder={useModeHudBorder}
               speedMph={displaySpeedMph}
+              distanceMeters={hasActionableMeters ? liveDistMeters : null}
             />
             <JunctionViewPopup
               visible={junctionView.visible}
