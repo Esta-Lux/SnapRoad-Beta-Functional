@@ -31,11 +31,9 @@ test('turn banner uses action wording while keeping road as visual context', () 
 
   const banner = buildNavBanner(left, right, 48);
 
-  assert.equal(banner?.primaryInstruction, 'Turn left');
+  assert.equal(banner?.primaryInstruction, 'Turn left onto Silver Dust Lane');
   assert.equal(banner?.primaryStreet, 'Silver Dust Lane');
-  assert.equal(banner?.secondaryInstruction, 'Then turn right');
-  assert.doesNotMatch(banner?.primaryInstruction ?? '', /Silver Dust Lane/);
-  assert.doesNotMatch(banner?.secondaryInstruction ?? '', /Cactus Road/);
+  assert.equal(banner?.secondaryInstruction, 'Then turn right onto Cactus Road (150 ft)');
 });
 
 test('active HUD primary and chained turn text stay aligned with spoken maneuver phrase', () => {

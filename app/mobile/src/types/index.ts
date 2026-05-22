@@ -320,6 +320,7 @@ export interface Incident {
   title: string;
   severity: string;
   description?: string;
+  reported_by?: string;
   upvotes: number;
   /** Peer downvotes; backend removes when downvotes > upvotes. */
   downvotes?: number;

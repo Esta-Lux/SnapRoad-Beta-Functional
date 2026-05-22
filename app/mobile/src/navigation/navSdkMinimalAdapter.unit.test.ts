@@ -72,7 +72,7 @@ test('minimal adapter: banner distance is US imperial from distanceToNextManeuve
     location: null,
     routePolyline: polyline,
   });
-  assert.equal(r.banner?.primaryDistanceFormatted, '260');
+  assert.equal(r.banner?.primaryDistanceFormatted, '250');
   assert.equal(r.banner?.primaryDistanceFormattedUnit, 'FT');
 });
 

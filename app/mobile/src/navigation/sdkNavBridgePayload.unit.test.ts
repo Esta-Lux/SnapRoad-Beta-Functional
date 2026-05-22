@@ -72,7 +72,7 @@ test('sdkManeuverDisplay: always formats from meters (US), ignores native locale
 
 test('sdkManeuverDisplay: feet for short leg', () => {
   const r = sdkManeuverDisplayDistanceFromProgress({ distanceToNextManeuverMeters: 75 });
-  assert.deepEqual(r, { value: '245', unit: 'FT' });
+  assert.deepEqual(r, { value: '250', unit: 'FT' });
 });
 
 test('sdkManeuverDisplay: null when distance missing', () => {

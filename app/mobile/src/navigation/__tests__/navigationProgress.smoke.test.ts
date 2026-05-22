@@ -204,6 +204,6 @@ test('banner primary action stays voice-aligned while road remains context', () 
     previous: null,
   });
   assert.ok(frame?.banner);
-  assert.equal(frame!.banner!.primaryInstruction, 'Turn right');
+  assert.equal(frame!.banner!.primaryInstruction, 'Turn right onto Oak');
   assert.equal(frame!.banner!.primaryStreet, 'Oak');
 });

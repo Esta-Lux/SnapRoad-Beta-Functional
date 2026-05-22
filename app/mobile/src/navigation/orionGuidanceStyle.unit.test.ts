@@ -16,6 +16,7 @@ const step: NavStep = {
   instruction: 'Take the exit on the right',
   streetName: null,
   destinationRoad: null,
+  exitNumber: null,
   shields: [],
   signal: { kind: 'none', label: '' },
   lanes: [],

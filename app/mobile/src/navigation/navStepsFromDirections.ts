@@ -293,6 +293,27 @@ function extractDestinationRoad(banner: BannerInstruction | null | undefined): s
   return textParts.length > 0 ? textParts[textParts.length - 1]! : null;
 }
 
+function cleanRoadContext(raw: string | null | undefined): string | null {
+  const s = String(raw ?? '').replace(/\s+/g, ' ').trim();
+  if (!s) return null;
+  if (/^(unnamed road|null|undefined)$/i.test(s)) return null;
+  return s;
+}
+
+function extractExitNumber(step: DirectionsStep, banner: BannerInstruction | null | undefined): string | null {
+  const rawText = `${step.instruction ?? ''} ${banner?.text ?? ''}`;
+  const textMatch = rawText.match(/\bexit\s+([0-9]{1,4}[A-Z]?)\b/i);
+  if (textMatch?.[1]) return textMatch[1].toUpperCase();
+  const componentText = banner?.components
+    ?.map((c) => `${c.abbr ?? ''} ${c.text ?? ''}`)
+    .join(' ') ?? '';
+  const componentMatch = componentText.match(/\bexit\s+([0-9]{1,4}[A-Z]?)\b/i);
+  if (componentMatch?.[1]) return componentMatch[1].toUpperCase();
+  const ex = step.mapboxManeuver?.exit;
+  if (typeof ex === 'number' && Number.isFinite(ex) && ex > 0) return String(ex);
+  return null;
+}
+
 function extractRoundaboutExit(step: DirectionsStep): number | null {
   const ex = step.mapboxManeuver?.exit;
   if (typeof ex === 'number' && ex >= 1) return ex;
@@ -338,8 +359,9 @@ function buildNavStepAtDirectionsIndex(
   const rawInstruction = step.instruction || '';
   const displayInstruction = primaryText || rawInstruction || '';
 
-  const streetName = step.name?.trim() || null;
-  const destinationRoad = extractDestinationRoad(primaryBanner);
+  const streetName = cleanRoadContext(step.name);
+  const destinationRoad = cleanRoadContext(extractDestinationRoad(primaryBanner));
+  const exitNumber = extractExitNumber(step, primaryBanner);
   const shields = extractShields(primaryBanner);
   const signal = extractRoadSignal(step);
   const lanes = extractLanes(step);
@@ -380,6 +402,7 @@ function buildNavStepAtDirectionsIndex(
     instruction: step.instruction || '',
     streetName,
     destinationRoad,
+    exitNumber,
     shields,
     signal,
     lanes,

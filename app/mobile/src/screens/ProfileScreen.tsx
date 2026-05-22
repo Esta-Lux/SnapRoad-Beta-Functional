@@ -62,7 +62,13 @@ import type { ProfileOverviewActionItem } from '../components/profile/types';
 import { ProfileTabBar } from '../components/profile/ProfileScreenBlocks';
 import { registerCommutePushToken } from '../utils/pushNotifications';
 import { mapProfileTripHistoryItem, recentTripsListFromPayload } from '../components/profile/tripHistoryMapping';
+import { computeKpis, filterTripsInRange } from '../components/profile/insightsAggregations';
 import { sanitizeTripSpeedMph } from '../utils/driveMetrics';
+import {
+  gemTransactionsFromTrips,
+  mergeCompletedTripRows,
+  readLocalCompletedTrips,
+} from '../utils/localCompletedTrips';
 
 export default function ProfileScreen() {
   const navigation = useNavigation<ProfileStackScreenNavigationProp>();
@@ -330,38 +336,6 @@ export default function ProfileScreen() {
         ? (notifPayload.push_notifications as Record<string, unknown>)
         : {});
       setPushEnabled(Boolean(push.commute_alerts ?? true));
-      {
-        const weekly = (unwrapProfileApiData(weeklyRes?.data) as Record<string, unknown>) ?? {};
-        const beh = weekly.behavior;
-        setWeeklyRecap({
-          totalTrips: Number(weekly.total_trips ?? weekly.trips_this_week ?? 0),
-          totalMiles: Number(weekly.total_miles ?? weekly.miles_this_week ?? 0),
-          gemsEarnedWeek: Number(weekly.gems_earned ?? weekly.gems_earned_week ?? 0),
-          avgSafetyScore: Number(weekly.safety_score_avg ?? weekly.avg_safety_score ?? 0),
-          aiTip: '',
-          highlights: Array.isArray(weekly.highlights) ? weekly.highlights.map((x: unknown) => String(x)) : [],
-          orionCommentary: typeof weekly.orion_commentary === 'string' ? weekly.orion_commentary : null,
-          behavior:
-            beh && typeof beh === 'object'
-              ? {
-                  hard_braking_events_total: Number((beh as Record<string, unknown>).hard_braking_events_total ?? 0),
-                  hard_acceleration_events_total: Number((beh as Record<string, unknown>).hard_acceleration_events_total ?? 0),
-                  speeding_events_total: Number((beh as Record<string, unknown>).speeding_events_total ?? 0),
-                }
-              : { hard_braking_events_total: 0, hard_acceleration_events_total: 0, speeding_events_total: 0 },
-          topSpeedMph: sanitizeTripSpeedMph(Number(weekly.top_speed_mph ?? 0)),
-          avgSpeedMph: sanitizeTripSpeedMph(Number(weekly.avg_speed_mph ?? 0), 130),
-          fuelUsedGallons: Number(weekly.fuel_used_gallons ?? 0),
-          fuelCostEstimate: Number(weekly.fuel_cost_estimate ?? 0),
-          mileageValueEstimate: Number(weekly.mileage_value_estimate ?? 0),
-          routeFuelSavingsGallons: Number(weekly.route_fuel_savings_gallons ?? 0),
-          routeSavingsDollars: Number(weekly.route_savings_dollars ?? weekly.route_savings_usd ?? 0),
-          offerSavingsDollars: Number(weekly.offer_savings_dollars ?? weekly.offer_savings_usd ?? 0),
-          totalSavingsDollars: Number(weekly.total_savings_dollars ?? weekly.total_savings_usd ?? 0),
-          timeSavedSeconds: Number(weekly.time_saved_seconds ?? 0),
-          savingsDisclaimer: typeof weekly.savings_disclaimer === 'string' ? weekly.savings_disclaimer : '',
-        });
-      }
       const vtRaw = pp.vehicle_type;
       if (vtRaw === 'motorcycle' || vtRaw === 'car') {
         userPatch.vehicle_type = vtRaw;
@@ -370,22 +344,77 @@ export default function ProfileScreen() {
       updateUserRef.current(userPatch);
       const historyRoot = unwrapProfileApiData(tripsHistoryRes?.data);
       const recentTrips = recentTripsListFromPayload(historyRoot);
-      setTripHistoryRows(
-        recentTrips.map(mapProfileTripHistoryItem).sort((a, b) => {
+      const localTrips = await readLocalCompletedTrips();
+      const mergedTripRowsRaw = mergeCompletedTripRows(recentTrips, localTrips);
+      const mappedTripRows = mergedTripRowsRaw
+        .map(mapProfileTripHistoryItem)
+        .sort((a, b) => {
           const ams = Date.parse(a.tripEndedAtIso || a.startedAtIso || '');
           const bms = Date.parse(b.tripEndedAtIso || b.startedAtIso || '');
           return (Number.isFinite(bms) ? bms : 0) - (Number.isFinite(ams) ? ams : 0);
-        }),
-      );
+        });
+      setTripHistoryRows(mappedTripRows);
+      {
+        const weekly = (unwrapProfileApiData(weeklyRes?.data) as Record<string, unknown>) ?? {};
+        const beh = weekly.behavior;
+        const nowMs = Date.now();
+        const localWeekRows = filterTripsInRange(mappedTripRows, {
+          startMs: nowMs - 7 * 24 * 60 * 60 * 1000,
+          endMs: nowMs,
+        });
+        const localWeek = computeKpis(localWeekRows);
+        const serverTrips = Number(weekly.total_trips ?? weekly.trips_this_week ?? 0);
+        const serverMiles = Number(weekly.total_miles ?? weekly.miles_this_week ?? 0);
+        const serverGems = Number(weekly.gems_earned ?? weekly.gems_earned_week ?? 0);
+        const serverSafety = Number(weekly.safety_score_avg ?? weekly.avg_safety_score ?? 0);
+        const hardServer = beh && typeof beh === 'object'
+          ? Number((beh as Record<string, unknown>).hard_braking_events_total ?? 0)
+          : 0;
+        const accelServer = beh && typeof beh === 'object'
+          ? Number((beh as Record<string, unknown>).hard_acceleration_events_total ?? 0)
+          : 0;
+        const speedServer = beh && typeof beh === 'object'
+          ? Number((beh as Record<string, unknown>).speeding_events_total ?? 0)
+          : 0;
+        setWeeklyRecap({
+          totalTrips: Math.max(serverTrips, localWeek.trips),
+          totalMiles: Math.max(serverMiles, Number(localWeek.miles.toFixed(1))),
+          gemsEarnedWeek: Math.max(serverGems, localWeek.gemsFromTrips),
+          avgSafetyScore: serverSafety > 0 ? serverSafety : localWeek.avgSafety,
+          aiTip: '',
+          highlights: Array.isArray(weekly.highlights) ? weekly.highlights.map((x: unknown) => String(x)) : [],
+          orionCommentary: typeof weekly.orion_commentary === 'string' ? weekly.orion_commentary : null,
+          behavior: {
+            hard_braking_events_total: Math.max(hardServer, localWeek.hardBrakingTotal),
+            hard_acceleration_events_total: Math.max(accelServer, localWeek.hardAccelerationTotal),
+            speeding_events_total: Math.max(speedServer, localWeek.speedingTotal),
+          },
+          topSpeedMph: Math.max(sanitizeTripSpeedMph(Number(weekly.top_speed_mph ?? 0)), localWeek.topSpeedMph),
+          avgSpeedMph: Math.max(sanitizeTripSpeedMph(Number(weekly.avg_speed_mph ?? 0), 130), localWeek.avgSpeedMph),
+          fuelUsedGallons: Math.max(Number(weekly.fuel_used_gallons ?? 0), localWeek.fuelGallons),
+          fuelCostEstimate: Math.max(Number(weekly.fuel_cost_estimate ?? 0), localWeek.fuelCostUsd),
+          mileageValueEstimate: Number(weekly.mileage_value_estimate ?? 0),
+          routeFuelSavingsGallons: Math.max(Number(weekly.route_fuel_savings_gallons ?? 0), localWeek.routeFuelSavingsGallons),
+          routeSavingsDollars: Math.max(Number(weekly.route_savings_dollars ?? weekly.route_savings_usd ?? 0), localWeek.routeSavingsUsd),
+          offerSavingsDollars: Number(weekly.offer_savings_dollars ?? weekly.offer_savings_usd ?? 0),
+          totalSavingsDollars: Math.max(
+            Number(weekly.total_savings_dollars ?? weekly.total_savings_usd ?? 0),
+            localWeek.routeSavingsUsd + Number(weekly.offer_savings_dollars ?? weekly.offer_savings_usd ?? 0),
+          ),
+          timeSavedSeconds: Math.max(Number(weekly.time_saved_seconds ?? 0), localWeek.timeSavedSeconds),
+          savingsDisclaimer: typeof weekly.savings_disclaimer === 'string' ? weekly.savings_disclaimer : '',
+        });
+      }
       const gemData = (unwrapProfileApiData(gemsRes?.data) as Record<string, unknown>) ?? {};
       const tx = Array.isArray(gemData.recent_transactions) ? gemData.recent_transactions : [];
-      setGemTxRows(tx.map((item: Record<string, unknown>, idx: number) => ({
+      const serverGemTx: ProfileGemTxItem[] = tx.map((item: Record<string, unknown>, idx: number) => ({
         id: String(idx),
         type: item.type === 'earned' || item.type === 'spent' ? item.type : 'unknown',
         amount: Number(item.amount ?? 0),
         source: String(item.source ?? 'Transaction'),
         date: String(item.date ?? new Date().toISOString()),
-      })));
+      }));
+      setGemTxRows(serverGemTx.length ? serverGemTx : gemTransactionsFromTrips(mergedTripRowsRaw as Record<string, unknown>[]));
       const badgeDataRaw = unwrapProfileApiData(badgesRes?.data);
       const badgeDataObj =
         badgeDataRaw && typeof badgeDataRaw === 'object' && !Array.isArray(badgeDataRaw)

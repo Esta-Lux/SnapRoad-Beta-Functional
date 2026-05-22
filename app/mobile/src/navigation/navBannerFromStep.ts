@@ -8,6 +8,7 @@ export function bannerFieldsFromNavStep(step: NavStep | null): Omit<NavBannerMod
     primaryInstruction: step.displayInstruction,
     secondaryInstruction: step.secondaryInstruction,
     subInstruction: step.subInstruction,
+    exitNumber: step.exitNumber,
     signal: step.signal,
     lanes: step.lanes,
     shields: step.shields,

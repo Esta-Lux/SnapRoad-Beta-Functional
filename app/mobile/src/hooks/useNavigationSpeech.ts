@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import type { DrivingMode } from '../types';
 import type { DirectionsStep } from '../lib/directions';
-import { speakGuidance } from '../utils/voice';
 import type { NavigationProgress, NavStep, ManeuverKind, RoadSignal } from '../navigation/navModel';
 import { hudPhraseForManeuverKind } from '../navigation/spokenManeuver';
 import {
@@ -11,16 +10,19 @@ import {
 } from '../navigation/navigationGuidanceMemory';
 import {
   distanceClauseForTurnSpeech,
-  speechLocaleTag,
   usesMetricForSpeech,
 } from '../utils/distanceSpeech';
 import { navLogicSdkEnabled } from '../navigation/navFeatureFlags';
-import { getVoiceNavTuning } from '../navigation/navModeProfile';
 import { getUpcomingManeuverStep } from '../navigation/routeGeometry';
 import { orionizeNavigationUtterance } from '../navigation/orionGuidanceStyle';
-import { NAV_VOICE_ADVANCE_MAX_M, shouldSpeakTurnVoiceCue } from '../navigation/navVoiceCuePolicy';
 import { alongRouteDistanceMeters, haversineMeters } from '../utils/distance';
 import type { Coordinate } from '../types';
+import {
+  evaluateManeuverAnnouncement,
+  orionPersonalityLine,
+} from '../navigation/voice/AnnouncementEngine';
+import type { ManeuverAnnouncementState } from '../navigation/voice/AnnouncementStateMachine';
+import { speakNavigationVoice, speakOrionPersonalityLine } from '../navigation/voice/OrionVoice';
 
 type Args = {
   progress: NavigationProgress | null;
@@ -89,6 +91,7 @@ function buildUtterance(
   metric: boolean,
   drivingMode: DrivingMode,
   userName?: string,
+  withOrionPersonality = false,
 ): string | null {
   if (!step || step.kind === 'arrive') return null;
 
@@ -107,7 +110,9 @@ function buildUtterance(
     const phrase = bucket === 'imminent'
       ? `${core}${chainSuffix}.`
       : `${distPart}, ${lowerFirst(core)}${chainSuffix}.`;
-    return orionizeNavigationUtterance(phrase, { bucket, step, distanceMeters: d, drivingMode, userName });
+    return withOrionPersonality
+      ? orionizeNavigationUtterance(phrase, { bucket, step, distanceMeters: d, drivingMode, userName })
+      : phrase;
   }
 
   const line = hudPhraseForManeuverKind(step.kind, step.roundaboutExitNumber);
@@ -118,11 +123,15 @@ function buildUtterance(
 
   if (bucket === 'imminent') {
     const phrase = `${sigClause}${line}${chainSuffix}.`;
-    return orionizeNavigationUtterance(phrase, { bucket, step, distanceMeters: d, drivingMode, userName });
+    return withOrionPersonality
+      ? orionizeNavigationUtterance(phrase, { bucket, step, distanceMeters: d, drivingMode, userName })
+      : phrase;
   }
 
   const phrase = `${distPart}, ${sigClause}${lowerFirst(line)}${chainSuffix}.`;
-  return orionizeNavigationUtterance(phrase, { bucket, step, distanceMeters: d, drivingMode, userName });
+  return withOrionPersonality
+    ? orionizeNavigationUtterance(phrase, { bucket, step, distanceMeters: d, drivingMode, userName })
+    : phrase;
 }
 
 /** After a step advances, suppress far/mid-distance cues so the next maneuver is not spoken until the driver settles. */
@@ -139,12 +148,10 @@ export function useNavigationSpeech({
   navigationSteps,
   userName,
 }: Args) {
-  const lastKey = useRef<string | null>(null);
   const lastStepIndexRef = useRef<number | null>(null);
   const suppressFarVoiceUntilRef = useRef(0);
+  const announcementStateRef = useRef<ManeuverAnnouncementState | null>(null);
   const metric = useMemo(() => usesMetricForSpeech(), []);
-  const localeTag = useMemo(() => speechLocaleTag(), []);
-  const voiceT = useMemo(() => getVoiceNavTuning(drivingMode), [drivingMode]);
   const userLat = userCoord?.lat;
   const userLng = userCoord?.lng;
 
@@ -218,42 +225,48 @@ export function useNavigationSpeech({
       if (prevIdx !== null && stepIdx > prevIdx) {
         setNavigationGuidanceSuppressedUntil(0);
         suppressFarVoiceUntilRef.current = Date.now() + VOICE_POST_STEP_SUPPRESS_MS;
-        lastKey.current = null;
       }
+      announcementStateRef.current = null;
       lastStepIndexRef.current = stepIdx;
     }
 
     if (isNavigationGuidanceSuppressed()) return;
 
-    const { imminentM } = voiceT;
-
-    let bucket: 'advance' | 'imminent' | null = null;
-    if (d <= imminentM) bucket = 'imminent';
-    else if (d <= NAV_VOICE_ADVANCE_MAX_M && d > imminentM) bucket = 'advance';
-
-    if (!shouldSpeakTurnVoiceCue(bucket)) return;
-
     const now = Date.now();
-    if (bucket === 'advance' && now < suppressFarVoiceUntilRef.current) {
+    if (d > 60 && now < suppressFarVoiceUntilRef.current) {
       return;
     }
 
-    const key = `${speechStep.index}:advance`;
-    if (lastKey.current === key) return;
+    const decision = evaluateManeuverAnnouncement({
+      state: announcementStateRef.current,
+      step: speechStep,
+      distanceMeters: d,
+      speedMph: Math.max(0, (progress.displayCoord?.speedMps ?? 0) * 2.236936),
+      nowMs: now,
+      isNow: d <= 15,
+    });
+    announcementStateRef.current = decision.state;
 
-    const phrase = buildUtterance(speechStep, d, 'advance', metric, drivingMode, userName);
+    if (decision.cue === 'orion') {
+      speakOrionPersonalityLine(orionPersonalityLine(drivingMode), drivingMode);
+      return;
+    }
+
+    if (!decision.cue) return;
+
+    const bucket = decision.cue === 'immediate' ? 'imminent' : 'advance';
+    const phrase = buildUtterance(speechStep, d, bucket, metric, drivingMode, userName, false);
     if (!phrase) return;
 
     setLastTurnByTurnPhrase(phrase);
-    speakGuidance(phrase, drivingMode, localeTag);
-    lastKey.current = key;
-  }, [progress, enabled, drivingMode, metric, localeTag, voiceT, aligned, userName]);
+    speakNavigationVoice(phrase, drivingMode);
+  }, [progress, enabled, drivingMode, metric, aligned, userName]);
 
   useEffect(() => {
     if (!enabled) {
-      lastKey.current = null;
       lastStepIndexRef.current = null;
       suppressFarVoiceUntilRef.current = 0;
+      announcementStateRef.current = null;
       setLastTurnByTurnPhrase(null);
     }
   }, [enabled]);

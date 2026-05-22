@@ -131,6 +131,8 @@ import RoutePreviewPanel from '../components/map/RoutePreviewPanel';
 import { projectAhead, getCameraConfig, getLookAheadMeters } from '../navigation/navigationCamera';
 import { getDistanceToUpcomingManeuverMeters, getUpcomingManeuverStep } from '../navigation/routeGeometry';
 import { useNavigationSpeech } from '../hooks/useNavigationSpeech';
+import { useJunctionView } from '../navigation/hooks/useJunctionView';
+import { useSpeedingDetection } from '../navigation/hooks/useSpeedingDetection';
 import { repeatLastTurnByTurn } from '../navigation/navigationGuidanceMemory';
 import {
   hapticArrival,
@@ -141,6 +143,7 @@ import {
   hapticTurnWarning,
 } from '../utils/navigationHaptics';
 import TurnInstructionCard from '../components/navigation/TurnInstructionCard';
+import JunctionViewPopup from '../components/navigation/JunctionViewPopup';
 import NavigationStatusStrip, { MAP_NAV_BOTTOM_INSET } from '../components/navigation/NavigationStatusStrip';
 import { labelAnchorLayerIdForStyleUrl } from '../map/mapLayerRegistry';
 import { getPrimaryBannerText, isActionableGuidanceStep, mergeLaneSources, pickGuidanceStep } from '../navigation/bannerInstructions';
@@ -215,7 +218,7 @@ import type { OrionHudLineMeta } from '../orion/companion/types';
 import TripSummaryModal from '../components/common/Modal';
 import { useNavigationMode } from '../contexts/NavigatingContext';
 import { useCameraController } from '../hooks/useCameraController';
-import { navLogicDebugEnabled, navLogicSdkEnabled, navNativeFullScreenEnabled } from '../navigation/navFeatureFlags';
+import { navLogicDebugEnabled, navNativeFullScreenEnabled } from '../navigation/navFeatureFlags';
 import {
   applyRouteOverviewCamera,
   computeRouteOverviewBounds,
@@ -594,7 +597,7 @@ export default function MapScreen() {
 
   const [navVoiceMuted, setNavVoiceMuted] = useState(false);
   const [navLogicRuntimeDisabled, setNavLogicRuntimeDisabled] = useState(false);
-  const navLogicEffective = navLogicSdkEnabled() && !navLogicRuntimeDisabled;
+  const navLogicEffective = false; // SnapRoad launch path is JS-only Mapbox route data; SDK mirror stays inactive.
   useEffect(() => {
     const v = storage.getString('snaproad_nav_voice_muted');
     setNavVoiceMuted(v === '1');
@@ -1770,6 +1773,15 @@ export default function MapScreen() {
     speed,
     navLogicEffective,
   ]);
+  const junctionView = useJunctionView({
+    step: nav.navigationProgress?.nextStep ?? null,
+    distanceMeters: nav.navigationProgress?.nextStepDistanceMeters ?? Number.POSITIVE_INFINITY,
+    speedMph: displaySpeedMph,
+  });
+  const junctionDistanceLabel = useMemo(() => {
+    const parts = formatImperialManeuverDistance(junctionView.distanceMeters, { omitNowLabel: true });
+    return parts.unit ? `${parts.value} ${parts.unit.toLowerCase()}` : parts.value;
+  }, [junctionView.distanceMeters]);
 
   /**
    * LocationPuck beam: with CustomLocationProvider we pass a single `heading` — native `course` mode
@@ -2577,6 +2589,7 @@ export default function MapScreen() {
   const lastArrivalHapticKeyRef = useRef<string | null>(null);
   const speedAlertAnim = useSharedValue(0);
   const lastSpeedAlertHapticAtRef = useRef(0);
+  const lastSpeedAlertVoiceAtRef = useRef(0);
   const confirmUntil = useTurnConfirmationUntil(nav.isNavigating, nav.currentStepIndex, drivingMode);
   const inConfirmWindow = Date.now() < confirmUntil;
   /** Tracks when turn-card state last entered 'active' for minimum dwell enforcement. */
@@ -3920,16 +3933,16 @@ export default function MapScreen() {
       setSelectedPlaceId(result.place_id);
       if (rowHasCoords) {
         showPlaceOnMap(rowLat, rowLng, {
-          name: result.name,
-          address: result.address,
+          name: result.name ?? 'Place',
+          address: result.address ?? '',
           lat: rowLat,
           lng: rowLng,
           open_now: result.open_now,
         });
       } else {
         setSelectedPlace({
-          name: result.name,
-          address: result.address,
+          name: result.name ?? 'Place',
+          address: result.address ?? '',
           lat: 0,
           lng: 0,
           placeType: result.placeType,
@@ -3972,7 +3985,7 @@ export default function MapScreen() {
         const observedAt = Date.now();
         const recentRow = buildRecentRow(result, detailRecord, observedAt);
         setRecentSearches((prev) => {
-          const updated = [recentRow, ...prev.filter((r) => r.name !== result.name)].slice(0, 10);
+          const updated = [recentRow, ...prev.filter((r) => r.name !== (result.name ?? 'Place'))].slice(0, 10);
           storage.set('snaproad_recent_searches', JSON.stringify(updated));
           return updated;
         });
@@ -3989,8 +4002,8 @@ export default function MapScreen() {
 
         const summaryOpen = detailRecord ? parseOpenNowBooleanFromDetailsPayload(detailRecord) : null;
         showPlaceOnMap(best.lat, best.lng, {
-          name: result.name,
-          address: result.address,
+          name: result.name ?? 'Place',
+          address: result.address ?? '',
           lat: best.lat,
           lng: best.lng,
           open_now: summaryOpen === null ? undefined : summaryOpen,
@@ -4005,14 +4018,14 @@ export default function MapScreen() {
       open_now_last_updated_at: undefined,
     };
     setRecentSearches((prev) => {
-      const updated = [recentRowNoPid, ...prev.filter((r) => r.name !== result.name)].slice(0, 10);
+      const updated = [recentRowNoPid, ...prev.filter((r) => r.name !== (result.name ?? 'Place'))].slice(0, 10);
       storage.set('snaproad_recent_searches', JSON.stringify(updated));
       return updated;
     });
 
     showPlaceOnMap(rowLat, rowLng, {
-      name: result.name,
-      address: result.address,
+      name: result.name ?? 'Place',
+      address: result.address ?? '',
       lat: rowLat,
       lng: rowLng,
       category: result.category,
@@ -5175,10 +5188,8 @@ export default function MapScreen() {
     nav.currentStepIndex,
   ]);
 
-  const speedLimitAlertActive =
-    nav.isNavigating &&
-    currentSpeedLimitMph != null &&
-    speed > currentSpeedLimitMph + 5;
+  const speedingAlert = useSpeedingDetection(displaySpeedMph, currentSpeedLimitMph);
+  const speedLimitAlertActive = nav.isNavigating && speedingAlert != null;
 
   useEffect(() => {
     speedAlertAnim.value = withTiming(speedLimitAlertActive ? 1 : 0, {
@@ -5191,8 +5202,21 @@ export default function MapScreen() {
         lastSpeedAlertHapticAtRef.current = now;
         void hapticSpeedAlert();
       }
+      if (
+        speedingAlert?.severity === 'severe' &&
+        !navVoiceMuted &&
+        now - lastSpeedAlertVoiceAtRef.current > 30_000
+      ) {
+        lastSpeedAlertVoiceAtRef.current = now;
+        speak(
+          `Slow down. Now. ${speedingAlert.currentSpeed} in a ${speedingAlert.speedLimit} is not worth it.`,
+          'high',
+          drivingMode,
+          { rateSource: 'advisory' },
+        );
+      }
     }
-  }, [speedLimitAlertActive, speedAlertAnim]);
+  }, [speedLimitAlertActive, speedingAlert, speedAlertAnim, navVoiceMuted, drivingMode]);
 
   const speedLimitPlateAnimatedStyle = useAnimatedStyle(() => ({
     backgroundColor:
@@ -5728,7 +5752,9 @@ export default function MapScreen() {
           }}
           isFavorite={selectedPlaceFavoriteMatch.isFavorite}
           onDirections={() => handleStartDirections(selectedPlace)}
-          onToggleFavorite={() => toggleFavoriteForPlace(selectedPlace)}
+          onToggleFavorite={() => {
+            void toggleFavoriteForPlace(selectedPlace);
+          }}
           onDismiss={() => {
             setSelectedPlace(null);
             restoreExploreList();
@@ -6065,6 +6091,7 @@ export default function MapScreen() {
                 signal={sdkTurnSignal}
                 lanes={sdkTurnLanes}
                 shields={sdkTurnShields}
+                exitNumber={b?.exitNumber ?? sdkNS?.exitNumber ?? null}
                 roundaboutExitNumber={sdkTurnRbExit}
                 chainInstruction={null}
                 isMuted={navVoiceMuted}
@@ -6178,7 +6205,7 @@ export default function MapScreen() {
           nextManeuverCoord.maneuver !== 'depart';
         const distPartsBase = (() => {
           if (cardState === 'cruise' && !hasActionableMeters) return { value: '—', unit: '' };
-          return formatImperialManeuverDistance(liveDistMeters, { omitNowLabel: true });
+          return formatImperialManeuverDistance(liveDistMeters, { speedMphForNow: displaySpeedMph });
         })();
         const destinationName = nav.navigationData?.destination?.name ?? null;
 
@@ -6268,6 +6295,7 @@ export default function MapScreen() {
           : prog.nextStep?.shields?.length
             ? prog.nextStep.shields
             : undefined;
+        const exitNumberResolved = banner?.exitNumber ?? prog.nextStep?.exitNumber ?? null;
         const roundaboutExitResolved = banner?.roundaboutExitNumber ?? prog.nextStep?.roundaboutExitNumber ?? null;
         const disambigName =
           shouldShowRoadDisambiguation(turnCurrentStep?.name) ? (turnCurrentStep?.name ?? null) :
@@ -6300,6 +6328,7 @@ export default function MapScreen() {
               signal={signalResolved}
               lanes={lanesResolved}
               shields={shieldsResolved}
+              exitNumber={exitNumberResolved}
               roundaboutExitNumber={roundaboutExitResolved}
               chainInstruction={chainInstruction}
               isMuted={navVoiceMuted}
@@ -6315,6 +6344,11 @@ export default function MapScreen() {
               roadDisambiguationLabel={disambigName}
               isSportBorder={useModeHudBorder}
               speedMph={displaySpeedMph}
+            />
+            <JunctionViewPopup
+              visible={junctionView.visible}
+              step={junctionView.step}
+              distanceLabel={junctionDistanceLabel}
             />
           </View>
         );
@@ -6974,8 +7008,10 @@ export default function MapScreen() {
 
       {(nav.isNavigating || speed > 1) && !selectedPlace && !selectedPlaceId && (() => {
         const hasLimit = nav.isNavigating && currentSpeedLimitMph != null;
-        const isOverSpeed = hasLimit && speed > (currentSpeedLimitMph as number);
-        const speedLimitTextColor = speedLimitAlertActive ? '#FFFFFF' : isOverSpeed ? '#FF3B30' : '#111827';
+        const isOverSpeed = speedLimitAlertActive;
+        const speedSeverity = speedingAlert?.severity ?? null;
+        const overSpeedColor = speedSeverity === 'mild' ? '#F97316' : '#FF3B30';
+        const speedLimitTextColor = speedLimitAlertActive ? '#FFFFFF' : isOverSpeed ? overSpeedColor : '#111827';
         return (
           <View
             style={{
@@ -6990,7 +7026,7 @@ export default function MapScreen() {
                 s.speedBadge,
                 hasLimit && s.speedBadgeWithLimit,
                 {
-                  borderColor: isOverSpeed ? '#FF3B30' : modeConfig.etaAccentColor,
+                  borderColor: isOverSpeed ? overSpeedColor : modeConfig.etaAccentColor,
                   backgroundColor: isLight ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.92)',
                 },
               ]}
@@ -6999,12 +7035,15 @@ export default function MapScreen() {
                 style={[
                   s.speedVal,
                   hasLimit && s.speedValCompact,
-                  { color: isOverSpeed ? '#FF3B30' : modeConfig.speedColor },
+                  { color: isOverSpeed ? overSpeedColor : modeConfig.speedColor },
                 ]}
               >
                 {Math.round(speed)}
               </Text>
               <Text style={[s.speedUnit, { color: colors.textTertiary }]}>mph</Text>
+              {speedSeverity === 'moderate' || speedSeverity === 'severe' ? (
+                <Text style={[s.speedSlowDown, { color: overSpeedColor }]}>SLOW DOWN</Text>
+              ) : null}
               {hasLimit ? (
                 <Animated.View
                   style={[
@@ -7809,6 +7848,7 @@ const s = StyleSheet.create({
   speedValCompact: { fontSize: 16 },
   speedUnit: { fontSize: 9, fontWeight: '600', marginTop: -1 },
   speedLimitInline: { fontSize: 8, fontWeight: '800', letterSpacing: 0.4, marginTop: 4, textTransform: 'uppercase' as const },
+  speedSlowDown: { fontSize: 7, fontWeight: '900', letterSpacing: 0.2, marginTop: 1 },
   speedLimitPlate: {
     width: 44,
     marginTop: 7,

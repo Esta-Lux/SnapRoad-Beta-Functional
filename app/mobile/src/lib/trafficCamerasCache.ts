@@ -88,8 +88,9 @@ export function getCachedTrafficCamerasNear(lat: number, lng: number): CameraLoc
       const cell = readCell(`${baseLat + dLat},${baseLng + dLng}`);
       if (!cell) continue;
       for (const cam of cell.cameras) {
-        if (seen.has(cam.id)) continue;
-        seen.add(cam.id);
+        const id = String(cam.id);
+        if (seen.has(id)) continue;
+        seen.add(id);
         out.push(cam);
       }
     }

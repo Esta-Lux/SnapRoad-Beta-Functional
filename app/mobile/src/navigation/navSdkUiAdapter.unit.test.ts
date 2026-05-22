@@ -26,6 +26,7 @@ function navStep(partial: Partial<NavStep> & Pick<NavStep, 'index' | 'kind'>): N
     instruction: partial.instruction ?? 'Turn right',
     streetName: partial.streetName ?? 'Oak Ave',
     destinationRoad: partial.destinationRoad ?? null,
+    exitNumber: partial.exitNumber ?? null,
     shields: partial.shields ?? [],
     signal: partial.signal ?? { kind: 'none', label: '' },
     lanes: partial.lanes ?? [],

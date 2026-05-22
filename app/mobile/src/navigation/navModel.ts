@@ -108,6 +108,7 @@ export interface NavStep {
 
   streetName: string | null;
   destinationRoad: string | null;
+  exitNumber: string | null;
   shields: RoadShield[];
 
   signal: RoadSignal;
@@ -160,6 +161,7 @@ export type NavBannerModel = {
   /** Split-form companion when native uses `formattedDistance` + `formattedDistanceUnit` (value-only in {@link primaryDistanceFormatted} on some bridges). */
   primaryDistanceFormattedUnit?: string | null;
   primaryStreet?: string | null;
+  exitNumber?: string | null;
   secondaryInstruction?: string | null;
   subInstruction?: string | null;
   signal?: RoadSignal;
@@ -190,7 +192,12 @@ export type NavigationProgress = {
   nextStep: NavStep | null;
   followingStep: NavStep | null;
   nextStepDistanceMeters: number;
+  currentStepDistanceRemaining: number;
+  currentStepDurationRemaining: number;
+  nextStepDistance: number;
   banner: NavBannerModel | null;
+  bannerInstruction: NavBannerModel | null;
+  upcomingManeuvers: NavStep[];
   distanceRemainingMeters: number;
   modelDurationRemainingSeconds: number;
   durationRemainingSeconds: number;

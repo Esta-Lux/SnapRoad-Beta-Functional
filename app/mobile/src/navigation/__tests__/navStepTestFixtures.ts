@@ -29,6 +29,7 @@ export function minimalNavStep(
     instruction: '',
     streetName: null,
     destinationRoad: null,
+    exitNumber: null,
     shields: [],
     signal: emptySignal,
     lanes: [],

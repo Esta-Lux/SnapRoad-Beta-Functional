@@ -435,6 +435,16 @@ export function computeNavigationProgressFrame({
     : sliceRouteWindow(route, snap.segmentIndex, 5);
 
   const banner = buildNavBanner(nextStep, followingStepRaw, nextStepDistanceMeters);
+  const currentStepDurationRemaining = nextStep
+    ? Math.max(
+        0,
+        nextStep.durationSeconds *
+          (nextStep.distanceMeters > 0 ? Math.min(1, nextStepDistanceMeters / nextStep.distanceMeters) : 0),
+      )
+    : 0;
+  const upcomingManeuvers = nextStep
+    ? steps.slice(nextStep.index, Math.min(steps.length, nextStep.index + 5))
+    : [];
 
   return {
     displayCoord,
@@ -447,7 +457,12 @@ export function computeNavigationProgressFrame({
     nextStep,
     followingStep: followingStepRaw,
     nextStepDistanceMeters,
+    currentStepDistanceRemaining: nextStepDistanceMeters,
+    currentStepDurationRemaining,
+    nextStepDistance: followingStepRaw ? Math.max(0, nextStep?.distanceMeters ?? 0) : 0,
     banner,
+    bannerInstruction: banner,
+    upcomingManeuvers,
     distanceRemainingMeters,
     modelDurationRemainingSeconds,
     durationRemainingSeconds,

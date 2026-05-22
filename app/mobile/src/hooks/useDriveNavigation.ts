@@ -40,6 +40,7 @@ import {
 } from '../utils/tripGems';
 import { formatTripPlaceLabel } from '../utils/tripPlaceLabels';
 import { mergeTripCompleteResponse, raceWithTimeout, unwrapTripCompleteData } from '../lib/tripComplete';
+import { persistLocalCompletedTrip } from '../utils/localCompletedTrips';
 import {
   estimateFuelCostUsd,
   estimateFuelGallons,
@@ -1422,6 +1423,7 @@ export function useDriveNavigation(params: {
     // Keep the local recap visible while the server merge runs — avoids a blank flash and
     // ensures Insights can still read the last trip if the POST is slow.
     setTripSummary(summaryPayload);
+    void persistLocalCompletedTrip(summaryPayload);
 
     const startedAt = tripStartMs
       ? new Date(tripStartMs).toISOString()
@@ -1458,6 +1460,7 @@ export function useDriveNavigation(params: {
 
       const merged = mergeTripCompleteResponse(summaryPayload, res.data);
       setTripSummary(merged);
+      void persistLocalCompletedTrip(merged);
       const d = unwrapTripCompleteData(res.data);
       if (d.profile) {
         applyTripCompleteProfileToUser(updateUserRef.current, d.profile);

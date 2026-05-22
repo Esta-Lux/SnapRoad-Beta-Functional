@@ -26,8 +26,14 @@ export default function TurnCard({ instruction, distance, maneuver, nextInstruct
         <Ionicons name={turnIcon(maneuver)} size={28} color="#fff" />
       </View>
       <View style={styles.textBox}>
-        <Text style={[styles.distance, { color: colors.primary }]}>{distance}</Text>
-        <Text style={[styles.instruction, { color: colors.text }]} numberOfLines={2}>{instruction}</Text>
+        <View style={styles.topLine}>
+          <Text style={[styles.instruction, { color: colors.text }]} numberOfLines={2}>{instruction}</Text>
+          {distance ? (
+            <View style={[styles.distanceBadge, { backgroundColor: colors.primary }]}>
+              <Text style={styles.distanceBadgeText} numberOfLines={1}>{distance}</Text>
+            </View>
+          ) : null}
+        </View>
         {nextInstruction && <Text style={[styles.then, { color: colors.textTertiary }]} numberOfLines={1}>Then: {nextInstruction}</Text>}
       </View>
     </View>
@@ -38,7 +44,9 @@ const styles = StyleSheet.create({
   card: { borderRadius: 16, flexDirection: 'row', padding: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8 },
   iconBox: { width: 52, height: 52, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   textBox: { flex: 1 },
-  distance: { fontSize: 16, fontWeight: '800' },
-  instruction: { fontSize: 14, fontWeight: '600', marginTop: 2 },
+  topLine: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  instruction: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: '800', marginTop: 2 },
+  distanceBadge: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5, flexShrink: 0 },
+  distanceBadgeText: { color: '#fff', fontSize: 12, fontWeight: '900', fontVariant: ['tabular-nums'], textTransform: 'uppercase' },
   then: { fontSize: 11, marginTop: 4 },
 });

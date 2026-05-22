@@ -101,7 +101,13 @@ test('selection avoids exact variant repeat in the same trip when alternatives e
 
   const second = generateCompanionMessageSync({
     event: 'smooth_drive',
-    ctx: buildOrionDriveContext({ ...ctx, nowMs: ctx.nowMs + 11 * 60 * 1000 }),
+    ctx: buildOrionDriveContext({
+      isNavigating: ctx.isNavigating,
+      destination: ctx.destination,
+      tripId: ctx.tripId,
+      nowMs: ctx.nowMs + 11 * 60 * 1000,
+      trafficLevel: ctx.trafficLevel,
+    }),
     mood: 'sassy',
     memory,
     phase: 'cruising',

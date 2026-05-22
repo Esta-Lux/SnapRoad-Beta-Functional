@@ -23,6 +23,7 @@ function step(
     instruction: '',
     streetName: null,
     destinationRoad: null,
+    exitNumber: null,
     shields: [],
     signal: { kind: 'none', label: '' },
     lanes: [],

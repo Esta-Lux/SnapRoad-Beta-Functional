@@ -681,6 +681,7 @@ type TomTomRoutesJson = { routes?: TomTomRouteCandidate[]; provider?: string };
 const ECO_TIME_FACTOR = 1.2;
 const MAX_PREVIEW_ROUTES = 6;
 const MAX_FASTEST_ROUTE_VARIANTS = 4;
+const FAST_ROUTE_ENRICH_TIMEOUT_MS = 3500;
 
 interface RouteStrategy {
   type: RouteKind;
@@ -765,15 +766,16 @@ async function fetchMapboxTrafficRoutesFromBackend(
     alternatives: alt,
     cache_bust_ms: Date.now(),
   });
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const res = await api.post<MapboxDirectionsJson>('/api/navigation/mapbox-routes', postBody());
-      const routes = res.success && res.data && Array.isArray(res.data.routes) ? res.data.routes : null;
-      if (routes?.length) return routes as RawRoute[];
-    } catch {
-      /* try client fallback */
-    }
-    if (attempt === 0) await new Promise((r) => setTimeout(r, 280));
+  try {
+    const res = await withSoftTimeout(
+      api.post<MapboxDirectionsJson>('/api/navigation/mapbox-routes', postBody()),
+      options?.fastSingleRoute ? 4500 : 7000,
+      { success: false, data: undefined },
+    );
+    const routes = res.success && res.data && Array.isArray(res.data.routes) ? res.data.routes : null;
+    if (routes?.length) return routes as RawRoute[];
+  } catch {
+    /* try client fallback */
   }
   return null;
 }
@@ -920,6 +922,18 @@ function isDuplicateDirectionsResult(route: DirectionsResult, existing: Directio
   return false;
 }
 
+function withSoftTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  return Promise.race([
+    promise.catch(() => fallback),
+    new Promise<T>((resolve) => {
+      timer = setTimeout(() => resolve(fallback), timeoutMs);
+    }),
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 async function executeRouteStrategy(
   origin: Coordinate,
   destination: Coordinate,
@@ -1023,15 +1037,7 @@ export async function getMapboxRouteOptions(
   }
 
   if (options?.fastSingleRoute) {
-    const [raw, tomtom] = await Promise.all([
-      fetchMapboxTrafficRoutesRaw(origin, destination, {
-        exclude: undefined,
-        alternatives: true,
-        maxHeightMeters: maxH,
-        mode: options?.mode,
-        timeoutMs: options?.mode === 'sport' ? 21000 : 19000,
-        profile: 'driving-traffic',
-      }),
+    const tomtomPromise = withSoftTimeout(
       fetchTomTomTrafficRouteOptions(origin, destination, {
         alternatives: true,
         fastSingleRoute: true,
@@ -1039,7 +1045,17 @@ export async function getMapboxRouteOptions(
         mode: options?.mode,
         profile: 'driving-traffic',
       }),
-    ]);
+      FAST_ROUTE_ENRICH_TIMEOUT_MS,
+      [],
+    );
+    const raw = await fetchMapboxTrafficRoutesRaw(origin, destination, {
+      exclude: undefined,
+      alternatives: true,
+      maxHeightMeters: maxH,
+      mode: options?.mode,
+      timeoutMs: options?.mode === 'sport' ? 9000 : 8000,
+      profile: 'driving-traffic',
+    });
     const parsed = raw.map((route, idx) =>
       parseMapboxDirectionsRoute(route, {
         routeType: idx === 0 ? 'fastest' : 'alt',
@@ -1047,6 +1063,7 @@ export async function getMapboxRouteOptions(
         routeReason: idx === 0 ? fastestBaseReasonForMode(options?.mode) : ROUTE_DEFAULTS.alt.reason,
       }),
     );
+    const tomtom = await tomtomPromise;
     for (const candidate of tomtom) {
       if (!isDuplicateDirectionsResult(candidate, parsed)) parsed.push(candidate);
     }

@@ -4,16 +4,14 @@ import type { ManeuverKind, NavStep } from './navModel';
 import { getTurnCardNavTuning, previewDistanceMaxMeters } from './navModeProfile';
 import { navManeuverFieldsFromDirectionsStep } from './navStepsFromDirections';
 import { hudPhraseForManeuverKind } from './spokenManeuver';
+import { formatManeuverDistanceForCard } from './utils/distanceFormatter';
 
 export type TurnCardState = 'preview' | 'active' | 'confirm' | 'cruise';
 
-const FT_PER_M = 3.28084;
-const M_PER_MI = 1609.344;
 /**
  * Sub-second / static fallback when no speed is passed. Prefer
  * {@link maneuverNowThresholdMeters} for headless-SDK with live mph.
  */
-const NOW_MANEUVER_METERS = 7;
 /** Below this, show a dash (no false “0 ft”). */
 const DIST_DASH_MAX_M = 0.5;
 
@@ -70,36 +68,15 @@ export function formatImperialManeuverDistance(
 ): { value: string; unit: string } {
   if (!Number.isFinite(meters) || meters < 0) return { value: '—', unit: '' };
   if (meters < DIST_DASH_MAX_M) return { value: '—', unit: '' };
-  if (!options?.omitNowLabel) {
-    const nowM =
-      options?.nowMetersOverride ??
-      (options?.speedMphForNow != null
-        ? maneuverNowThresholdMeters(options.speedMphForNow)
-        : NOW_MANEUVER_METERS);
-    if (meters < nowM) return { value: 'Now', unit: '' };
-  }
-
-  const mi = meters / M_PER_MI;
-  if (mi >= 0.1) {
-    if (mi >= 10) {
-      return { value: String(Math.round(mi)), unit: 'MI' };
-    }
-    const v = Math.round(mi * 10) / 10;
-    const s = v % 1 === 0 ? String(v) : v.toFixed(1);
-    return { value: s, unit: 'MI' };
-  }
-
-  const ft = meters * FT_PER_M;
-  if (ft >= 500) {
-    return { value: String(Math.round(ft / 10) * 10), unit: 'FT' };
-  }
-  if (ft >= 100) {
-    return { value: String(Math.round(ft / 5) * 5), unit: 'FT' };
-  }
-  if (ft >= 50) {
-    return { value: String(Math.round(ft / 5) * 5), unit: 'FT' };
-  }
-  return { value: String(Math.max(25, Math.round(ft / 5) * 5)), unit: 'FT' };
+  const nowM =
+    options?.nowMetersOverride ??
+    (options?.speedMphForNow != null
+      ? maneuverNowThresholdMeters(options.speedMphForNow)
+      : 15.24);
+  return formatManeuverDistanceForCard(meters, {
+    omitNowLabel: options?.omitNowLabel,
+    nowThresholdMeters: nowM,
+  });
 }
 
 /** @deprecated Prefer {@link formatImperialManeuverDistance} — same behavior. */

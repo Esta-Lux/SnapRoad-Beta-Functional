@@ -19,7 +19,6 @@ import type { ManeuverKind, RoadSignal, LaneInfo, RoadShield } from '../../navig
 import type { NativeFormattedDistance, NativeLaneAsset } from '../../navigation/navSdkMirrorTypes';
 import { resolveDisplayDistance } from '../../navigation/navDisplayDistance';
 import { getBannerThenLine, getLaneData, lanesFromLegacyJson } from '../../navigation/bannerInstructions';
-import { navLaneGuidanceUiEnabled } from '../../navigation/navFeatureFlags';
 import {
   resolveStableText,
   TEXT_STABLE_MS,
@@ -128,6 +127,7 @@ export type TurnInstructionCardProps = {
   signal?: RoadSignal;
   lanes?: LaneInfo[];
   shields?: RoadShield[];
+  exitNumber?: string | null;
   roundaboutExitNumber?: number | null;
   chainInstruction?: string | null;
   /** Native mirror: locale-formatted distance from SDK (overrides {@link distanceValue} / {@link distanceUnit}). */
@@ -169,6 +169,7 @@ export default React.memo(function TurnInstructionCard({
   signal,
   lanes,
   shields,
+  exitNumber,
   roundaboutExitNumber,
   chainInstruction,
   nativeFormattedDistance,
@@ -187,6 +188,9 @@ export default React.memo(function TurnInstructionCard({
     () => resolveDisplayDistance(isNativeMirror, nativeFormattedDistance, distanceValue, distanceUnit),
     [isNativeMirror, nativeFormattedDistance, distanceValue, distanceUnit],
   );
+  const distanceChipText = displayDistance.value && displayDistance.value !== '—'
+    ? `${displayDistance.value}${displayDistance.unit ? ` ${displayDistance.unit.toLowerCase()}` : ''}`
+    : '';
 
   /**
    * Primary text source precedence (flicker-proof):
@@ -353,7 +357,7 @@ export default React.memo(function TurnInstructionCard({
     (state === 'active' || state === 'preview') &&
     (navSdkDrivesContent
       ? nativeLaneStripReady
-      : navLaneGuidanceUiEnabled() || nativeLaneStripReady);
+      : true);
 
   const showShields =
     shields &&
@@ -500,13 +504,28 @@ export default React.memo(function TurnInstructionCard({
           </View>
 
           <Animated.View style={[styles.textCol, textAnimatedStyle]}>
-            {showShields && (
-              <View style={styles.shieldRow}>
-                <HighwayShieldBadge
-                  shields={shields!}
-                  textColor={tcTextColor}
-                  maxShields={2}
-                />
+            {(showShields || exitNumber || distanceChipText) && (
+              <View style={styles.metaTopRow}>
+                <View style={styles.metaLeft}>
+                  {exitNumber ? (
+                    <View style={styles.exitBadge}>
+                      <Text style={styles.exitBadgeEyebrow}>EXIT</Text>
+                      <Text style={styles.exitBadgeText} numberOfLines={1}>{exitNumber}</Text>
+                    </View>
+                  ) : null}
+                  {showShields && (
+                    <HighwayShieldBadge
+                      shields={shields!}
+                      textColor={tcTextColor}
+                      maxShields={2}
+                    />
+                  )}
+                </View>
+                {distanceChipText ? (
+                  <View style={styles.distanceChip}>
+                    <Text style={styles.distanceChipText} numberOfLines={1}>{distanceChipText}</Text>
+                  </View>
+                ) : null}
               </View>
             )}
 
@@ -652,7 +671,45 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   textCol: { flex: 1, minWidth: 0 },
-  shieldRow: { marginBottom: 3 },
+  metaTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 5,
+    minHeight: 24,
+  },
+  metaLeft: { flexDirection: 'row', alignItems: 'center', gap: 5, flex: 1, minWidth: 0 },
+  exitBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#006B54',
+    borderColor: 'rgba(255,255,255,0.62)',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  exitBadgeEyebrow: { color: 'rgba(255,255,255,0.82)', fontSize: 8, fontWeight: '900', letterSpacing: 0.6 },
+  exitBadgeText: { color: '#FFFFFF', fontSize: 16, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  distanceChip: {
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(15,23,42,0.18)',
+    flexShrink: 0,
+  },
+  distanceChipText: {
+    color: '#0F172A',
+    fontSize: 12,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+    letterSpacing: 0,
+    textTransform: 'uppercase',
+  },
   primary: { fontSize: 22, letterSpacing: -0.2, lineHeight: 30 },
   belowPrimaryMeta: { marginTop: 4, width: '100%', gap: 3 },
   thenRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 4, width: '100%', flex: 1, minWidth: 0 },
