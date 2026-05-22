@@ -60,7 +60,29 @@ interface Props {
 }
 
 function lngLatToCoords(ring: [number, number][]): Coordinate[] {
-  return ring.map(([lng, lat]) => ({ lng, lat }));
+  return ring
+    .filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180)
+    .map(([lng, lat]) => ({ lng, lat }));
+}
+
+function isFiniteRouteCoord(p: Coordinate): boolean {
+  return (
+    Number.isFinite(p.lat) &&
+    Number.isFinite(p.lng) &&
+    Math.abs(p.lat) <= 90 &&
+    Math.abs(p.lng) <= 180
+  );
+}
+
+function sanitizeRoutePolyline(polyline: Coordinate[]): Coordinate[] {
+  const out: Coordinate[] = [];
+  for (const p of polyline) {
+    if (!isFiniteRouteCoord(p)) continue;
+    const prev = out[out.length - 1];
+    if (prev && Math.abs(prev.lat - p.lat) < 1e-8 && Math.abs(prev.lng - p.lng) < 1e-8) continue;
+    out.push(p);
+  }
+  return out;
 }
 
 export default React.memo(function RouteOverlay({
@@ -80,6 +102,7 @@ export default React.memo(function RouteOverlay({
   layerSlot,
   routeRenderVariant = 'full',
 }: Props) {
+  const cleanPolyline = useMemo(() => sanitizeRoutePolyline(polyline), [polyline]);
   const hasCongestion = showCongestion && congestion && congestion.length > 0;
   /**
    * Keep `lineTrimOffset` disabled for active navigation. It is elegant when
@@ -92,12 +115,12 @@ export default React.memo(function RouteOverlay({
   const trimFraction = 0;
 
   const fullCoords = useMemo(
-    () => polyline.map((p): [number, number] => [p.lng, p.lat]),
-    [polyline],
+    () => cleanPolyline.map((p): [number, number] => [p.lng, p.lat]),
+    [cleanPolyline],
   );
 
   const geoJSON = useMemo(() => {
-    if (polyline.length < 2)
+    if (cleanPolyline.length < 2)
       return { type: 'FeatureCollection' as const, features: [] };
 
     // Always include the full route as a 'base' feature so glow/casing are continuous.
@@ -135,7 +158,7 @@ export default React.memo(function RouteOverlay({
 
     if (!isNavigating || !routeSplit) {
       if (hasCongestion) {
-        const cf = buildCongestionFeatures(polyline, congestion!, 'ahead');
+        const cf = buildCongestionFeatures(cleanPolyline, congestion!, 'ahead');
         cf.features.unshift(baseLine);
         return cf;
       }
@@ -153,7 +176,7 @@ export default React.memo(function RouteOverlay({
     }
 
     const rings = buildRouteSplitRingsFromProgress(
-      polyline,
+      cleanPolyline,
       routeSplit.segmentIndex,
       routeSplit.tOnSegment,
     );
@@ -205,9 +228,9 @@ export default React.memo(function RouteOverlay({
     }
 
     return { type: 'FeatureCollection' as const, features };
-  }, [polyline, fullCoords, isNavigating, routeSplit, hasCongestion, congestion, useTrimOffset]);
+  }, [cleanPolyline, fullCoords, isNavigating, routeSplit, hasCongestion, congestion, useTrimOffset]);
 
-  if (polyline.length < 2 || !MapboxGL) return null;
+  if (cleanPolyline.length < 2 || !MapboxGL) return null;
 
   const useCongestionColor = hasCongestion;
 

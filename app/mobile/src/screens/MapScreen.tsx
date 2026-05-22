@@ -403,8 +403,22 @@ function isUsableCoordinate(coord: Coordinate | null | undefined): coord is Coor
     coord != null &&
     Number.isFinite(coord.lat) &&
     Number.isFinite(coord.lng) &&
+    Math.abs(coord.lat) <= 90 &&
+    Math.abs(coord.lng) <= 180 &&
     (Math.abs(coord.lat) > 1e-6 || Math.abs(coord.lng) > 1e-6)
   );
+}
+
+function cleanRouteCoordinates(coords: Coordinate[] | null | undefined): Coordinate[] {
+  if (!coords?.length) return [];
+  const out: Coordinate[] = [];
+  for (const c of coords) {
+    if (!isUsableCoordinate(c)) continue;
+    const prev = out[out.length - 1];
+    if (prev && Math.abs(prev.lat - c.lat) < 1e-8 && Math.abs(prev.lng - c.lng) < 1e-8) continue;
+    out.push(c);
+  }
+  return out;
 }
 
 async function getFreshNavigationOrigin(fallback: Coordinate): Promise<Coordinate> {
@@ -3309,7 +3323,8 @@ export default function MapScreen() {
   // Fit camera to route on preview — padding from safe area + measured sheet (avoid huge fixed bottom inset).
   useEffect(() => {
     if (!nav.showRoutePreview || !nav.navigationData?.polyline?.length) return;
-    const coords = nav.navigationData.polyline;
+    const coords = cleanRouteCoordinates(nav.navigationData.polyline);
+    if (coords.length < 2) return;
     const lngs = coords.map((c) => c.lng);
     const lats = coords.map((c) => c.lat);
     const winH = Dimensions.get('window').height;
@@ -3320,12 +3335,16 @@ export default function MapScreen() {
       routePreviewHeight > 48
         ? routePreviewHeight + Math.max(insets.bottom, 12) + 12
         : Math.min(fallbackBottom + Math.max(insets.bottom, 8), Math.round(winH * 0.46));
-    cameraRef.current?.fitBounds(
-      [Math.max(...lngs), Math.max(...lats)],
-      [Math.min(...lngs), Math.min(...lats)],
-      [topPad, sidePad, bottomPad, sidePad],
-      600,
-    );
+    try {
+      cameraRef.current?.fitBounds(
+        [Math.max(...lngs), Math.max(...lats)],
+        [Math.min(...lngs), Math.min(...lats)],
+        [topPad, sidePad, bottomPad, sidePad],
+        600,
+      );
+    } catch (err) {
+      if (__DEV__) console.warn('[MapScreen] Route preview camera fit failed', err);
+    }
   }, [nav.showRoutePreview, nav.navigationData?.polyline, routePreviewHeight, insets.top, insets.bottom]);
 
   useEffect(() => {
@@ -4938,12 +4957,12 @@ export default function MapScreen() {
       requestAnimationFrame(() => requestAnimationFrame(runOverviewCamera));
     });
 
-    if (nav.isNavigating) {
-      routeOverviewRelockTimerRef.current = setTimeout(() => {
-        routeOverviewRelockTimerRef.current = null;
-        if (nav.isNavigating) exitRouteOverview();
-      }, 12_000);
-    }
+    /**
+     * Stay in overview until the driver explicitly taps recenter or the map
+     * overview control again. A timed snap-back made the button feel broken
+     * on longer routes because the full start-to-end frame disappeared while
+     * the user was still checking the route.
+     */
   }, [
     exitRouteOverview,
     insets.bottom,
@@ -5502,7 +5521,8 @@ export default function MapScreen() {
             const MGL = MapboxGL!;
             return nav.availableRoutes.map((route, idx) => {
               if (idx === nav.selectedRouteIndex) return null;
-              if (!route.polyline || route.polyline.length < 2) return null;
+              const altPolyline = cleanRouteCoordinates(route.polyline);
+              if (altPolyline.length < 2) return null;
               const lineOpacity = Math.min(
                 0.78,
                 isSatelliteStyle || mapLightPreset === 'night' || mapLightPreset === 'dusk' ? 0.52 : 0.44,
@@ -5514,7 +5534,7 @@ export default function MapScreen() {
                   properties: {},
                   geometry: {
                     type: 'LineString',
-                    coordinates: route.polyline.map((p) => [p.lng, p.lat]),
+                    coordinates: altPolyline.map((p) => [p.lng, p.lat]),
                   },
                 }],
               };
@@ -5629,27 +5649,32 @@ export default function MapScreen() {
               }
             />
           )}
-          {(nav.selectedDestination || selectedPlace) && (
-            <MapboxGL.MarkerView
-              id="dest-pin"
-              coordinate={[
-                (nav.selectedDestination?.lng ?? selectedPlace?.lng ?? 0),
-                (nav.selectedDestination?.lat ?? selectedPlace?.lat ?? 0),
-              ]}
-              anchor={{ x: 0.5, y: 1 }}
-              allowOverlap
-              // Keep the destination pin visible above Standard 3D buildings
-              // and landmarks at pitched nav camera angles (same workaround
-              // as POI markers — Mapbox view annotations otherwise cull near
-              // the puck's collision region on v11).
-              allowOverlapWithPuck
-            >
-              <View style={s.destPinWrap}>
-                <View style={s.destPin}><Ionicons name="location-sharp" size={20} color="#fff" /></View>
-                <View style={s.destPinTail} />
-              </View>
-            </MapboxGL.MarkerView>
-          )}
+          {(() => {
+            const destCoord = nav.selectedDestination
+              ? { lat: nav.selectedDestination.lat, lng: nav.selectedDestination.lng }
+              : selectedPlace
+                ? { lat: selectedPlace.lat, lng: selectedPlace.lng }
+                : null;
+            if (!isUsableCoordinate(destCoord)) return null;
+            return (
+              <MapboxGL.MarkerView
+                id="dest-pin"
+                coordinate={[destCoord.lng, destCoord.lat]}
+                anchor={{ x: 0.5, y: 1 }}
+                allowOverlap
+                // Keep the destination pin visible above Standard 3D buildings
+                // and landmarks at pitched nav camera angles (same workaround
+                // as POI markers — Mapbox view annotations otherwise cull near
+                // the puck's collision region on v11).
+                allowOverlapWithPuck
+              >
+                <View style={s.destPinWrap}>
+                  <View style={s.destPin}><Ionicons name="location-sharp" size={20} color="#fff" /></View>
+                  <View style={s.destPinTail} />
+                </View>
+              </MapboxGL.MarkerView>
+            );
+          })()}
 
           {/*
             Two pucks must never be on screen at once. Rule:
