@@ -121,7 +121,7 @@ async function parseApiResponseBody(
   if (!trimmed) {
     return {
       ok: false,
-      error: `Empty response (HTTP ${status}). Start the API (Vite proxies /api to VITE_BACKEND_PROXY_TARGET, default :8001) or check VITE_API_URL.`,
+      error: `Empty response (HTTP ${status}). Check VITE_API_URL or VITE_BACKEND_PROXY_TARGET; default API is https://api.snaproad.app.`,
     };
   }
   try {
@@ -130,7 +130,7 @@ async function parseApiResponseBody(
     if ([530, 524, 502, 521, 522, 523].includes(status)) {
       return {
         ok: false,
-        error: `HTTP ${status} — tunnel or edge could not reach your API. Restart cloudflared (or dev:mobile), update the tunnel URL in .env, and ensure FastAPI matches your proxy target. For web dev, use Vite proxy (empty API base) or a working VITE_API_URL.`,
+        error: `HTTP ${status} — edge could not reach the API. Check https://api.snaproad.app or set a working VITE_API_URL / VITE_BACKEND_PROXY_TARGET.`,
       };
     }
     const htmlish = ct.includes('text/html') || /<\s*html/i.test(text);
@@ -304,10 +304,10 @@ class ApiService {
       // #endregion
       const baseHint =
         apiBaseUrl ||
-        '(empty base → same-origin /api, proxied by Vite; see VITE_BACKEND_PROXY_TARGET, default http://127.0.0.1:8001)'
+        '(empty base → same-origin /api, proxied by Vite; see VITE_BACKEND_PROXY_TARGET, default https://api.snaproad.app)'
       const msg =
         (error as any)?.name === 'AbortError'
-          ? `Request timed out after ${ms}ms. Start the FastAPI backend on the port Vite proxies to (default 8001). API base: ${baseHint}. Set VITE_API_URL / VITE_BACKEND_PROXY_TARGET if needed; clear localStorage key "snaproad_api_url_override" if you used a bad ?api= URL.`
+          ? `Request timed out after ${ms}ms. API base: ${baseHint}. Set VITE_API_URL / VITE_BACKEND_PROXY_TARGET if needed; clear localStorage key "snaproad_api_url_override" if you used a bad ?api= URL.`
           : 'Network error';
       return { success: false, error: msg };
     }

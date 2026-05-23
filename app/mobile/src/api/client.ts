@@ -1,6 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
-import { Platform } from 'react-native';
 import * as Device from 'expo-device';
 import type { ApiResponse, AuthResponse, LoginRequest, SignupRequest } from '../types';
 import { supabase } from '../lib/supabase';
@@ -9,18 +8,6 @@ import { getOrCreateGuestId } from '../utils/guestIdentity';
 
 const TOKEN_KEY = 'snaproad_token';
 const IS_PRODUCTION = String(process.env.APP_ENV || process.env.ENVIRONMENT || process.env.NODE_ENV || '').toLowerCase() === 'production';
-
-/** Metro host is only a usable API host when it is a private LAN IPv4 (same Wi‑Fi). */
-function isPrivateLanIPv4(host: string): boolean {
-  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host.trim());
-  if (!m) return false;
-  const a = Number(m[1]);
-  const b = Number(m[2]);
-  if (a === 10) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  return false;
-}
 
 function isLoopbackApiUrl(url: string): boolean {
   return /127\.0\.0\.1|localhost/i.test(url);
@@ -55,22 +42,8 @@ function resolveApiUrl(): string {
     return u;
   }
 
-  // 2. iOS Simulator / web: local FastAPI on the Mac (ignore baked-in extra until explicit env above)
-  if (!IS_PRODUCTION && !isPhysicalPhoneOrTablet()) {
-    return 'http://localhost:8001';
-  }
-
-  // 3. Same Wi‑Fi only: private LAN IP from Metro’s host (never use *.exp.direct / tunnel hostnames as :8001)
-  const hostUri = Constants.expoConfig?.hostUri ?? '';
-  const expoGoHost = (Constants as unknown as { expoGoConfig?: { debuggerHost?: string } }).expoGoConfig
-    ?.debuggerHost ?? '';
-  const hostStr = hostUri || expoGoHost;
-  const hostOnly = hostStr.split(':')[0];
-  if (!IS_PRODUCTION && hostOnly && isPrivateLanIPv4(hostOnly)) {
-    return `http://${hostOnly}:8001`;
-  }
-
-  // 4. app.json extra fallback — default https://api.snaproad.app when unset (real device + tunnel / off-LAN)
+  // 2. app.json extra fallback — default https://api.snaproad.app when unset.
+  // Local/LAN backend is opt-in only via EXPO_PUBLIC_API_URL / API_URL above.
   const extra = Constants.expoConfig?.extra ?? {};
   const extraUrl = (extra.apiUrl as string | undefined)?.trim();
   if (extraUrl && extraUrl.length > 5) {
@@ -80,11 +53,6 @@ function resolveApiUrl(): string {
     if (!(isPhysicalPhoneOrTablet() && isLoopbackApiUrl(extraUrl))) {
       return extraUrl;
     }
-  }
-
-  // 5. Android emulator only (not physical devices — 10.0.2.2 is the host loopback from the AVD)
-  if (!IS_PRODUCTION && Platform.OS === 'android' && !isPhysicalPhoneOrTablet()) {
-    return 'http://10.0.2.2:8001';
   }
 
   if (IS_PRODUCTION) {
@@ -97,9 +65,9 @@ function resolveApiUrl(): string {
     return fallback;
   }
 
-  // 6. Physical device, no env, not on private LAN: use production API (override with EXPO_PUBLIC_API_URL for local/tunnel)
+  // 3. No env/extra: use production API. Local backend must be explicit.
   apiMisconfigurationMessage =
-    'Using cloud API (https://api.snaproad.app). For a Mac backend: same Wi‑Fi → set EXPO_PUBLIC_API_URL to http://YOUR_LAN_IP:8001; or run `npm run tunnel:api` and paste the https URL into app/mobile/.env.';
+    'Using cloud API (https://api.snaproad.app). To test a local backend, set EXPO_PUBLIC_API_URL explicitly in app/mobile/.env.';
   return 'https://api.snaproad.app';
 }
 
@@ -169,11 +137,11 @@ async function parseApiResponseBody(
   try {
     return { ok: true, data: JSON.parse(text) as unknown };
   } catch {
-    // Cloudflare quick tunnel / edge: origin unreachable, tunnel stopped, or hostname reused after tunnel died.
+    // Cloudflare / edge: origin unreachable or hostname reused after an edge issue.
     if ([530, 524, 502, 521, 522, 523].includes(status)) {
       return {
         ok: false,
-        error: `HTTP ${status} — Cloudflare could not reach your API. Fix: (1) Run the FastAPI backend on :8001. (2) Run cloudflared: cloudflared tunnel --url http://127.0.0.1:8001 (or npm run dev:mobile). (3) Put the NEW https://….trycloudflare.com URL in app/mobile/.env as EXPO_PUBLIC_API_URL and restart Metro. Same Wi‑Fi: npm run dev:mobile:lan and remove/comment the tunnel URL in .env.`,
+        error: `HTTP ${status} — Cloudflare could not reach https://api.snaproad.app. Check the production API health or set EXPO_PUBLIC_API_URL explicitly for a temporary backend override.`,
       };
     }
     const htmlish = ct.includes('text/html') || /<\s*html/i.test(text);

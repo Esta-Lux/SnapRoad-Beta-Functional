@@ -44,7 +44,7 @@ function mapIncident(inc: AdminIncident): Incident {
 
 const WS_BASE = (() => {
   const apiUrl = (import.meta.env.VITE_BACKEND_URL || import.meta.env.REACT_APP_BACKEND_URL || import.meta.env.VITE_API_URL || '')
-  const httpBase = apiUrl || 'http://localhost:8001'
+  const httpBase = apiUrl || 'https://api.snaproad.app'
   return httpBase.replace(/^https/, 'wss').replace(/^http:\/\//, 'ws://')
 })()
 
