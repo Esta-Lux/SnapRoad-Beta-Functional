@@ -13,6 +13,7 @@ import {
   plausibleMaxStepMeters,
   shouldHoldBlendForOutlierStep,
 } from '../utils/locationAccuracy';
+import { locationWatchTuningFor } from '../navigation/hooks/useGpsAccuracy';
 import type { Coordinate } from '../types';
 
 interface LocationState {
@@ -173,11 +174,17 @@ export type UseLocationOptions = {
   paused?: boolean;
   /** Use tighter foreground GPS + heading while the map is actively being browsed. */
   highAccuracy?: boolean;
+  /** Thermal / battery mitigation asks the watcher to use balanced navigation cadence. */
+  reduceAccuracyForThermal?: boolean;
+  /** Optional next maneuver distance when the caller can provide it. */
+  distanceToNextManeuverMeters?: number | null;
 };
 
 export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
   const paused = opts?.paused ?? false;
   const highAccuracy = opts?.highAccuracy ?? false;
+  const reduceAccuracyForThermal = opts?.reduceAccuracyForThermal ?? false;
+  const distanceToNextManeuverMeters = opts?.distanceToNextManeuverMeters ?? null;
   const [state, setState] = useState<LocationState>({
     location: UNKNOWN_LOCATION,
     heading: 0,
@@ -315,13 +322,12 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
       }
     })();
 
-    const accuracy = isNavigating
-      ? Location.Accuracy.BestForNavigation
-      : highAccuracy
-        ? Location.Accuracy.High
-        : Location.Accuracy.Balanced;
-    const timeInterval = isNavigating ? 500 : highAccuracy ? 1200 : 8000;
-    const distanceInterval = isNavigating ? 0.5 : highAccuracy ? 3 : 25;
+    const { accuracy, timeInterval, distanceInterval } = locationWatchTuningFor({
+      isNavigating,
+      highAccuracy,
+      distanceToNextManeuverMeters,
+      thermalMitigated: reduceAccuracyForThermal,
+    });
 
     watchRef.current = await Location.watchPositionAsync(
       {
@@ -500,7 +506,7 @@ export function useLocation(isNavigating = false, opts?: UseLocationOptions) {
         });
       });
     }
-  }, [isNavigating, highAccuracy]);
+  }, [isNavigating, highAccuracy, reduceAccuracyForThermal, distanceToNextManeuverMeters]);
 
   useEffect(() => {
     if (paused) {

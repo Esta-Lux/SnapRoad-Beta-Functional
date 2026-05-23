@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import type { DrivingMode } from '../types';
 import type { DirectionsStep } from '../lib/directions';
 import type { NavigationProgress, NavStep, ManeuverKind, RoadSignal } from '../navigation/navModel';
-import { hudPhraseForManeuverKind } from '../navigation/spokenManeuver';
+import { hudPhraseForManeuverKind, hudPhraseForStep } from '../navigation/spokenManeuver';
 import {
   setLastTurnByTurnPhrase,
   isNavigationGuidanceSuppressed,
@@ -115,7 +115,7 @@ function buildUtterance(
       : phrase;
   }
 
-  const line = hudPhraseForManeuverKind(step.kind, step.roundaboutExitNumber);
+  const line = hudPhraseForStep(step);
 
   const sigClause = bucket === 'advance' ? signalClause(step.signal) : '';
   const chain = bucket === 'imminent' ? chainPhrase(step) : '';

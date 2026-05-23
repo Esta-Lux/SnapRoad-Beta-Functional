@@ -96,7 +96,7 @@ function LaneArrow({
           ) : null}
         </G>
       </Svg>
-      {recommended ? <Text style={styles.recommendedLabel}>USE</Text> : null}
+      {recommended ? <Text style={styles.recommendedLabel}>RECOMMENDED</Text> : null}
     </View>
   );
 }
@@ -174,8 +174,8 @@ const styles = StyleSheet.create({
     borderTopColor: 'rgba(255,255,255,0.16)',
   },
   laneSlot: {
-    width: 38,
-    height: 44,
+    width: 42,
+    height: 48,
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 9,
@@ -187,7 +187,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.24)',
   },
   recommendedSlot: {
-    width: 42,
+    width: 56,
     backgroundColor: '#2563EB',
     borderWidth: 2,
     borderColor: '#FFFFFF',
@@ -198,9 +198,9 @@ const styles = StyleSheet.create({
   },
   recommendedLabel: {
     color: '#FFFFFF',
-    fontSize: 7,
+    fontSize: 6,
     fontWeight: '900',
-    letterSpacing: 0.4,
+    letterSpacing: 0,
     marginTop: 1,
   },
 });

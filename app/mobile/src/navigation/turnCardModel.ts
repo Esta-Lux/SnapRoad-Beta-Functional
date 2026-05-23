@@ -3,7 +3,7 @@ import type { DirectionsStep } from '../lib/directions';
 import type { ManeuverKind, NavStep } from './navModel';
 import { getTurnCardNavTuning, previewDistanceMaxMeters } from './navModeProfile';
 import { navManeuverFieldsFromDirectionsStep } from './navStepsFromDirections';
-import { hudPhraseForManeuverKind } from './spokenManeuver';
+import { hudPhraseForManeuverKind, hudPhraseForStep } from './spokenManeuver';
 import { formatManeuverDistanceForCard } from './utils/distanceFormatter';
 
 export type TurnCardState = 'preview' | 'active' | 'confirm' | 'cruise';
@@ -84,15 +84,32 @@ export function formatTurnDistanceForCard(meters: number): { value: string; unit
   return formatImperialManeuverDistance(meters);
 }
 
-function maneuverWords(maneuver: string): string {
+function directionsStepLooksHighway(step: DirectionsStep | null | undefined): boolean {
+  if (!step) return false;
+  const text = `${step.name ?? ''} ${step.instruction ?? ''}`;
+  if (/\b(I[-\s]?\d+|US[-\s]?\d+|SR[-\s]?\d+|OH[-\s]?\d+|interstate|freeway|highway|expressway|turnpike)\b/i.test(text)) {
+    return true;
+  }
+  return Boolean(
+    step.mapboxManeuver?.type &&
+      /\b(ramp|fork|merge|motorway)\b/i.test(step.mapboxManeuver.type) &&
+      step.intersections?.some((ix) => ix.classes?.some((c) => /motorway|motorway_link|trunk|primary/i.test(c))),
+  );
+}
+
+function maneuverWords(maneuver: string, highway = false): string {
   const m = (maneuver ?? 'straight').toLowerCase();
   if (m === 'u-turn' || m === 'uturn') return 'Make a U-turn';
   if (m === 'roundabout') return 'Enter the roundabout';
-  if (m === 'merge') return 'Merge';
+  if (m === 'merge') return highway ? 'Merge' : 'Continue';
   if (m.includes('sharp-left')) return 'Turn sharp left';
   if (m.includes('sharp-right')) return 'Turn sharp right';
-  if (m.includes('slight-left')) return 'Bear left';
-  if (m.includes('slight-right')) return 'Bear right';
+  if (m.includes('slight-left')) return highway ? 'Bear left' : 'Turn left';
+  if (m.includes('slight-right')) return highway ? 'Bear right' : 'Turn right';
+  if (m.includes('fork') && m.includes('left')) return highway ? 'Keep left at the fork' : 'Turn left';
+  if (m.includes('fork') && m.includes('right')) return highway ? 'Keep right at the fork' : 'Turn right';
+  if (m.includes('ramp') && m.includes('left')) return highway ? 'Take the ramp on the left' : 'Turn left';
+  if (m.includes('ramp') && m.includes('right')) return highway ? 'Take the ramp on the right' : 'Turn right';
   if (m.includes('left')) return 'Turn left';
   if (m.includes('right')) return 'Turn right';
   if (m === 'straight') return 'Continue straight';
@@ -112,7 +129,7 @@ export function buildActivePrimary(
   navStep?: NavStep | null,
 ): string {
   if (navStep) {
-    return hudPhraseForManeuverKind(navStep.kind, navStep.roundaboutExitNumber);
+    return hudPhraseForStep(navStep);
   }
   if (!nextStep) return '';
   const dest = destinationName?.trim() || '';
@@ -122,7 +139,7 @@ export function buildActivePrimary(
     return cap.length <= 88 ? cap : `${cap.slice(0, 86)}…`;
   }
   const onto = nextStep.name?.trim() || (nextStep.maneuver === 'arrive' ? dest : '');
-  const verb = maneuverWords(nextStep.maneuver);
+  const verb = maneuverWords(nextStep.maneuver, directionsStepLooksHighway(nextStep));
   if (onto) {
     if (nextStep.maneuver === 'arrive') return `Arrive at ${onto}`;
     if (verb === 'Continue straight') return `Continue on ${onto}`;
@@ -188,7 +205,7 @@ export function buildPreviewPrimarySecondary(
       : `Then ${next.instruction.replace(/\.$/, '')}`;
   } else if (next && next.maneuver !== 'depart') {
     const nRoad = next.name?.trim();
-    const mw = maneuverWords(next.maneuver);
+    const mw = maneuverWords(next.maneuver, directionsStepLooksHighway(next));
     secondary = nRoad && mw !== 'Continue straight' ? `Then ${mw.toLowerCase()} onto ${nRoad}` : `Then ${next.instruction.replace(/\.$/, '')}`;
   }
   return { primary, secondary };

@@ -1,4 +1,5 @@
 import type { ManeuverKind } from './navModel';
+import type { NavStep } from './navModel';
 
 const PHRASES: Record<ManeuverKind, string> = {
   turn_left: 'turn left',
@@ -62,6 +63,46 @@ export function hudPhraseForManeuverKind(
   }
   const p = phraseForManeuverKind(kind ?? 'straight');
   return p.charAt(0).toUpperCase() + p.slice(1);
+}
+
+export function isHighwayLikeNavStep(step: Pick<NavStep, 'shields' | 'exitNumber' | 'streetName' | 'destinationRoad' | 'rawType'> | null | undefined): boolean {
+  if (!step) return false;
+  if (step.exitNumber) return true;
+  if (step.shields?.some((shield) => {
+    const ref = `${shield.displayRef ?? ''} ${shield.ref ?? ''} ${shield.network ?? ''}`;
+    return /\b(I[-\s]?\d+|US[-\s]?\d+|SR[-\s]?\d+|OH[-\s]?\d+|interstate|motorway|freeway|highway)\b/i.test(ref);
+  })) return true;
+  const road = `${step.streetName ?? ''} ${step.destinationRoad ?? ''}`;
+  if (/\b(I[-\s]?\d+|US[-\s]?\d+|SR[-\s]?\d+|OH[-\s]?\d+|interstate|freeway|highway|expressway|turnpike)\b/i.test(road)) return true;
+  return /\b(ramp|fork|merge|motorway)\b/i.test(step.rawType ?? '') && !!step.shields?.length;
+}
+
+export function hudPhraseForStep(step: NavStep | null | undefined): string {
+  if (!step) return hudPhraseForManeuverKind('straight');
+  const highway = isHighwayLikeNavStep(step);
+  if (!highway) {
+    switch (step.kind) {
+      case 'slight_left':
+      case 'keep_left':
+      case 'fork_left':
+      case 'merge_left':
+      case 'on_ramp_left':
+      case 'off_ramp_left':
+        return 'Turn left';
+      case 'slight_right':
+      case 'keep_right':
+      case 'fork_right':
+      case 'merge_right':
+      case 'on_ramp_right':
+      case 'off_ramp_right':
+        return 'Turn right';
+      case 'merge':
+        return step.rawModifier === 'left' ? 'Turn left' : step.rawModifier === 'right' ? 'Turn right' : 'Continue';
+      default:
+        break;
+    }
+  }
+  return hudPhraseForManeuverKind(step.kind, step.roundaboutExitNumber);
 }
 
 /** Hyphenated maneuver key for turn icons (DirectionsStep-style substrings). */

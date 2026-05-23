@@ -35,8 +35,8 @@ export function shouldShowLaneGuidance(args: {
     lanes?.length &&
       kind &&
       GUIDANCE_KINDS.has(kind) &&
-      distanceMeters < 500 &&
-      distanceMeters > 30,
+      distanceMeters < 800 &&
+      distanceMeters > 50,
   );
 }
 

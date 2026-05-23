@@ -25,10 +25,11 @@ export function useJunctionView(args: {
     const visible = Boolean(
       step &&
         JUNCTION_KINDS.has(step.kind) &&
-        args.distanceMeters >= 100 &&
-        args.distanceMeters <= 400 &&
-        args.speedMph > 25 &&
-        (step.lanes.length > 0 || step.shields.length > 0 || step.exitNumber),
+        args.distanceMeters >= 50 &&
+        args.distanceMeters <= 500 &&
+        args.speedMph > 20 &&
+        step.lanes.length > 0 &&
+        (step.shields.length > 0 || step.exitNumber || step.destinationRoad || step.streetName),
     );
     return {
       visible,

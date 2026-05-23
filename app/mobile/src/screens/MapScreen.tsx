@@ -38,6 +38,7 @@ import { useNavigationRuntimeProtection } from '../hooks/useNavigationRuntimePro
 import { useOfflineMaps } from '../hooks/useOfflineMaps';
 import { useSdkStepGapDisplay } from '../hooks/useSdkStepGapDisplay';
 import { usePassiveDriveGems } from '../hooks/usePassiveDriveGems';
+import { useThermalMitigations } from '../utils/ThermalMonitor';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useMapLayers } from '../hooks/useMapLayers';
@@ -575,10 +576,12 @@ export default function MapScreen() {
   const { isLight, colors } = useTheme();
   const route = useRoute<RouteProp<MapStackParamList, 'MapMain' | 'MapRedeem'>>();
   const { user, updateUser, refreshUserFromServer, bumpStatsVersion } = useAuth();
+  const { mitigations: thermalMitigations } = useThermalMitigations(ctxNavigating);
   /** Keep GPS scoped to the map unless active navigation is running in the background. */
   const { location, heading, speed, accuracy, isLocating, permissionDenied } = useLocation(isNavActive, {
     paused: !mapTabFocused && !ctxNavigating,
     highAccuracy: mapTabFocused,
+    reduceAccuracyForThermal: thermalMitigations.reduceGpsAccuracy,
   });
 
   // ── Driving mode ──
@@ -1787,6 +1790,15 @@ export default function MapScreen() {
     speed,
     navLogicEffective,
   ]);
+  const navigationPerformanceReduced = nav.isNavigating && (
+    thermalMitigations.reduceMapDetail ||
+    displaySpeedMph > 68
+  );
+  const networkCadenceReduced = nav.isNavigating && (
+    thermalMitigations.batchNetwork ||
+    displaySpeedMph > 55
+  );
+  const renderNonCriticalNavLayers = !nav.isNavigating || !thermalMitigations.pauseNonCriticalLayers;
   const junctionView = useJunctionView({
     step: nav.navigationProgress?.nextStep ?? null,
     distanceMeters: nav.navigationProgress?.nextStepDistanceMeters ?? Number.POSITIVE_INFINITY,
@@ -2424,8 +2436,13 @@ export default function MapScreen() {
 
   const standardBasemapImportConfig = useMemo(
     () =>
-      standardBasemapStyleImportConfig(mapLightPreset, isSatelliteStyle, drivingMode, nav.isNavigating),
-    [mapLightPreset, isSatelliteStyle, drivingMode, nav.isNavigating],
+      standardBasemapStyleImportConfig(
+        mapLightPreset,
+        isSatelliteStyle,
+        navigationPerformanceReduced ? 'calm' : drivingMode,
+        nav.isNavigating,
+      ),
+    [mapLightPreset, isSatelliteStyle, drivingMode, nav.isNavigating, navigationPerformanceReduced],
   );
 
   /** Classic styles: anchor 3D extrusions below labels. On Standard/Satellite the route uses `slot="top"` so it clears 3D buildings. */
@@ -2596,8 +2613,22 @@ export default function MapScreen() {
 
   const currentStep = nav.navigationData?.steps?.[nav.currentStepIndex];
   const upcomingGuidanceStep = useMemo(
-    () => getUpcomingManeuverStep(nav.navigationData?.steps, nav.currentStepIndex),
-    [nav.navigationData?.steps, nav.currentStepIndex],
+    () => {
+      const steps = nav.navigationData?.steps;
+      if (!steps?.length) return null;
+      const progressIdx = nav.navigationProgress?.nextStep?.index;
+      if (
+        typeof progressIdx === 'number' &&
+        Number.isFinite(progressIdx) &&
+        progressIdx >= nav.currentStepIndex &&
+        progressIdx < steps.length
+      ) {
+        const progressStep = getUpcomingManeuverStep(steps, progressIdx);
+        if (progressStep) return progressStep;
+      }
+      return getUpcomingManeuverStep(steps, nav.currentStepIndex);
+    },
+    [nav.navigationData?.steps, nav.currentStepIndex, nav.navigationProgress?.nextStep?.index],
   );
   const lastHapticStepIndexRef = useRef<number | null>(null);
   const lastArrivalHapticKeyRef = useRef<string | null>(null);
@@ -3406,12 +3437,16 @@ export default function MapScreen() {
   // Incident polling — faster while incidents layer is on so pins appear quickly
   useEffect(() => {
     void fetchNearbyIncidents();
-    const ms = showIncidents ? (nav.isNavigating ? 5500 : 10000) : nav.isNavigating ? 15000 : 45000;
+    const ms = showIncidents
+      ? (nav.isNavigating ? (networkCadenceReduced ? 120_000 : 30_000) : 10_000)
+      : nav.isNavigating
+        ? (networkCadenceReduced ? 120_000 : 45_000)
+        : 45_000;
     reportPollRef.current = setInterval(() => void fetchNearbyIncidents(), ms);
     return () => {
       if (reportPollRef.current) clearInterval(reportPollRef.current);
     };
-  }, [nav.isNavigating, fetchNearbyIncidents, showIncidents]);
+  }, [nav.isNavigating, fetchNearbyIncidents, showIncidents, networkCadenceReduced]);
 
   useEffect(() => {
     if (!nav.isNavigating) announcedOfferNavRef.current.clear();
@@ -5501,12 +5536,12 @@ export default function MapScreen() {
             activeStyleURL={activeStyleURL}
             belowLayerID={buildingsBelowLayerId}
           />
-          {showTraffic && <TrafficLayer />}
-          <IncidentHeatmap incidents={nearbyIncidents} visible={showIncidents} />
-          {showPhotoReports && (
+          {showTraffic && !thermalMitigations.pauseNonCriticalLayers && <TrafficLayer />}
+          <IncidentHeatmap incidents={nearbyIncidents} visible={showIncidents && renderNonCriticalNavLayers} />
+          {showPhotoReports && renderNonCriticalNavLayers && (
             <PhotoReportMarkers reports={photoReports} onReportTap={(r) => setSelectedPhotoReport(r)} />
           )}
-          {trafficSafetyWanted && isTrafficSafetyLayerEnabled(poiSearchCoord.lat, poiSearchCoord.lng) && !nav.showRoutePreview && mapZoomLevel >= TRAFFIC_CAM_MIN_ZOOM && (
+          {trafficSafetyWanted && renderNonCriticalNavLayers && isTrafficSafetyLayerEnabled(poiSearchCoord.lat, poiSearchCoord.lng) && !nav.showRoutePreview && mapZoomLevel >= TRAFFIC_CAM_MIN_ZOOM && (
             <TrafficSafetyLayer
               zones={trafficSafetyZones}
               onZoneTap={(z) =>
@@ -5621,7 +5656,7 @@ export default function MapScreen() {
               })()}
 
           <OfferMarkers offers={recommendedNearbyOffers} zoomLevel={mapZoomLevel} onOfferTap={setSelectedOffer} />
-          {showIncidents && <ReportMarkers incidents={nearbyIncidents.filter((inc) => {
+          {showIncidents && renderNonCriticalNavLayers && <ReportMarkers incidents={nearbyIncidents.filter((inc) => {
             if ((inc.upvotes ?? 0) < 0) return false;
             if (inc.type === 'construction') return showConstruction;
             return true;

@@ -10,8 +10,8 @@ export type ManeuverDistanceFormatOptions = {
 
 /**
  * Apple/Mapbox-style turn-card distance:
- * - 1.0+ mi => one decimal miles
- * - 0.1-0.9 mi => one decimal miles
+ * - 10.0+ mi => whole miles
+ * - 0.1-9.9 mi => one decimal mile
  * - under 0.1 mi => feet rounded to 50 ft
  * - imminent => "Now"
  */
@@ -29,7 +29,7 @@ export function formatManeuverDistanceForCard(
 
   const miles = meters / METERS_PER_MILE;
   if (miles >= 0.1) {
-    return { value: miles.toFixed(1), unit: 'MI' };
+    return { value: miles >= 10 ? String(Math.round(miles)) : miles.toFixed(1), unit: 'MI' };
   }
 
   const feet = meters * FEET_PER_METER;

@@ -1,5 +1,5 @@
 import type { NavBannerModel, NavStep } from './navModel';
-import { hudPhraseForManeuverKind } from './spokenManeuver';
+import { hudPhraseForStep } from './spokenManeuver';
 import { bannerFieldsFromNavStep } from './navBannerFromStep';
 import { formatManeuverDistanceBadge } from './utils/distanceFormatter';
 
@@ -28,7 +28,7 @@ function routeContextName(step: NavStep): string | null {
 }
 
 function primaryLine(step: NavStep): string {
-  const base = hudPhraseForManeuverKind(step.kind, step.roundaboutExitNumber);
+  const base = hudPhraseForStep(step);
   const name = routeContextName(step);
   if (!name) return base;
   if (/\b(onto|toward|towards|to)\b/i.test(base)) return base;
@@ -39,7 +39,7 @@ function primaryLine(step: NavStep): string {
 }
 
 function enrichThenLine(following: NavStep, distanceMeters: number): string {
-  const phrase = hudPhraseForManeuverKind(following.kind, following.roundaboutExitNumber);
+  const phrase = hudPhraseForStep(following);
   const name = routeContextName(following);
   const withName =
     name && !/\b(onto|toward|towards|to)\b/i.test(phrase)
