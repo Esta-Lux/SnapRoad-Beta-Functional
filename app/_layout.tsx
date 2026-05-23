@@ -15,8 +15,8 @@ import {
   ThemeProvider,
 } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
-import { WidgetProvider } from "@/contexts/WidgetContext";
-import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { WidgetProvider } from "../contexts/WidgetContext";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 // Note: Error logging is auto-initialized via index.ts import
 
 // Only wrap with ErrorBoundary in dev — production apps should not include it

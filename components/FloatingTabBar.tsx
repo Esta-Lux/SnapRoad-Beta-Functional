@@ -9,8 +9,7 @@ import {
 } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { IconSymbol } from '@/components/IconSymbol';
-import { BlurView } from 'expo-blur';
+import { IconSymbol } from './IconSymbol';
 import { useTheme } from '@react-navigation/native';
 import Animated, {
   useAnimatedStyle,
@@ -163,10 +162,7 @@ export default function FloatingTabBar({
           marginBottom: bottomMargin ?? 20
         }
       ]}>
-        <BlurView
-          intensity={80}
-          style={[dynamicStyles.blurContainer, { borderRadius }]}
-        >
+        <View style={[dynamicStyles.blurContainer, { borderRadius }]}>
           <View style={dynamicStyles.background} />
           <Animated.View style={[dynamicStyles.indicator, indicatorStyle]} />
           <View style={styles.tabsContainer}>
@@ -203,7 +199,7 @@ export default function FloatingTabBar({
               );
             })}
           </View>
-        </BlurView>
+        </View>
       </View>
     </SafeAreaView>
   );

@@ -54,8 +54,12 @@ export function useNavigationRuntimeProtection(
   useEffect(() => {
     if (!isNavigating) return;
     void (async () => {
-      await ensureSnapRoadAndroidNotificationChannels();
-      await requestNavigationGuidanceNotifyPermission();
+      try {
+        await ensureSnapRoadAndroidNotificationChannels();
+        await requestNavigationGuidanceNotifyPermission();
+      } catch {
+        /* Permission prompts / channel setup must not break active navigation. */
+      }
     })();
   }, [isNavigating]);
 

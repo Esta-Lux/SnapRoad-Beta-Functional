@@ -197,14 +197,17 @@ export function useDriveNavigation(params: {
   }, [voiceMuted]);
 
   const navSdkHeadlessRef = useRef(navSdkHeadless);
+  const travelProfileRef = useRef<TravelProfile>('driving-traffic');
+  const navSdkOwnsRoutingRef = useRef(navSdkHeadless);
   useLayoutEffect(() => {
     navSdkHeadlessRef.current = navSdkHeadless;
+    navSdkOwnsRoutingRef.current = navSdkHeadless && travelProfileRef.current !== 'walking';
   }, [navSdkHeadless]);
 
   const navSpeak = useCallback(
     (phrase: string, priority: 'high' | 'normal' = 'normal', mode: DrivingMode = drivingMode) => {
       if (voiceMutedRef.current || !phrase.trim()) return;
-      if (navSdkHeadlessRef.current && isNavigatingRef.current) return;
+      if (navSdkOwnsRoutingRef.current && isNavigatingRef.current) return;
       speak(phrase, priority, mode, { rateSource: 'navigation_fixed' });
     },
     [drivingMode],
@@ -235,9 +238,15 @@ export function useDriveNavigation(params: {
   const [selectedDestination, setSelectedDestination] = useState<GeocodeResult | null>(null);
   /** Driving vs walking — walking uses Mapbox `walking` profile and skips native car Navigation UI. */
   const [travelProfile, setTravelProfile] = useState<TravelProfile>('driving-traffic');
+  const navSdkOwnsTrip = navSdkHeadless && travelProfile !== 'walking';
   const [isRerouting, setIsRerouting] = useState(false);
-  const sdkActive = navSdkHeadless && isNavigating;
+  const sdkActive = navSdkOwnsTrip && isNavigating;
   const navSdkSnapshot = useSyncExternalStore(subscribeNavSdk, getNavSdkState, getNavSdkState);
+
+  useLayoutEffect(() => {
+    travelProfileRef.current = travelProfile;
+    navSdkOwnsRoutingRef.current = navSdkHeadlessRef.current && travelProfile !== 'walking';
+  }, [travelProfile]);
 
   useEffect(() => {
     setNavLogicSdkTripActive(sdkActive);
@@ -701,7 +710,7 @@ export function useDriveNavigation(params: {
       congestionBeforeDirectionsRef.current = null;
     }
 
-    if (navSdkHeadlessRef.current && isNavigatingRef.current && !opts?.forceWhileSdkOwnsRouting) {
+    if (navSdkOwnsRoutingRef.current && isNavigatingRef.current && !opts?.forceWhileSdkOwnsRouting) {
       if (typeof __DEV__ !== 'undefined' && __DEV__) {
         console.warn('[Nav] fetchDirections skipped: Logic SDK owns routing during active navigation.');
       }
@@ -889,7 +898,7 @@ export function useDriveNavigation(params: {
   useEffect(() => {
     if (navRefreshV2Enabled()) return undefined;
     if (!isNavigating || !navigationData?.destination) return undefined;
-    if (navSdkHeadless) return undefined;
+    if (navSdkOwnsTrip) return undefined;
 
     const INTERVAL_MS = 180_000;
     const MIN_BETWEEN_MS = 150_000;
@@ -906,13 +915,13 @@ export function useDriveNavigation(params: {
     }, INTERVAL_MS);
 
     return () => clearInterval(id);
-  }, [isNavigating, navigationData?.destination?.lat, navigationData?.destination?.lng, navSdkHeadless]);
+  }, [isNavigating, navigationData?.destination?.lat, navigationData?.destination?.lng, navSdkOwnsTrip]);
 
   /** Policy-driven refresh: drift, long-step, model speed mismatch, staleness — capped + debounced. */
   useEffect(() => {
     if (!navRefreshV2Enabled()) return undefined;
     if (!isNavigating || !navigationData?.destination) return undefined;
-    if (navSdkHeadless) return undefined;
+    if (navSdkOwnsTrip) return undefined;
 
     const pol = DEFAULT_REFRESH_POLICY;
     const id = setInterval(() => {
@@ -1079,7 +1088,7 @@ export function useDriveNavigation(params: {
     }, pol.policyEvalIntervalMs);
 
     return () => clearInterval(id);
-  }, [isNavigating, navigationData?.destination?.lat, navigationData?.destination?.lng, gpsAccuracy, navSdkHeadless]);
+  }, [isNavigating, navigationData?.destination?.lat, navigationData?.destination?.lng, gpsAccuracy, navSdkOwnsTrip]);
 
   const handleRouteSelect = useCallback((
     routeTypeOrIndex: RouteKind | 'best' | 'eco' | 'alt' | number,
@@ -1219,7 +1228,7 @@ export function useDriveNavigation(params: {
     prefetchedRerouteRef.current = null;
     prefetchInFlightRef.current = false;
     autoEndFromArrivalRef.current = false;
-    if (navSdkHeadless) {
+    if (navSdkOwnsTrip) {
       resetNavSdkState();
       enterSdkGuidanceWaiting();
     }
@@ -1231,7 +1240,7 @@ export function useDriveNavigation(params: {
     setRouteModelRefreshKey((k) => k + 1);
     const dest = activeNavigationData.destination.name ?? 'your destination';
     const etaMin = Math.round(activeNavigationData.duration / 60);
-    if (!navSdkHeadless) {
+    if (!navSdkOwnsTrip) {
       if (drivingMode === 'sport') {
         navSpeak(`${dest}. ${etaMin} minutes.`, 'high', drivingMode);
       } else if (drivingMode === 'calm') {
@@ -1241,7 +1250,7 @@ export function useDriveNavigation(params: {
         navSpeak(`Starting navigation to ${dest}. ${etaMin} minutes.`, 'high', drivingMode);
       }
     }
-  }, [navigationData, drivingMode, navSpeak, navSdkHeadless]);
+  }, [navigationData, drivingMode, navSpeak, navSdkOwnsTrip]);
 
   const stopNavigation = useCallback(() => {
     const sessionAge = Date.now() - navSessionStartRef.current;
@@ -1541,7 +1550,7 @@ export function useDriveNavigation(params: {
 
   /** Single projection + traveled/remaining: drives step index, ETA, voice, reroute, and route split in MapScreen. */
   const routeProgress = useMemo((): NavigationRouteProgress | null => {
-    if (isNavigating && navSdkHeadless) return null;
+    if (isNavigating && navSdkOwnsTrip) return null;
     if (!isNavigating || !navigationData?.polyline || navigationData.polyline.length < 2) return null;
     return computeNavigationRouteProgress(
       navigationProgressCoord,
@@ -1550,7 +1559,7 @@ export function useDriveNavigation(params: {
     );
   }, [
     isNavigating,
-    navSdkHeadless,
+    navSdkOwnsTrip,
     navigationData?.polyline,
     navigationData?.distance,
     navigationProgressCoord.lat,
@@ -1576,10 +1585,10 @@ export function useDriveNavigation(params: {
     if (!isNavigating || !navigationData?.polyline?.length) {
       return;
     }
-    if (navSdkHeadless && navigationProgress?.instructionSource === 'sdk_waiting') {
+    if (navSdkOwnsTrip && navigationProgress?.instructionSource === 'sdk_waiting') {
       return;
     }
-    if (navSdkHeadless && navigationProgress?.instructionSource === 'sdk') {
+    if (navSdkOwnsTrip && navigationProgress?.instructionSource === 'sdk') {
       const si = navSdkSnapshot.progress?.stepIndex ?? navigationProgress.nextStep?.index;
       if (si == null) return;
       const maxStep = navigationData.steps?.length
@@ -1611,7 +1620,7 @@ export function useDriveNavigation(params: {
     navigationData?.polyline,
     navigationProgress?.snapped?.cumulativeMeters,
     routeProgress?.cumFromStartMeters,
-    navSdkHeadless,
+    navSdkOwnsTrip,
     navSdkSnapshot.progress?.stepIndex,
     navigationProgress?.nextStep?.index,
     navigationProgress?.instructionSource,
@@ -1623,7 +1632,7 @@ export function useDriveNavigation(params: {
       hasAnnouncedArrivalRef.current = false;
       return;
     }
-    if (navSdkHeadless) return;
+    if (navSdkOwnsTrip) return;
     if (hasAnnouncedArrivalRef.current) return;
     if (navigationProgress?.nextStep?.kind !== 'arrive') return;
     const dest = navigationData.destination;
@@ -1666,7 +1675,7 @@ export function useDriveNavigation(params: {
 
   // --- Auto end at destination: arrival voice did not call stopNavigation before; users were stuck "navigating". ---
   useEffect(() => {
-    if (navSdkHeadless) return;
+    if (navSdkOwnsTrip) return;
     if (!isNavigating || !navigationData?.destination) return;
     if (autoEndNavTriggeredRef.current) return;
     const dest = navigationData.destination;
@@ -1760,7 +1769,7 @@ export function useDriveNavigation(params: {
    * arrival callback so the trip can only end once.
    */
   useEffect(() => {
-    if (!navSdkHeadless) return;
+    if (!navSdkOwnsTrip) return;
     if (!isNavigating || !navigationData?.destination) return;
     if (autoEndNavTriggeredRef.current) return;
 
@@ -1819,7 +1828,7 @@ export function useDriveNavigation(params: {
       stopNavigation();
     });
   }, [
-    navSdkHeadless,
+    navSdkOwnsTrip,
     isNavigating,
     navigationData?.destination?.lat,
     navigationData?.destination?.lng,
@@ -1839,7 +1848,7 @@ export function useDriveNavigation(params: {
   // call. If the user is confirmed off-route, the pre-fetched result is used immediately
   // (saves ~1–2 s of perceived reroute latency).
   useEffect(() => {
-    if (navSdkHeadless) {
+    if (navSdkOwnsTrip) {
       offRouteStreakRef.current = 0;
       driftSnapHistoryRef.current = [];
       rampCommitmentUntilRef.current = 0;
@@ -2031,7 +2040,7 @@ export function useDriveNavigation(params: {
     fetchDirections,
     navSpeak,
     navModeProfile.offRoute,
-    navSdkHeadless,
+    navSdkOwnsTrip,
   ]);
 
   /**
@@ -2058,7 +2067,7 @@ export function useDriveNavigation(params: {
    *     SDK its full chance to recover on its own.
    */
   useEffect(() => {
-    if (!navSdkHeadless) {
+    if (!navSdkOwnsTrip) {
       sdkBackstopOffStreakRef.current = 0;
       return;
     }
@@ -2148,7 +2157,7 @@ export function useDriveNavigation(params: {
       }
     })();
   }, [
-    navSdkHeadless,
+    navSdkOwnsTrip,
     isNavigating,
     navigationData?.destination,
     navigationData?.polyline,
@@ -2163,7 +2172,7 @@ export function useDriveNavigation(params: {
 
   const addWaypoint = useCallback(async (waypoint: Coordinate & { name?: string }) => {
     if (!isNavigatingRef.current || !navigationData?.destination) return;
-    if (navSdkHeadless) {
+    if (navSdkOwnsTrip) {
       console.warn('addWaypoint: not supported while EXPO_PUBLIC_NAV_LOGIC_SDK trip is active');
       return;
     }
@@ -2206,7 +2215,7 @@ export function useDriveNavigation(params: {
     } finally {
       setIsRerouting(false);
     }
-  }, [navigationData, userLocation, drivingMode, navSpeak, navSdkHeadless]);
+  }, [navigationData, userLocation, drivingMode, navSpeak, navSdkOwnsTrip]);
 
   useEffect(() => {
     if (!isNavigating || !navigationData?.distance || !routeProgress) return;
@@ -2241,7 +2250,7 @@ export function useDriveNavigation(params: {
   ]);
 
   useEffect(() => {
-    if (navSdkHeadless) return;
+    if (navSdkOwnsTrip) return;
     if (!isNavigating || !routeProgress) return;
     const speedMps = speed * 0.44704;
     const thresholdM =
@@ -2265,7 +2274,7 @@ export function useDriveNavigation(params: {
   }, [
     gpsAccuracy,
     isNavigating,
-    navSdkHeadless,
+    navSdkOwnsTrip,
     navigationData?.distance,
     routeProgress,
     speed,
@@ -2353,7 +2362,7 @@ export function useDriveNavigation(params: {
     /** Bumps when route geometry/ETA model refreshes (JS reroute, SDK `applySdkRouteGeometry`). Map overlay keys may use this. */
     routeModelRefreshKey,
     /** Headless SDK diagnostics (Expo env + native ingest). Dev HUD only. */
-    sdkNavDiag: navSdkHeadless
+    sdkNavDiag: navSdkOwnsTrip
       ? {
           lastProgressIngestAtMs: navSdkSnapshot.lastProgressIngestAtMs,
           lastVoiceInstructionText: navSdkSnapshot.lastVoiceInstructionText,
@@ -2363,7 +2372,7 @@ export function useDriveNavigation(params: {
         }
       : null,
     /** Native matched location for map puck (`CustomLocationProvider`) — null when not in logic SDK mode. */
-    sdkNavLocation: navSdkHeadless ? navSdkSnapshot.location : null,
+    sdkNavLocation: navSdkOwnsTrip ? navSdkSnapshot.location : null,
     /**
      * Native SDK speed limit in m/s (nullable). Prefer this over Directions
      * `maxspeeds[stepIndex]` when available — the SDK updates continuously and
@@ -2371,24 +2380,24 @@ export function useDriveNavigation(params: {
      * the native engine even when the JS map owns presentation.
      */
     sdkSpeedLimitMps:
-      navSdkHeadless && sdkActive
+      navSdkOwnsTrip && sdkActive
         ? navSdkSnapshot.location?.speedLimitMps ??
           navSdkSnapshot.progress?.speedLimitMps ??
           null
         : null,
     /** Native mirror bridge — camera viewport (when native emits it). */
-    sdkNativeCameraState: navSdkHeadless ? navSdkSnapshot.nativeCameraState : null,
+    sdkNativeCameraState: navSdkOwnsTrip ? navSdkSnapshot.nativeCameraState : null,
     /** Native mirror bridge — locale-formatted turn distance (from progress or standalone event). */
-    sdkNativeFormattedDistance: navSdkHeadless ? navSdkSnapshot.nativeFormattedDistance : null,
+    sdkNativeFormattedDistance: navSdkOwnsTrip ? navSdkSnapshot.nativeFormattedDistance : null,
     /**
      * Latest raw `onRouteProgressChanged` payload (headless SDK). Use with
      * `sdkManeuverDisplayDistanceFromProgress` for turn distance so the card never reads
      * stale `banner` text from `navigationProgressGuidance` (see MapScreen).
      */
-    sdkNavProgress: navSdkHeadless ? navSdkSnapshot.progress : null,
+    sdkNavProgress: navSdkOwnsTrip ? navSdkSnapshot.progress : null,
     /** Native mirror bridge — per-lane PNGs (aligned with `lanes.length` when lengths match). */
-    sdkNativeLaneAssets: navSdkHeadless ? navSdkSnapshot.nativeLaneAssets : null,
+    sdkNativeLaneAssets: navSdkOwnsTrip ? navSdkSnapshot.nativeLaneAssets : null,
     /** Native route polyline from `ingestSdkRoutePolyline` — use for map visuals during logic SDK trips (no REST line). */
-    sdkRoutePolyline: navSdkHeadless ? navSdkSnapshot.routePolyline : [],
+    sdkRoutePolyline: navSdkOwnsTrip ? navSdkSnapshot.routePolyline : [],
   };
 }

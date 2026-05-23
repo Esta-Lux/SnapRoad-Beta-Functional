@@ -712,6 +712,7 @@ export default function MapScreen() {
     navSdkHeadless: navLogicEffective,
     tripFuelContextRef,
   });
+  const isWalkingNavigation = nav.isNavigating && nav.travelProfile === 'walking';
   useNavigationRuntimeProtection(nav.isNavigating, nav.navigationProgress);
   const offlineMaps = useOfflineMaps();
 
@@ -1356,8 +1357,8 @@ export default function MapScreen() {
 
     const nextLock = nav.isNavigating
       ? updateStationaryLock(stationaryLockRef.current, {
-          speedMph: speedMphSmoothed,
-          rawSpeedMps: sdkSpeedMps,
+          speedMph: isWalkingNavigation ? Math.max(speedMphSmoothed, 3.2) : speedMphSmoothed,
+          rawSpeedMps: isWalkingNavigation ? Math.max(sdkSpeedMps, 1.35) : sdkSpeedMps,
           matched,
           trueLoc,
           heading: typeof headingCandidate === 'number' && Number.isFinite(headingCandidate)
@@ -1432,6 +1433,7 @@ export default function MapScreen() {
     location.lng,
     speed,
     accuracy,
+    isWalkingNavigation,
     nav.sdkNavLocation?.speed,
     nav.navigationProgress?.displayCoord?.speedMps,
   ]);
@@ -1456,10 +1458,10 @@ export default function MapScreen() {
 
   /** Higher `minMoveMeters` / `slowMinMoveMeters` hold tiny matcher jitter so the HUD puck glides instead of twitching. */
   const navDisplaySmoothing = useMemo(() => ({
-    minMoveMeters: 3.6,
-    slowMinMoveMeters: 5.4,
-    timeConstantMs: drivingMode === 'calm' ? 470 : drivingMode === 'sport' ? 390 : 430,
-  }), [drivingMode]);
+    minMoveMeters: isWalkingNavigation ? 0.9 : 3.6,
+    slowMinMoveMeters: isWalkingNavigation ? 1.2 : 5.4,
+    timeConstantMs: isWalkingNavigation ? 220 : drivingMode === 'calm' ? 470 : drivingMode === 'sport' ? 390 : 430,
+  }), [drivingMode, isWalkingNavigation]);
 
   const browseDisplaySmoothing = useMemo(() => ({
     minMoveMeters: 3.4,
