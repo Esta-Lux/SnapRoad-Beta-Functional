@@ -1,8 +1,8 @@
 # Python 3.12+ (CI uses 3.12; 3.13+ supported)
 redis
-# Pin starlette <1 until stack is validated on Starlette 1.x (CVE fixes require >=0.47.2)
+# Pin Starlette to the current security-fixed major until the FastAPI stack is validated on 2.x.
 fastapi==0.135.2
-starlette>=0.47.2,<1.0.0
+starlette>=1.0.1,<2.0.0
 uvicorn[standard]==0.34.0
 # Align with supabase realtime (>=2.11.7) and fastapi (>=2.9)
 pydantic>=2.11.7,<3.0.0
