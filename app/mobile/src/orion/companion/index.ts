@@ -16,3 +16,8 @@ export {
 export { buildOrionNavVoiceSnapshot } from './orionNavVoiceSnapshot';
 export { requestOrionAdvisorySpeech, deliverCompanionSpeech } from './OrionSpeechCoordinator';
 export { shouldSkipOrionBuddyTail } from './buddyTailPolicy';
+export {
+  publishOrionNavigationEvent,
+  subscribeOrionNavigationEvents,
+  type OrionNavigationEvent,
+} from './orionNavEventBus';

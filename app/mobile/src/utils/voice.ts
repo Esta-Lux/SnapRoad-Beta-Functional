@@ -13,6 +13,7 @@ import type { OrionVoiceChannel } from './orionElevenLabsSpeech';
 
 let lastSpokenPhrase = '';
 let lastSpokenAt = 0;
+let activeSpeechRequestId = 0;
 /** Shorten gap slightly so stacked prompts (reroute + turn) are less likely to drop the second cue. */
 const MIN_GAP_MS = 2200;
 /** Min interval between **different** turn-by-turn cues (normal `speak()` would block these at MIN_GAP_MS). */
@@ -182,6 +183,28 @@ function onUtteranceFinished() {
   void restoreDefaultAudioSession();
 }
 
+function beginSpeechRequest(stopCurrent = false): number {
+  activeSpeechRequestId += 1;
+  if (stopCurrent) {
+    Speech.stop();
+    void stopElevenLabsPlaybackQuiet();
+  }
+  return activeSpeechRequestId;
+}
+
+function isCurrentSpeechRequest(id: number): boolean {
+  return id === activeSpeechRequestId;
+}
+
+async function stopElevenLabsPlaybackQuiet(): Promise<void> {
+  try {
+    const { stopElevenLabsPlayback } = await import('./orionElevenLabsSpeech');
+    stopElevenLabsPlayback();
+  } catch {
+    /* ignore */
+  }
+}
+
 /** True when the bundle asks the backend for ElevenLabs audio (`/api/orion/voice/synthesize`). */
 export function elevenLabsVoiceIntentEnabled(): boolean {
   const extra = Constants.expoConfig?.extra as { orionElevenLabsVoiceEnabled?: boolean | string } | undefined;
@@ -194,12 +217,19 @@ export function elevenLabsVoiceIntentEnabled(): boolean {
 async function trySpeakWithElevenLabs(
   phrase: string,
   channel: OrionVoiceChannel,
+  requestId: number,
   onFinish?: () => void,
 ): Promise<boolean> {
   if (!elevenLabsVoiceIntentEnabled()) return false;
   try {
     const { speakWithElevenLabs } = await import('./orionElevenLabsSpeech');
-    return await speakWithElevenLabs(phrase, { channel, onFinish });
+    return await speakWithElevenLabs(phrase, {
+      channel,
+      onFinish: () => {
+        if (isCurrentSpeechRequest(requestId)) onFinish?.();
+      },
+      isStale: () => !isCurrentSpeechRequest(requestId),
+    });
   } catch {
     return false;
   }
@@ -208,10 +238,13 @@ async function trySpeakWithElevenLabs(
 async function speakNavigationWithFallback(
   phrase: string,
   mode: DrivingMode,
+  requestId: number,
 ): Promise<void> {
-  const spokenByElevenLabs = await trySpeakWithElevenLabs(phrase, 'navigation');
+  const spokenByElevenLabs = await trySpeakWithElevenLabs(phrase, 'navigation', requestId);
   if (spokenByElevenLabs) return;
+  if (!isCurrentSpeechRequest(requestId)) return;
   const voiceId = await getPreferredTtsVoiceIdentifier();
+  if (!isCurrentSpeechRequest(requestId)) return;
   const profile = getTtsSpeechProfile(mode);
   Speech.speak(phrase, {
     rate: profile.rate,
@@ -219,9 +252,15 @@ async function speakNavigationWithFallback(
     volume: profile.volume,
     language: profile.language,
     ...(voiceId ? { voice: voiceId } : {}),
-    onDone: onUtteranceFinished,
-    onStopped: onUtteranceFinished,
-    onError: onUtteranceFinished,
+    onDone: () => {
+      if (isCurrentSpeechRequest(requestId)) onUtteranceFinished();
+    },
+    onStopped: () => {
+      if (isCurrentSpeechRequest(requestId)) onUtteranceFinished();
+    },
+    onError: () => {
+      if (isCurrentSpeechRequest(requestId)) onUtteranceFinished();
+    },
   });
 }
 
@@ -269,7 +308,7 @@ export function speak(
   lastSpokenPhrase = normalized;
   lastSpokenAt = now;
 
-  if (priority === 'high') Speech.stop();
+  const requestId = beginSpeechRequest(priority === 'high');
 
   const profile = getTtsSpeechProfile(mode);
   if (rateSource === 'navigation_fixed') {
@@ -278,23 +317,32 @@ export function speak(
 
   void (async () => {
     await configureAudioSessionForSpeechOutput();
+    if (!isCurrentSpeechRequest(requestId)) return;
     const channel = rateSource === 'navigation_fixed' ? 'navigation' : 'advisory';
     if (rateSource === 'navigation_fixed') {
-      await speakNavigationWithFallback(phrase, mode);
+      await speakNavigationWithFallback(phrase, mode, requestId);
       return;
     }
-    const spokenByElevenLabs = await trySpeakWithElevenLabs(phrase, channel);
+    const spokenByElevenLabs = await trySpeakWithElevenLabs(phrase, channel, requestId);
     if (spokenByElevenLabs) return;
+    if (!isCurrentSpeechRequest(requestId)) return;
     const voiceId = await getPreferredTtsVoiceIdentifier();
+    if (!isCurrentSpeechRequest(requestId)) return;
     Speech.speak(phrase, {
       rate: profile.rate,
       pitch: profile.pitch,
       volume: profile.volume,
       language: profile.language,
       ...(voiceId ? { voice: voiceId } : {}),
-      onDone: onUtteranceFinished,
-      onStopped: onUtteranceFinished,
-      onError: onUtteranceFinished,
+      onDone: () => {
+        if (isCurrentSpeechRequest(requestId)) onUtteranceFinished();
+      },
+      onStopped: () => {
+        if (isCurrentSpeechRequest(requestId)) onUtteranceFinished();
+      },
+      onError: () => {
+        if (isCurrentSpeechRequest(requestId)) onUtteranceFinished();
+      },
     });
   })();
 }
@@ -326,13 +374,14 @@ export function speakGuidance(
   if (normalized !== lastSpokenPhrase && now - lastSpokenAt < GUIDANCE_MIN_MS) return;
   lastSpokenPhrase = normalized;
   lastSpokenAt = now;
+  const requestId = beginSpeechRequest(true);
 
   markNavVoiceFromJs();
 
   void (async () => {
-    Speech.stop();
     await configureAudioSessionForSpeechOutput();
-    await speakNavigationWithFallback(phrase, mode);
+    if (!isCurrentSpeechRequest(requestId)) return;
+    await speakNavigationWithFallback(phrase, mode, requestId);
   })();
 }
 
@@ -345,13 +394,16 @@ export function speakOrionReply(text: string, onFinish?: () => void, mode: Drivi
     onFinish?.();
     return;
   }
+  const requestId = beginSpeechRequest(true);
   void (async () => {
     try {
-      Speech.stop();
       await configureAudioSessionForSpeechOutput();
-      const spokenByElevenLabs = await trySpeakWithElevenLabs(text.trim(), 'orion', onFinish);
+      if (!isCurrentSpeechRequest(requestId)) return;
+      const spokenByElevenLabs = await trySpeakWithElevenLabs(text.trim(), 'orion', requestId, onFinish);
       if (spokenByElevenLabs) return;
+      if (!isCurrentSpeechRequest(requestId)) return;
       const voiceId = await getPreferredTtsVoiceIdentifier();
+      if (!isCurrentSpeechRequest(requestId)) return;
       const profile = getTtsSpeechProfile(mode);
       Speech.speak(text.trim(), {
         rate: profile.rate,
@@ -359,18 +411,26 @@ export function speakOrionReply(text: string, onFinish?: () => void, mode: Drivi
         volume: profile.volume,
         language: profile.language,
         ...(voiceId ? { voice: voiceId } : {}),
-        onDone: onFinish,
-        onStopped: onFinish,
-        onError: onFinish,
+        onDone: () => {
+          if (isCurrentSpeechRequest(requestId)) onFinish?.();
+        },
+        onStopped: () => {
+          if (isCurrentSpeechRequest(requestId)) onFinish?.();
+        },
+        onError: () => {
+          if (isCurrentSpeechRequest(requestId)) onFinish?.();
+        },
       });
     } catch {
-      onFinish?.();
+      if (isCurrentSpeechRequest(requestId)) onFinish?.();
     }
   })();
 }
 
 export function stopSpeaking() {
+  beginSpeechRequest(true);
   Speech.stop();
+  void stopElevenLabsPlaybackQuiet();
   void restoreDefaultAudioSession();
 }
 

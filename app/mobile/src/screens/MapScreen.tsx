@@ -213,6 +213,7 @@ import { isProviderTrafficIncident } from '../utils/incidentSource';
 import {
   buildOrionNavVoiceSnapshot,
   getOrionCompanionMemory,
+  publishOrionNavigationEvent,
   requestOrionAdvisorySpeech,
 } from '../orion/companion';
 import type { OrionHudLineMeta } from '../orion/companion/types';
@@ -1020,7 +1021,6 @@ export default function MapScreen() {
 
   const sdkRouteHandoffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sdkRouteHandoffUi, setSdkRouteHandoffUi] = useState(false);
-  const orionCompanionRerouteRef = useRef<() => void>(() => {});
 
   const handleSdkRouteChanged = useCallback(
     (event: { nativeEvent: { routes?: SdkRoutesNative } }) => {
@@ -1030,7 +1030,7 @@ export default function MapScreen() {
       }
       setSdkRouteHandoffUi(true);
       ingestSdkRouteChangedEvent();
-      orionCompanionRerouteRef.current();
+      publishOrionNavigationEvent({ type: 'reroute' });
       const routes = event.nativeEvent.routes;
       if (!routes?.mainRoute) {
         sdkRouteHandoffTimerRef.current = setTimeout(() => {
@@ -4406,7 +4406,7 @@ export default function MapScreen() {
     [nav.navigationData?.congestion, nav.navigationProgress?.snapped?.segmentIndex],
   );
 
-  const orionCompanion = useOrionCompanion({
+  useOrionCompanion({
     getSnapshot: () => {
       const tripMs =
         navTripStartMsRef.current > 0 ? Date.now() - navTripStartMsRef.current : 0;
@@ -4439,57 +4439,51 @@ export default function MapScreen() {
   });
 
   useEffect(() => {
-    orionCompanionRerouteRef.current = () => {
-      orionCompanion.onReroute();
-    };
-  }, [orionCompanion.onReroute]);
-
-  useEffect(() => {
     if (nav.isNavigating && !prevNavigatingForOrionRef.current) {
       navTripStartMsRef.current = Date.now();
       if (!navigationTripIdRef.current) {
         navigationTripIdRef.current = `trip-${Date.now()}`;
       }
-      orionCompanion.onNavigationStarted(navigationTripIdRef.current);
+      publishOrionNavigationEvent({ type: 'navigation_started', tripId: navigationTripIdRef.current });
     }
     if (!nav.isNavigating) {
       navTripStartMsRef.current = 0;
-      orionCompanion.resetTripSession();
+      publishOrionNavigationEvent({ type: 'navigation_reset' });
     }
     prevNavigatingForOrionRef.current = nav.isNavigating;
-  }, [nav.isNavigating, orionCompanion]);
+  }, [nav.isNavigating]);
 
   const prevReroutingRef = useRef(false);
   useEffect(() => {
     if (nav.isRerouting && !prevReroutingRef.current) {
-      orionCompanion.onReroute();
+      publishOrionNavigationEvent({ type: 'reroute' });
     }
     prevReroutingRef.current = nav.isRerouting;
-  }, [nav.isRerouting, orionCompanion]);
+  }, [nav.isRerouting]);
 
   useEffect(() => {
     if (nav.isNavigating && navCongestionSevere && !prevSevereCongestionRef.current) {
-      orionCompanion.onHeavyTraffic();
+      publishOrionNavigationEvent({ type: 'heavy_traffic' });
     }
     prevSevereCongestionRef.current = navCongestionSevere;
     if (!nav.isNavigating) prevSevereCongestionRef.current = false;
-  }, [nav.isNavigating, navCongestionSevere, orionCompanion]);
+  }, [nav.isNavigating, navCongestionSevere]);
 
   const prevTripSummaryForOrionRef = useRef<typeof activeTripSummary>(null);
   useEffect(() => {
     if (activeTripSummary && activeTripSummary !== prevTripSummaryForOrionRef.current) {
       if (activeTripSummary.arrivedAtDestination !== false) {
-        orionCompanion.onArrival();
+        publishOrionNavigationEvent({ type: 'arrival' });
       }
     }
     prevTripSummaryForOrionRef.current = activeTripSummary;
-  }, [activeTripSummary, orionCompanion]);
+  }, [activeTripSummary]);
 
   useEffect(() => {
     if (showGemOverlay && gemOverlayAmount > 0) {
-      orionCompanion.onRewardEarned(gemOverlayAmount);
+      publishOrionNavigationEvent({ type: 'reward_earned', gemsDelta: gemOverlayAmount });
     }
-  }, [showGemOverlay, gemOverlayAmount, orionCompanion]);
+  }, [showGemOverlay, gemOverlayAmount]);
 
   const handleStartDirections = useCallback(
     async (

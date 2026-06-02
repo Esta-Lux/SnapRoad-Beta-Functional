@@ -17,6 +17,7 @@ import {
 import { deliverCompanionSpeech } from './OrionSpeechCoordinator';
 import { orionCompanionV1Enabled } from './orionCompanionFlags';
 import type { LlmDialogueProvider } from './llmDialogueProvider';
+import { subscribeOrionNavigationEvents } from './orionNavEventBus';
 import type { OrionPreferences } from '../../types/orionPreferences';
 import { DEFAULT_ORION_PREFERENCES } from '../../types/orionPreferences';
 import type { OrionCompanionEventType, OrionDriveContextInput, OrionHudLineMeta } from './types';
@@ -232,6 +233,33 @@ export function useOrionCompanion({
     if (!enabled) return;
     void emitOrionEvent('heavy_traffic', { trafficLevel: 'heavy', congestionNearManeuver: true });
   }, [enabled, emitOrionEvent]);
+
+  useEffect(() => {
+    if (!enabled) return undefined;
+    return subscribeOrionNavigationEvents((event) => {
+      if (event.type === 'navigation_started') {
+        onNavigationStarted(event.tripId);
+      } else if (event.type === 'reroute') {
+        onReroute();
+      } else if (event.type === 'arrival') {
+        onArrival();
+      } else if (event.type === 'reward_earned') {
+        onRewardEarned(event.gemsDelta);
+      } else if (event.type === 'heavy_traffic') {
+        onHeavyTraffic();
+      } else if (event.type === 'navigation_reset') {
+        resetTripSession();
+      }
+    });
+  }, [
+    enabled,
+    onNavigationStarted,
+    onReroute,
+    onArrival,
+    onRewardEarned,
+    onHeavyTraffic,
+    resetTripSession,
+  ]);
 
   useEffect(() => {
     if (!enabled) {

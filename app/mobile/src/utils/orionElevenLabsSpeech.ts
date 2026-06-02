@@ -17,7 +17,11 @@ type OrionVoiceResponse = {
 type ElevenLabsSpeechOptions = {
   channel?: OrionVoiceChannel;
   onFinish?: () => void;
+  isStale?: () => boolean;
 };
+
+let activeSound: Audio.Sound | null = null;
+let activeCacheUri: string | null = null;
 
 function enabled(): boolean {
   const extra = Constants.expoConfig?.extra as { orionElevenLabsVoiceEnabled?: boolean | string } | undefined;
@@ -74,12 +78,26 @@ async function deleteFsFileQuiet(uri: string): Promise<void> {
   }
 }
 
+export function stopElevenLabsPlayback(): void {
+  const sound = activeSound;
+  const cacheUri = activeCacheUri;
+  activeSound = null;
+  activeCacheUri = null;
+  if (sound) {
+    void sound.stopAsync().catch(() => {});
+    void sound.unloadAsync().catch(() => {});
+  }
+  if (cacheUri) void deleteFsFileQuiet(cacheUri);
+  void restorePlaybackSession();
+}
+
 export async function speakWithElevenLabs(
   text: string,
   options?: ElevenLabsSpeechOptions,
 ): Promise<boolean> {
   const clean = text.trim();
   if (!enabled() || !clean) return false;
+  if (options?.isStale?.()) return true;
 
   let cacheUri: string | null = null;
   try {
@@ -89,8 +107,10 @@ export async function speakWithElevenLabs(
     });
     const data = normalizeVoicePayload(result.data);
     if (!result.success || !data?.success || !data.audio_base64?.trim()) return false;
+    if (options?.isStale?.()) return true;
 
     await configurePlaybackSession();
+    if (options?.isStale?.()) return true;
 
     /** Data-URI playback is flaky on some Android builds; cache MP3 bytes then play `file://`. */
     const fsFile = new FsFile(
@@ -100,12 +120,30 @@ export async function speakWithElevenLabs(
     fsFile.create({ overwrite: true });
     fsFile.write(data.audio_base64.trim(), { encoding: 'base64' });
     cacheUri = fsFile.uri;
+    if (options?.isStale?.()) {
+      await deleteFsFileQuiet(cacheUri);
+      return true;
+    }
 
     const { sound } = await Audio.Sound.createAsync({ uri: cacheUri }, { shouldPlay: true });
+    if (options?.isStale?.()) {
+      await sound.unloadAsync().catch(() => {});
+      await deleteFsFileQuiet(cacheUri);
+      return true;
+    }
+    stopElevenLabsPlayback();
+    activeSound = sound;
+    activeCacheUri = cacheUri;
     sound.setOnPlaybackStatusUpdate((status) => {
+      if (options?.isStale?.()) {
+        stopElevenLabsPlayback();
+        return;
+      }
       if (!status.isLoaded) {
         options?.onFinish?.();
         void restorePlaybackSession();
+        if (activeSound === sound) activeSound = null;
+        if (activeCacheUri === cacheUri) activeCacheUri = null;
         void sound.unloadAsync();
         void deleteFsFileQuiet(cacheUri!);
         return;
@@ -113,6 +151,8 @@ export async function speakWithElevenLabs(
       if (status.didJustFinish) {
         options?.onFinish?.();
         void restorePlaybackSession();
+        if (activeSound === sound) activeSound = null;
+        if (activeCacheUri === cacheUri) activeCacheUri = null;
         void sound.unloadAsync();
         void deleteFsFileQuiet(cacheUri!);
       }
