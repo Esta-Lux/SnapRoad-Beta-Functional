@@ -38,7 +38,39 @@ const VERIFY_THROTTLE_MS: Record<string, number> = {
   'render.polyline': 1500,
   'provider.mount': 1500,
   'reroute.handoff': 0,
+  'transition.sdk_ingest': 300,
+  'transition.route_change': 0,
+  'transition.guidance_identity': 0,
+  'transition.turn_card_render': 300,
+  'transition.orion_event': 0,
+  'transition.speech_decision': 0,
 };
+
+export type NavTransitionTraceChannel =
+  | 'sdk_ingest'
+  | 'route_change'
+  | 'guidance_identity'
+  | 'turn_card_render'
+  | 'orion_event'
+  | 'speech_decision';
+
+export type NavTransitionTraceEvent = {
+  tripId?: string | null;
+  sdkPhase?: string | null;
+  legIndex?: number | null;
+  stepIndex?: number | null;
+  instructionSource?: 'sdk' | 'sdk_waiting' | 'js' | 'unknown' | string | null;
+  distanceToManeuverM?: number | null;
+  instruction?: string | null;
+  orionEventType?: string | null;
+  speechAllowed?: boolean | null;
+  speechReason?: string | null;
+  guidanceStepIdentity?: string | null;
+  criticalTurnTransition?: boolean | null;
+  [key: string]: unknown;
+};
+
+let transitionSeq = 0;
 
 /**
  * NDJSON-style single-line log for runtime verification of the navigation
@@ -55,7 +87,8 @@ export function logNavVerify(
     | 'projection'
     | 'render.polyline'
     | 'provider.mount'
-    | 'reroute.handoff',
+    | 'reroute.handoff'
+    | `transition.${NavTransitionTraceChannel}`,
   payload: Record<string, unknown>,
 ): void {
   if (!navLogicDebugEnabled()) return;
@@ -67,4 +100,23 @@ export function logNavVerify(
   const line = JSON.stringify({ ts: now, channel, ...payload });
   // eslint-disable-next-line no-console
   console.log('[NavVerify]', line);
+}
+
+export function logNavTransition(
+  channel: NavTransitionTraceChannel,
+  payload: NavTransitionTraceEvent = {},
+): void {
+  if (!navLogicDebugEnabled()) return;
+  transitionSeq += 1;
+  logNavVerify(`transition.${channel}`, {
+    seq: transitionSeq,
+    ...payload,
+  });
+}
+
+export function resetNavTransitionTraceForTests(): void {
+  transitionSeq = 0;
+  Object.keys(lastVerifyLogByChannel).forEach((key) => {
+    delete lastVerifyLogByChannel[key];
+  });
 }

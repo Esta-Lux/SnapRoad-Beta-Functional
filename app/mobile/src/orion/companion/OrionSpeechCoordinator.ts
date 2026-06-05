@@ -1,4 +1,5 @@
 import type { DrivingMode } from '../../types';
+import { logNavTransition } from '../../navigation/navLogicDebug';
 import { markNavVoiceFromJs } from '../../navigation/navSdkStore';
 import { passesAdvisorySpeechGates } from './advisorySpeechGates';
 import { buildOrionDriveContext } from './OrionContextEngine';
@@ -79,8 +80,29 @@ export function requestOrionAdvisorySpeech(input: AdvisorySpeechInput): Advisory
   });
 
   if (!gate.allowed) {
+    logNavTransition('speech_decision', {
+      tripId: ctx.tripId,
+      instructionSource: ctx.guidanceInstructionSource,
+      guidanceStepIdentity: ctx.guidanceStepIdentity,
+      distanceToManeuverM: ctx.nextStepDistanceMeters,
+      criticalTurnTransition: ctx.criticalTurnTransition,
+      orionEventType: 'advisory',
+      speechAllowed: false,
+      speechReason: gate.reason,
+    });
     return { spoken: false, reason: gate.reason };
   }
+
+  logNavTransition('speech_decision', {
+    tripId: ctx.tripId,
+    instructionSource: ctx.guidanceInstructionSource,
+    guidanceStepIdentity: ctx.guidanceStepIdentity,
+    distanceToManeuverM: ctx.nextStepDistanceMeters,
+    criticalTurnTransition: ctx.criticalTurnTransition,
+    orionEventType: 'advisory',
+    speechAllowed: true,
+    speechReason: 'allowed',
+  });
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { speak } = require('../../utils/voice') as typeof import('../../utils/voice');

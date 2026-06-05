@@ -80,6 +80,56 @@ test('urgent police bypasses category cooldown in gates', () => {
   assert.equal(gate.allowed, true);
 });
 
+test('critical turn transition blocks normal preapproved companion speech', () => {
+  const memory = createInMemoryOrionMemory();
+  const ctx = buildOrionDriveContext({
+    isNavigating: true,
+    nowMs: Date.now(),
+    nextStepDistanceMeters: 500,
+    criticalTurnTransition: true,
+  });
+  const gate = passesAdvisorySpeechGates({
+    ctx,
+    message: 'You earned gems.',
+    category: 'reward',
+    priority: 'normal',
+    memory,
+    navVoice: {
+      guidanceSuppressed: false,
+      msSinceLastSdkVoice: 99_000,
+      advisorySdkHoldoffMs: 3000,
+      imminentManeuver: false,
+    },
+    preApproved: true,
+  });
+  assert.equal(gate.allowed, false);
+  assert.equal(gate.reason, 'critical_turn_transition');
+});
+
+test('urgent safety can pass critical transition gate when turn voice window is clear', () => {
+  const memory = createInMemoryOrionMemory();
+  const ctx = buildOrionDriveContext({
+    isNavigating: true,
+    nowMs: Date.now(),
+    nextStepDistanceMeters: 500,
+    criticalTurnTransition: true,
+  });
+  const gate = passesAdvisorySpeechGates({
+    ctx,
+    message: 'Hazard reported ahead.',
+    category: 'safety',
+    priority: 'urgent',
+    memory,
+    navVoice: {
+      guidanceSuppressed: false,
+      msSinceLastSdkVoice: 99_000,
+      advisorySdkHoldoffMs: 3000,
+      imminentManeuver: false,
+    },
+  });
+  assert.equal(gate.allowed, true);
+});
+
 test('preApproved skips min gap after recent speech', () => {
   const memory = createInMemoryOrionMemory();
   const now = Date.now();

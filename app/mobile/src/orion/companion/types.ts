@@ -8,6 +8,8 @@ export type OrionTimeOfDay = 'morning' | 'afternoon' | 'evening' | 'night';
 
 export type OrionTripPhase = 'opening' | 'cruising' | 'stressed' | 'closing';
 
+export type OrionGuidanceInstructionSource = 'sdk' | 'sdk_waiting' | 'js' | 'unknown';
+
 export type OrionCompanionEventType =
   | 'drive_started'
   | 'smooth_drive'
@@ -53,6 +55,9 @@ export type OrionDriveContextInput = {
   userName?: string | null;
   tripId?: string | null;
   drivingMode?: string | null;
+  criticalTurnTransition?: boolean;
+  guidanceInstructionSource?: OrionGuidanceInstructionSource;
+  guidanceStepIdentity?: string | null;
   nowMs?: number;
 };
 
@@ -76,6 +81,9 @@ export type OrionDriveContext = {
   userName: string | null;
   tripId: string | null;
   drivingMode: string | null;
+  criticalTurnTransition: boolean;
+  guidanceInstructionSource: OrionGuidanceInstructionSource;
+  guidanceStepIdentity: string | null;
   nowMs: number;
 };
 

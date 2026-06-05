@@ -94,6 +94,10 @@ export function shouldSpeakNow(input: CadenceInput): CadenceDecision {
   const urgent = priority === 'urgent';
   const complexRoadState = isComplexRoadState(ctx);
 
+  if (!urgent && ctx.criticalTurnTransition) {
+    return { allowed: false, reason: 'critical_turn_transition' };
+  }
+
   if (!urgent && complexRoadState && (event === 'smooth_drive' || mood === 'sassy')) {
     return { allowed: false, reason: 'complex_road_state' };
   }

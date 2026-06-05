@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { isNavigationGuidanceSuppressed } from '../../navigation/navigationGuidanceMemory';
+import { logNavTransition } from '../../navigation/navLogicDebug';
 import type { DrivingMode } from '../../types';
 import {
   LONG_DRIVE_MIN_MINUTES,
@@ -128,7 +129,19 @@ export function useOrionCompanion({
           preferredMood: prefs.mood,
         });
 
-        if (!result.shouldSpeak || !result.message) return false;
+        if (!result.shouldSpeak || !result.message) {
+          logNavTransition('speech_decision', {
+            tripId: raw.tripId,
+            instructionSource: raw.guidanceInstructionSource,
+            guidanceStepIdentity: raw.guidanceStepIdentity,
+            distanceToManeuverM: raw.nextStepDistanceMeters,
+            criticalTurnTransition: raw.criticalTurnTransition,
+            orionEventType: event,
+            speechAllowed: false,
+            speechReason: result.message ? 'not_approved' : 'no_message',
+          });
+          return false;
+        }
 
         const mode = snap.drivingMode ?? 'adaptive';
         const speech = deliverCompanionSpeech({

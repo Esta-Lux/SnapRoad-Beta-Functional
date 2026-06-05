@@ -41,8 +41,12 @@ export function passesAdvisorySpeechGates(input: {
   if (voiceMuted) return { allowed: false, reason: 'voice_muted' };
   if (!message.trim()) return { allowed: false, reason: 'no_message' };
 
+  const urgent = priority === 'urgent';
   const inTurnWindow =
     navVoice.withinTurnVoiceWindow === true || navVoice.imminentManeuver || isImminentManeuver(ctx);
+  if (!urgent && ctx.criticalTurnTransition) {
+    return { allowed: false, reason: 'critical_turn_transition' };
+  }
   if (inTurnWindow) return { allowed: false, reason: 'turn_voice_window' };
 
   if (navVoice.guidanceSuppressed) {
@@ -60,7 +64,6 @@ export function passesAdvisorySpeechGates(input: {
     return { allowed: true };
   }
 
-  const urgent = priority === 'urgent';
   const nowMs = ctx.nowMs;
 
   if (!urgent) {

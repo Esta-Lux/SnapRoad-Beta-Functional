@@ -1,6 +1,7 @@
 import type {
   OrionDriveContext,
   OrionDriveContextInput,
+  OrionGuidanceInstructionSource,
   OrionStressLevel,
   OrionTimeOfDay,
   OrionTrafficLevel,
@@ -29,6 +30,10 @@ function finiteNumber(value: unknown, fallback: number): number {
 
 function optionalFiniteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function normalizeGuidanceInstructionSource(raw: unknown): OrionGuidanceInstructionSource {
+  return raw === 'sdk' || raw === 'sdk_waiting' || raw === 'js' ? raw : 'unknown';
 }
 
 function tripGems(raw: OrionDriveContextInput): number {
@@ -62,6 +67,9 @@ export function buildOrionDriveContext(raw: OrionDriveContextInput = {}): OrionD
     userName: raw.userName?.trim() || null,
     tripId: raw.tripId?.trim() || null,
     drivingMode: raw.drivingMode?.trim() || null,
+    criticalTurnTransition: Boolean(raw.criticalTurnTransition),
+    guidanceInstructionSource: normalizeGuidanceInstructionSource(raw.guidanceInstructionSource),
+    guidanceStepIdentity: raw.guidanceStepIdentity?.trim() || null,
     nowMs,
   };
 }

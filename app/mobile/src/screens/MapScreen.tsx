@@ -165,6 +165,7 @@ import {
 } from '../navigation/turnCardModel';
 import { sdkGuidanceStabilityKey } from '../navigation/sdkGuidanceUiKeys';
 import { sdkManeuverDisplayDistanceFromProgress } from '../navigation/sdkNavBridgePayload';
+import { buildOrionGuidanceRouteSnapshot } from '../navigation/orionGuidanceContext';
 import {
   formatSdkNavigationVoiceCue,
   navigationVoiceCueBucket,
@@ -226,7 +227,7 @@ import {
   computeRouteOverviewBounds,
   longestPolylineUsableForOverview,
 } from '../navigation/routeOverviewCamera';
-import { logNavVerify } from '../navigation/navLogicDebug';
+import { logNavTransition, logNavVerify } from '../navigation/navLogicDebug';
 import {
   ingestSdkCameraState,
   ingestSdkLaneAssets,
@@ -237,6 +238,7 @@ import {
   ingestSdkVoiceSubtitle,
   resetNavSdkState,
 } from '../navigation/navEngine';
+import { msSinceLastSdkVoice } from '../navigation/navSdkStore';
 import type { NativeFormattedDistance, NativeLaneAsset, SdkCameraPayload } from '../navigation/navSdkMirrorTypes';
 import type { SdkLocationPayload, SdkProgressPayload } from '../navigation/navSdkStore';
 import { polylineFromSdkRoutes, type SdkRoutesNative } from '../navigation/navSdkGeometry';
@@ -886,6 +888,14 @@ export default function MapScreen() {
       const mr = routes.mainRoute;
       if (poly.length >= 2 && mr && typeof mr.distance === 'number' && typeof mr.expectedTravelTime === 'number') {
         ingestSdkRoutePolyline(poly);
+        logNavTransition('route_change', {
+          tripId: navigationTripIdRef.current || undefined,
+          sdkPhase: nav.sdkNavDiag?.sdkGuidancePhase ?? null,
+          instructionSource: nav.navigationProgress?.instructionSource ?? 'unknown',
+          polylinePoints: poly.length,
+          routeDistanceM: mr.distance,
+          routeDurationSec: mr.expectedTravelTime,
+        });
         // Pass the native routes payload through so `applySdkRouteGeometry`
         // can seed synthetic steps and kick off a background REST-Directions
         // hydration, restoring real maneuver types / lanes to the turn card
@@ -893,7 +903,7 @@ export default function MapScreen() {
         nav.applySdkRouteGeometry(poly, mr.distance, mr.expectedTravelTime, routes);
       }
     },
-    [nav.applySdkRouteGeometry],
+    [nav.applySdkRouteGeometry, nav.navigationProgress?.instructionSource, nav.sdkNavDiag?.sdkGuidancePhase],
   );
 
   /**
@@ -911,6 +921,19 @@ export default function MapScreen() {
       const t = (text ?? '').trim();
       if (!t) return;
       ingestSdkVoiceSubtitle(t);
+      logNavTransition('sdk_ingest', {
+        tripId: navigationTripIdRef.current || undefined,
+        sdkPhase: nav.sdkNavDiag?.sdkGuidancePhase ?? null,
+        legIndex: nav.sdkNavProgress?.legIndex ?? nav.navigationProgress?.nativeStepIdentity?.legIndex ?? null,
+        stepIndex: nav.sdkNavProgress?.stepIndex ?? nav.navigationProgress?.nativeStepIdentity?.stepIndex ?? null,
+        instructionSource: nav.navigationProgress?.instructionSource ?? 'unknown',
+        distanceToManeuverM:
+          nav.sdkNavProgress?.distanceToNextManeuverMeters ??
+          nav.navigationProgress?.nextStepDistanceMeters ??
+          null,
+        instruction: t,
+        sdkEvent: 'voice',
+      });
       const useOrionTurnVoice =
         navLogicEffective &&
         !suppressHeadlessNavForNativeFullscreen &&
@@ -953,6 +976,7 @@ export default function MapScreen() {
       nav.navigationProgress?.nextStep?.index,
       nav.navigationProgress?.nextStep?.kind,
       nav.navigationProgress?.nextStepDistanceMeters,
+      nav.sdkNavDiag?.sdkGuidancePhase,
       navLogicEffective,
       suppressHeadlessNavForNativeFullscreen,
       user?.name,
@@ -1030,6 +1054,12 @@ export default function MapScreen() {
       }
       setSdkRouteHandoffUi(true);
       ingestSdkRouteChangedEvent();
+      logNavTransition('route_change', {
+        tripId: navigationTripIdRef.current || undefined,
+        sdkPhase: nav.sdkNavDiag?.sdkGuidancePhase ?? null,
+        instructionSource: nav.navigationProgress?.instructionSource ?? 'unknown',
+        routeChanged: true,
+      });
       publishOrionNavigationEvent({ type: 'reroute' });
       const routes = event.nativeEvent.routes;
       if (!routes?.mainRoute) {
@@ -1043,6 +1073,14 @@ export default function MapScreen() {
       const mr = routes.mainRoute;
       if (poly.length >= 2 && typeof mr.distance === 'number' && typeof mr.expectedTravelTime === 'number') {
         ingestSdkRoutePolyline(poly);
+        logNavTransition('route_change', {
+          tripId: navigationTripIdRef.current || undefined,
+          sdkPhase: nav.sdkNavDiag?.sdkGuidancePhase ?? null,
+          instructionSource: nav.navigationProgress?.instructionSource ?? 'unknown',
+          polylinePoints: poly.length,
+          routeDistanceM: mr.distance,
+          routeDurationSec: mr.expectedTravelTime,
+        });
         nav.applySdkRouteGeometry(poly, mr.distance, mr.expectedTravelTime, routes);
       }
       sdkRouteHandoffTimerRef.current = setTimeout(() => {
@@ -1050,7 +1088,7 @@ export default function MapScreen() {
         sdkRouteHandoffTimerRef.current = null;
       }, 1400);
     },
-    [nav.applySdkRouteGeometry],
+    [nav.applySdkRouteGeometry, nav.navigationProgress?.instructionSource, nav.sdkNavDiag?.sdkGuidancePhase],
   );
   useEffect(
     () => () => {
@@ -2206,6 +2244,7 @@ export default function MapScreen() {
   const navTripStartMsRef = useRef(0);
   const prevNavigatingForOrionRef = useRef(false);
   const prevSevereCongestionRef = useRef(false);
+  const prevOrionGuidanceStepIdentityRef = useRef<string | null>(null);
   const lastLivePublishRef = useRef(0);
   const mapLivePublishCoordsRef = useRef({ lat: 0, lng: 0, heading: 0, speed: 0 });
   const mapLiveNavRef = useRef({ isNavigating: false, destinationName: undefined as string | undefined });
@@ -4304,9 +4343,14 @@ export default function MapScreen() {
 
   const orionCurrentRoute = useMemo(() => {
     if (!nav.navigationData) return undefined;
-    const steps = nav.navigationData.steps;
-    const idx = nav.currentStepIndex;
     const prog = nav.navigationProgress;
+    const guidance = buildOrionGuidanceRouteSnapshot({
+      progress: nav.navigationProgressGuidance ?? nav.navigationProgress,
+      fallbackSteps: nav.navigationData.steps,
+      currentStepIndex: nav.currentStepIndex,
+      previousGuidanceStepIdentity: prevOrionGuidanceStepIdentityRef.current,
+      nativeVoiceRecent: msSinceLastSdkVoice() < 3000,
+    });
     return {
       destination: nav.navigationData.destination?.name ?? '',
       distanceMiles:
@@ -4317,15 +4361,39 @@ export default function MapScreen() {
         prog != null
           ? Math.max(0, prog.durationRemainingSeconds / 60)
           : nav.liveEta?.etaMinutes ?? Math.round((nav.navigationData.duration || 0) / 60),
-      currentStep: steps?.[idx]?.instruction ?? '',
-      nextStep: steps?.[idx + 1]?.instruction ?? '',
+      ...guidance,
     };
   }, [
     nav.navigationData,
     nav.currentStepIndex,
     nav.navigationProgress,
+    nav.navigationProgressGuidance,
     nav.liveEta?.distanceMiles,
     nav.liveEta?.etaMinutes,
+    nav.sdkNavDiag?.telemetry.voiceEvents,
+  ]);
+
+  useEffect(() => {
+    const id = orionCurrentRoute?.guidanceStepIdentity ?? null;
+    const prev = prevOrionGuidanceStepIdentityRef.current;
+    if (id && prev && id !== prev) {
+      logNavTransition('guidance_identity', {
+        tripId: navigationTripIdRef.current || undefined,
+        guidanceStepIdentity: id,
+        previousGuidanceStepIdentity: prev,
+        instructionSource: orionCurrentRoute?.guidanceInstructionSource ?? 'unknown',
+        distanceToManeuverM: orionCurrentRoute?.nextStepDistanceMeters ?? null,
+        instruction: orionCurrentRoute?.currentRoad ?? null,
+        criticalTurnTransition: orionCurrentRoute?.criticalTurnTransition ?? false,
+      });
+    }
+    prevOrionGuidanceStepIdentityRef.current = id;
+  }, [
+    orionCurrentRoute?.guidanceStepIdentity,
+    orionCurrentRoute?.guidanceInstructionSource,
+    orionCurrentRoute?.nextStepDistanceMeters,
+    orionCurrentRoute?.currentRoad,
+    orionCurrentRoute?.criticalTurnTransition,
   ]);
 
   useEffect(() => {
@@ -4417,9 +4485,12 @@ export default function MapScreen() {
         distanceMiles: orionCurrentRoute?.distanceMiles ?? undefined,
         trafficLevel: navCongestionSevere ? 'severe' : 'light',
         congestionNearManeuver: navCongestionSevere,
-        currentRoad: orionCurrentRoute?.currentStep ?? undefined,
-        nextManeuver: orionCurrentRoute?.nextStep ?? undefined,
-        nextStepDistanceMeters: nav.navigationProgress?.nextStepDistanceMeters ?? undefined,
+        currentRoad: orionCurrentRoute?.currentRoad ?? undefined,
+        nextManeuver: orionCurrentRoute?.nextManeuver ?? undefined,
+        nextStepDistanceMeters: orionCurrentRoute?.nextStepDistanceMeters ?? undefined,
+        criticalTurnTransition: orionCurrentRoute?.criticalTurnTransition,
+        guidanceInstructionSource: orionCurrentRoute?.guidanceInstructionSource,
+        guidanceStepIdentity: orionCurrentRoute?.guidanceStepIdentity,
         rerouteDetected: nav.isRerouting,
         incidentNearby: false,
         driveDurationMinutes: tripMs / 60_000,
@@ -5349,7 +5420,22 @@ export default function MapScreen() {
           onNavigatorError={(e: { nativeEvent: { message?: string } }) =>
             handleNavLogicFailure(e.nativeEvent?.message)
           }
-          onRouteProgressChanged={(e: { nativeEvent: SdkProgressPayload }) => ingestSdkProgress(e.nativeEvent)}
+          onRouteProgressChanged={(e: { nativeEvent: SdkProgressPayload }) => {
+            ingestSdkProgress(e.nativeEvent);
+            logNavTransition('sdk_ingest', {
+              tripId: navigationTripIdRef.current || undefined,
+              sdkPhase: nav.sdkNavDiag?.sdkGuidancePhase ?? null,
+              legIndex: e.nativeEvent.legIndex ?? null,
+              stepIndex: e.nativeEvent.stepIndex ?? null,
+              instructionSource: 'sdk',
+              distanceToManeuverM: e.nativeEvent.distanceToNextManeuverMeters ?? null,
+              instruction:
+                e.nativeEvent.primaryInstruction ??
+                e.nativeEvent.currentStepInstruction ??
+                null,
+              sdkEvent: 'progress',
+            });
+          }}
           onCameraStateChanged={(e: { nativeEvent: SdkCameraPayload }) => ingestSdkCameraState(e.nativeEvent)}
           onLaneVisualsChanged={(e: { nativeEvent: { lanes?: NativeLaneAsset[] } }) =>
             ingestSdkLaneAssets(e.nativeEvent?.lanes ?? null)
@@ -5357,9 +5443,16 @@ export default function MapScreen() {
           onVoiceInstruction={(e: { nativeEvent: { text?: string } }) =>
             handleSdkVoiceInstruction(e.nativeEvent.text)
           }
-          onNavigationLocationUpdate={(e: { nativeEvent: SdkLocationPayload }) =>
-            ingestSdkLocation(e.nativeEvent)
-          }
+          onNavigationLocationUpdate={(e: { nativeEvent: SdkLocationPayload }) => {
+            ingestSdkLocation(e.nativeEvent);
+            logNavTransition('sdk_ingest', {
+              tripId: navigationTripIdRef.current || undefined,
+              sdkPhase: nav.sdkNavDiag?.sdkGuidancePhase ?? null,
+              sdkEvent: 'location',
+              speedMps: e.nativeEvent.speed,
+              accuracyM: e.nativeEvent.horizontalAccuracy,
+            });
+          }}
           onRouteChanged={handleSdkRouteChanged}
           onFinalDestinationArrival={handleSdkFinalDestinationArrival}
           onCancelNavigation={() => nav.stopNavigation()}
@@ -6125,6 +6218,17 @@ export default function MapScreen() {
             if (g.holdRoundaboutExit != null) return g.holdRoundaboutExit;
             return sdkNS?.roundaboutExitNumber ?? live.nextStep?.roundaboutExitNumber ?? null;
           })();
+          logNavTransition('turn_card_render', {
+            tripId: navigationTripIdRef.current || undefined,
+            sdkPhase: nav.sdkNavDiag?.sdkGuidancePhase ?? null,
+            legIndex: live.nativeStepIdentity?.legIndex ?? null,
+            stepIndex: live.nativeStepIdentity?.stepIndex ?? live.nextStep?.index ?? null,
+            instructionSource: 'sdk',
+            distanceToManeuverM: live.nextStepDistanceMeters,
+            instruction: primary,
+            guidanceStepIdentity: textStabKey,
+            criticalTurnTransition: orionCurrentRoute?.criticalTurnTransition ?? false,
+          });
 
           return (
             <View style={[s.turnWrap, { top: insets.top }]} key="nav-turn-hybrid">
@@ -6366,6 +6470,16 @@ export default function MapScreen() {
           isActionableGuidanceStep(guidanceStep, true) ? guidanceStep : (isActionableGuidanceStep(nextManeuverCoord, true) ? nextManeuverCoord : undefined);
 
         const turnTextStabilityKey = null;
+        logNavTransition('turn_card_render', {
+          tripId: navigationTripIdRef.current || undefined,
+          sdkPhase: nav.sdkNavDiag?.sdkGuidancePhase ?? null,
+          stepIndex: prog.nextStep?.index ?? nav.currentStepIndex ?? null,
+          instructionSource: prog.instructionSource ?? 'js',
+          distanceToManeuverM: liveDistMeters,
+          instruction: primary,
+          guidanceStepIdentity: orionCurrentRoute?.guidanceStepIdentity ?? null,
+          criticalTurnTransition: orionCurrentRoute?.criticalTurnTransition ?? false,
+        });
 
         return (
           <View style={[s.turnWrap, { top: insets.top }]} key="turn-card-stable">
