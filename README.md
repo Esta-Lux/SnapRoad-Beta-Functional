@@ -40,6 +40,7 @@ npx tsc --noEmit
 ## Release docs
 
 - Launch hardening runbook: `app/docs/LAUNCH_READINESS_RUNBOOK.md`
+- BootRise readiness review audit: `app/docs/BOOTRISE_LAUNCH_READINESS_REVIEW_AUDIT.md`
 - Architecture and deployment audit: `app/docs/SNAPROAD_ARCHITECTURE_AND_DEPLOYMENT_AUDIT.md`
 
 ## Notes
